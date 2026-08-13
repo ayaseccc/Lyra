@@ -1,0 +1,61 @@
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "id": 3778678,
+    "name": "热歌榜",
+    "coverImgUrl": "https://p1.music.126.net/0SUEG8yDACfx0Bw2MYFv4Q==/109951170048519512.jpg",
+    "creator": {
+      "nickname": "网易云音乐"
+    },
+    "trackCount": 200,
+    "tracks": [
+      {
+        "id": 1973665667,
+        "name": "海屿你",
+        "ar": [
+          {
+            "name": "马也_Crabbit"
+          }
+        ],
+        "al": {
+          "name": "海屿你",
+          "picUrl": "https://p3.music.126.net/RfguLkQJ8aMVkiIaxdy70Q==/109951170483263672.jpg"
+        }
+      },
+      {
+        "id": 3399839173,
+        "name": "甲乙丙丁 (你我怎么两清)",
+        "ar": [
+          {
+            "name": "李佳薇"
+          }
+        ],
+        "al": {
+          "name": "甲乙丙丁",
+          "picUrl": "https://p4.music.126.net/H9iDvukTit_jx-fmhhvXUQ==/109951173482378749.jpg"
+        }
+      },
+      {
+        "id": 3398249541,
+        "name": "反乌托邦×拼接遗憾×Sinos De Natal",
+        "ar": [
+          {
+            "name": "Vince丷"
+          },
+          {
+            "name": "见过夏天P"
+          },
+          {
+            "name": "Ciyo"
+          }
+        ],
+        "al": {
+          "name": "红石音乐",
+          "picUrl": "https://p3.music.126.net/Kk5YxGO0qB_KQx8-uEOL6g==/109951173459347365.jpg"
+        }
+      }
+    ],
+    "_tracksTruncatedFrom": 200
+  }
+}

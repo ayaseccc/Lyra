@@ -1,0 +1,60 @@
+<ui:FluentWindow x:Class="Player.App.Views.RematchDialog"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 Title="重新匹配" Width="480" Height="460"
+                 ResizeMode="NoResize" ShowInTaskbar="False"
+                 WindowStartupLocation="CenterOwner"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round"
+                 FontFamily="Microsoft YaHei UI, Segoe UI">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
+
+        <ui:TitleBar Grid.Row="0" ShowMaximize="False" ShowMinimize="False" Title="重新匹配歌词" />
+
+        <Grid Grid.Row="1" Margin="20,4,20,0">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <TextBlock x:Name="HintText" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap" Margin="0,0,0,8" />
+            <ListBox x:Name="CandidateList" Grid.Row="1"
+                     Background="Transparent" BorderThickness="0"
+                     ItemContainerStyle="{StaticResource SimpleRowStyle}"
+                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
+                     MouseDoubleClick="OnListDoubleClick">
+                <ListBox.ItemTemplate>
+                    <DataTemplate>
+                        <Grid Margin="2,3">
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <StackPanel>
+                                <TextBlock Text="{Binding Name}" Style="{StaticResource TitleTextStyle}"
+                                           TextTrimming="CharacterEllipsis" />
+                                <TextBlock Text="{Binding ArtistLine}" Style="{StaticResource SubTextStyle}"
+                                           Margin="0,2,0,0" TextTrimming="CharacterEllipsis" />
+                            </StackPanel>
+                            <TextBlock Grid.Column="1" Text="{Binding DurationText}" VerticalAlignment="Center"
+                                       Margin="12,0,0,0" Style="{StaticResource SubTextStyle}" />
+                        </Grid>
+                    </DataTemplate>
+                </ListBox.ItemTemplate>
+            </ListBox>
+        </Grid>
+
+        <StackPanel Grid.Row="2" Orientation="Horizontal" HorizontalAlignment="Right" Margin="20,12,20,16">
+            <ui:Button Content="清除匹配（不再用在线歌词）" Click="OnClearClick" />
+            <ui:Button Content="取消" MinWidth="80" Margin="8,0,0,0" Click="OnCancelClick" IsCancel="True" />
+            <ui:Button Content="应用" MinWidth="80" Margin="8,0,0,0" Appearance="Primary"
+                       Click="OnOkClick" IsDefault="True" />
+        </StackPanel>
+    </Grid>
+</ui:FluentWindow>

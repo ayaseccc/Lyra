@@ -9,7 +9,7 @@ namespace Player.Core.Infra;
 /// </summary>
 public static class Db
 {
-    private const int SchemaVersion = 1;
+    private const int SchemaVersion = 2;
 
     private static string? _connectionString;
 
@@ -78,7 +78,8 @@ public static class Db
                 added_at     INTEGER NOT NULL DEFAULT 0,
                 play_count   INTEGER NOT NULL DEFAULT 0,
                 last_played  INTEGER,
-                cover_hash   TEXT
+                cover_hash   TEXT,
+                netease_id   INTEGER
             );
 
             CREATE INDEX IF NOT EXISTS idx_tracks_album  ON tracks(album);
@@ -120,11 +121,42 @@ public static class Db
             """;
         command.ExecuteNonQuery();
 
+        // 旧库迁移（幂等）：tracks 表补 netease_id 列，歌词匹配结果持久化用。
+        // 扫描 Upsert 不碰这一列，只有 LyricsService 显式写入，重扫不会冲掉用户的匹配。
+        // 注意：索引必须等列加好之后再建，否则旧库上 CREATE INDEX 会整批失败。
+        EnsureTrackColumns(connection);
+
+        using (var index = connection.CreateCommand())
+        {
+            index.Transaction = transaction;
+            index.CommandText = "CREATE INDEX IF NOT EXISTS idx_tracks_netease ON tracks(netease_id);";
+            index.ExecuteNonQuery();
+        }
+
         command.CommandText = "INSERT INTO settings(key, value) VALUES('schema_version', @v) " +
                               "ON CONFLICT(key) DO UPDATE SET value = excluded.value;";
         command.Parameters.AddWithValue("@v", SchemaVersion.ToString());
         command.ExecuteNonQuery();
 
         transaction.Commit();
+    }
+
+    private static void EnsureTrackColumns(SqliteConnection connection)
+    {
+        using (var command = connection.CreateCommand())
+        {
+            command.CommandText = "PRAGMA table_info(tracks);";
+            using var reader = command.ExecuteReader();
+            while (reader.Read())
+            {
+                if (string.Equals(reader.GetString(1), "netease_id", StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+        }
+
+        using var alter = connection.CreateCommand();
+        alter.CommandText = "ALTER TABLE tracks ADD COLUMN netease_id INTEGER;";
+        alter.ExecuteNonQuery();
+        Log.Information("tracks 表已迁移：新增 netease_id 列");
     }
 }

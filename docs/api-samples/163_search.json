@@ -1,0 +1,49 @@
+{
+  "code": 200,
+  "msg": "success",
+  "data": {
+    "songs": [
+      {
+        "id": 3339230677,
+        "name": "晴天",
+        "artists": "周杰伦-/A-LNK",
+        "album": "不散",
+        "picUrl": "http://p3.music.126.net/rM6PP_YrU0HjFes4jggIOw==/109951172445882513.jpg",
+        "duration": 182890
+      },
+      {
+        "id": 3334653818,
+        "name": "晴天",
+        "artists": "周杰伦./Asasblue",
+        "album": "晴天",
+        "picUrl": "http://p4.music.126.net/g5lQgcmD4EFPkr6rsoGCnw==/109951172501913537.jpg",
+        "duration": 119146
+      },
+      {
+        "id": 3344811140,
+        "name": "晴天(正式版)",
+        "artists": "周杰伦./阿图表妹",
+        "album": "从前从前有个人爱你很久但偏偏风渐渐（不要你离开距离隔不开思念变成海）",
+        "picUrl": "http://p4.music.126.net/0xNaw4zPr7_IxmvqHJaZzQ==/109951172667158768.jpg",
+        "duration": 86423
+      },
+      {
+        "id": 3324852509,
+        "name": "晴天",
+        "artists": "B-KLl/周杰伦、",
+        "album": "爱到尽头",
+        "picUrl": "http://p4.music.126.net/eImhcnMQz-ZfuhQGiPALdQ==/109951172323546544.jpg",
+        "duration": 174706
+      },
+      {
+        "id": 3336512536,
+        "name": "晴天(伤感版)",
+        "artists": "周杰伦-/夏蔓蔓",
+        "album": "晴天（伤感版）",
+        "picUrl": "http://p4.music.126.net/g5lQgcmD4EFPkr6rsoGCnw==/109951172501913537.jpg",
+        "duration": 124074
+      }
+    ],
+    "total": 254
+  }
+}

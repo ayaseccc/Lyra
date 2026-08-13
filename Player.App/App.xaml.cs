@@ -4,6 +4,8 @@ using Player.App.ViewModels;
 using Player.Core.Audio;
 using Player.Core.Infra;
 using Player.Core.Library;
+using Player.Core.Lyrics;
+using Player.Core.Online;
 using Serilog;
 
 namespace Player.App;
@@ -15,6 +17,8 @@ public partial class App : Application
     private PlaylistService? _playlists;
     private PlayerViewModel? _player;
     private ShellViewModel? _shell;
+    private ChkszClient? _client;
+    private LyricsService? _lyrics;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -69,8 +73,13 @@ public partial class App : Application
         _engine = new PlaybackEngine();
         _library = new LibraryService();
         _playlists = new PlaylistService(_library);
-        _player = new PlayerViewModel(_engine);
-        _shell = new ShellViewModel(_library, _playlists, _player, _engine);
+
+        // P3：ChKSz 客户端与歌词服务。Key 只在 ConfigService 里读，任何在线失败都不影响本地播放
+        _client = new ChkszClient();
+        _lyrics = new LyricsService(_client);
+
+        _player = new PlayerViewModel(_engine, _lyrics, _client);
+        _shell = new ShellViewModel(_library, _playlists, _player, _engine, _client);
 
         var window = new MainWindow { DataContext = _shell };
         MainWindow = window;
@@ -95,6 +104,8 @@ public partial class App : Application
         // 顺序很重要：先停 UI 侧的订阅与计时器，再停监听与扫描，最后放流与 BASS
         _shell?.Dispose();
         _player?.Dispose();
+        _lyrics?.Dispose();
+        _client?.Dispose();
         _library?.StopWatching();
         _library?.Dispose();
         _engine?.Dispose();

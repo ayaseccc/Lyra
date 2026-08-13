@@ -28,6 +28,9 @@ public partial class MainWindow : FluentWindow
     /// <summary>拖动曲目行时用的自定义剪贴板格式。</summary>
     private const string TrackDragFormat = "Player.TrackRecords";
 
+    private readonly System.Windows.Threading.Dispatcher _dispatcher =
+        Application.Current?.Dispatcher ?? System.Windows.Threading.Dispatcher.CurrentDispatcher;
+
     private Point _dragStartPoint;
     private TrackRecord? _draggingTrack;
     private TrackRecord[] _dragPayload = Array.Empty<TrackRecord>();
@@ -49,6 +52,64 @@ public partial class MainWindow : FluentWindow
         // 拖动结束也走同一条释放路径（鼠标在窗口外松开时靠它兜底）
         SeekSlider.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler(OnSeekDragStarted));
         SeekSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(OnSeekDragCompleted));
+
+        // 歌词覆盖层：当前行变化时把列表滚到那一行（P3）
+        DataContextChanged += (_, _) =>
+        {
+            if (Player is null) return;
+            Player.Lyrics.PropertyChanged += OnLyricsPropertyChanged;
+        };
+        PreviewKeyDown += OnWindowPreviewKeyDown;
+    }
+
+    /// <summary>Esc 关闭歌词覆盖层。</summary>
+    private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape || Player?.Lyrics is not { IsOpen: true }) return;
+        Player.Lyrics.CloseCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    /// <summary>歌词当前行变化 → 滚动到可视区（尽力居中）。</summary>
+    private void OnLyricsPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName != nameof(LyricsViewModel.CurrentLineIndex)) return;
+        if (Player?.Lyrics?.IsOpen != true) return;
+        ScrollLyricsToCurrent();
+    }
+
+    private void ScrollLyricsToCurrent()
+    {
+        var index = Player?.Lyrics?.CurrentLineIndex ?? -1;
+        if (index < 0) return;
+
+        var list = LyricList;
+        if (list is null || index >= list.Items.Count) return;
+
+        // 先保证行已生成（虚拟化下 ContainerFromIndex 可能还没创建），再精确定位居中
+        list.ScrollIntoView(list.Items[index]);
+
+        _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Background, () =>
+        {
+            if (list.ItemContainerGenerator.ContainerFromIndex(index) is not System.Windows.FrameworkElement container)
+                return;
+            if (FindScrollViewer(list) is not { } scroll) return;
+
+            var position = container.TransformToAncestor(scroll).Transform(new Point(0, 0));
+            var target = position.Y + container.ActualHeight / 2 - scroll.ViewportHeight / 2;
+            scroll.ScrollToVerticalOffset(Math.Max(0, target));
+        });
+    }
+
+    private static System.Windows.Controls.ScrollViewer? FindScrollViewer(DependencyObject root)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is System.Windows.Controls.ScrollViewer viewer) return viewer;
+            if (FindScrollViewer(child) is { } found) return found;
+        }
+        return null;
     }
 
     private ShellViewModel? Shell => DataContext as ShellViewModel;
@@ -265,6 +326,22 @@ public partial class MainWindow : FluentWindow
         if (artist is null) return;
 
         (Shell?.CurrentPage as ArtistPageViewModel)?.Open(artist);
+    }
+
+    // ================= 歌词覆盖层（P3） =================
+
+    /// <summary>点击底部封面：展开 / 收起歌词覆盖层。</summary>
+    private void OnCoverClick(object sender, MouseButtonEventArgs e) =>
+        Player?.Lyrics.ToggleOpenCommand.Execute(null);
+
+    /// <summary>点击歌词行：跳到对应时间点。</summary>
+    private void OnLyricListClick(object sender, MouseButtonEventArgs e)
+    {
+        var line = FindDataContext<LyricDisplayLine>(e.OriginalSource as DependencyObject);
+        if (line is null) return;
+
+        var index = Player?.Lyrics?.Lines.IndexOf(line) ?? -1;
+        if (index >= 0) Player?.Lyrics?.SeekToLine(index);
     }
 
     // ================= 进度条（P0.1 时序 + P1.1-② 点击路径修复） =================

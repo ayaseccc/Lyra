@@ -5,6 +5,8 @@ using Microsoft.Win32;
 using Player.Core.Audio;
 using Player.Core.Infra;
 using Player.Core.Library;
+using Player.Core.Online;
+using Serilog;
 
 namespace Player.App.ViewModels;
 
@@ -31,15 +33,18 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 {
     private readonly LibraryService _library;
     private readonly IPlaybackEngine _engine;
+    private readonly ChkszClient _client;
     private readonly Func<bool, Task> _requestScan;
 
     /// <summary>初始化期间不要把界面上的默认值当成用户改动去应用。</summary>
     private bool _loading = true;
 
-    public SettingsPageViewModel(LibraryService library, IPlaybackEngine engine, Func<bool, Task> requestScan)
+    public SettingsPageViewModel(LibraryService library, IPlaybackEngine engine, Func<bool, Task> requestScan,
+        ChkszClient? client = null)
     {
         _library = library;
         _engine = engine;
+        _client = client ?? new ChkszClient();
         _requestScan = requestScan;
 
         Folders = new ObservableCollection<string>(ConfigService.Current.Library.Folders);
@@ -98,6 +103,11 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         LoadDevices(settings.DeviceName);
 
         OutputStatus = _engine.OutputDescription;
+
+        // P3 在线组：Key 只从 data/config.json 读
+        ApiKey = ConfigService.Current.ApiKey;
+        RefreshKeyStatus();
+
         _loading = false;
     }
 
@@ -336,5 +346,96 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         ConfigService.Current.Library.Folders = merged;
         ConfigService.Save();
         _library.StartWatching();   // 根目录变了，监听也要跟着重建
+    }
+
+    // ================= 在线（P3） =================
+
+    [ObservableProperty]
+    private string _apiKey = string.Empty;
+
+    /// <summary>Key 是否已配置（用于界面提示，不显示 Key 本身）。</summary>
+    [ObservableProperty]
+    private string _keyStatus = string.Empty;
+
+    [ObservableProperty]
+    private bool _isTestingKey;
+
+    public string KeyMasked => string.IsNullOrEmpty(ApiKey)
+        ? string.Empty
+        : ApiKey.Length <= 10
+            ? ApiKey[..Math.Min(4, ApiKey.Length)] + "…"
+            : ApiKey[..6] + "…" + ApiKey[^4..];
+
+    private void RefreshKeyStatus()
+    {
+        KeyStatus = string.IsNullOrWhiteSpace(ConfigService.Current.ApiKey)
+            ? "还没有填写 API Key。在线搜索 / 歌词 / 歌单同步都依赖它（只保存在本地 data/config.json）。"
+            : $"已配置（{KeyMasked}）。今日免费额度以服务端响应头为准，见播放条右侧指示。";
+        OnPropertyChanged(nameof(KeyMasked));
+    }
+
+    /// <summary>把 Key 写入 config.json。空输入 = 清除。</summary>
+    [RelayCommand]
+    private void SaveApiKey()
+    {
+        var key = ApiKey.Trim();
+
+        ConfigService.Current.ApiKey = key;
+        ConfigService.Save();
+        RefreshKeyStatus();
+    }
+
+    /// <summary>发一次真实搜索校验 Key。消耗 1 次额度，失败提示不弹窗（写在状态行）。</summary>
+    [RelayCommand]
+    private async Task TestApiKeyAsync()
+    {
+        if (string.IsNullOrWhiteSpace(ApiKey))
+        {
+            KeyStatus = "先粘贴 API Key 再测试。";
+            return;
+        }
+
+        if (!string.Equals(ApiKey.Trim(), ConfigService.Current.ApiKey, StringComparison.Ordinal))
+        {
+            // 测试前先落盘，ChkszClient 从配置里读 Key
+            ConfigService.Current.ApiKey = ApiKey.Trim();
+            ConfigService.Save();
+        }
+
+        IsTestingKey = true;
+        KeyStatus = "正在测试…";
+
+        try
+        {
+            var result = await _client.SearchAsync("测试", limit: 1);
+
+            if (result.Success)
+            {
+                KeyStatus = $"连接正常：搜索到 {result.Data?.Total ?? 0} 条结果，剩余额度 {_client.Quota.FreeRemaining?.ToString() ?? "未知"}。";
+                RefreshKeyStatus();
+                KeyStatus = $"连接正常（剩余额度 {_client.Quota.FreeRemaining?.ToString() ?? "未知"}）。";
+            }
+            else if (result.AuthFailed)
+            {
+                KeyStatus = "Key 无效或未填写，请检查设置。";
+            }
+            else if (result.QuotaExhausted)
+            {
+                KeyStatus = "今日额度已用尽，等次日重置或去后台兑换 LDC。";
+            }
+            else
+            {
+                KeyStatus = "测试失败：" + result.Error;
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "测试 API Key 失败");
+            KeyStatus = "测试失败：" + ex.Message;
+        }
+        finally
+        {
+            IsTestingKey = false;
+        }
     }
 }

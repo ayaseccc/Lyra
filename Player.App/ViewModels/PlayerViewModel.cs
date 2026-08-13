@@ -8,6 +8,8 @@ using Player.App.Infra;
 using Player.Core.Audio;
 using Player.Core.Infra;
 using Player.Core.Library;
+using Player.Core.Lyrics;
+using Player.Core.Online;
 using Serilog;
 using Wpf.Ui.Controls;
 
@@ -23,6 +25,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     private readonly PlaybackList _list = new();
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _timer;
+    private readonly LyricsService _lyrics;
+    private readonly ChkszClient _client;
 
     private bool _isSeeking;
     private double? _pendingSeekTarget;
@@ -34,9 +38,11 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     /// <summary>连续跳过坏文件的上限。曲库所在盘掉线时不能拿一万首在 UI 线程上硬试。</summary>
     private const int MaxSkipAttempts = 10;
 
-    public PlayerViewModel(IPlaybackEngine engine)
+    public PlayerViewModel(IPlaybackEngine engine, LyricsService lyrics, ChkszClient client)
     {
         _engine = engine;
+        _lyrics = lyrics;
+        _client = client;
         _dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
 
         Volume = Math.Clamp(ConfigService.Current.Ui.Volume, 0, 1);
@@ -53,10 +59,14 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _engine.TrackTransitioned += OnTrackTransitioned;
         _engine.OutputChanged += OnOutputChanged;
         _engine.ErrorOccurred += OnErrorOccurred;
+        _client.Quota.Changed += OnQuotaChanged;
+
+        Lyrics = new LyricsViewModel(_lyrics, this);
 
         // 输出设置在这里只是"记下"，真正开设备要等第一次播放（见 PlaybackEngine 注释）
         _engine.ApplyOutputSettings(ConfigService.Current.Output.ToSettings());
         RefreshOutputInfo();
+        RefreshQuotaText();
 
         _timer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
         {
@@ -67,6 +77,19 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     }
 
     public PlaybackList List => _list;
+
+    /// <summary>歌词覆盖层（点击底部封面展开）。</summary>
+    public LyricsViewModel Lyrics { get; private set; } = null!;
+
+    /// <summary>播放条上的额度指示（P3）："API 剩 358" 或 "在线未启用"。</summary>
+    public string QuotaText
+    {
+        get
+        {
+            if (!ChkszClient.HasApiKey) return "在线未启用";
+            return _client.Quota.DisplayText;
+        }
+    }
 
     /// <summary>当前播放的曲目，供列表页高亮用。</summary>
     public TrackRecord? CurrentTrack => _list.Current;
@@ -137,6 +160,12 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         IsBitPerfect = _engine.IsBitPerfect;
         OnPropertyChanged(nameof(OutputHint));
     }
+
+    /// <summary>额度头解析线程不定，切回 UI 线程再刷新。</summary>
+    private void OnQuotaChanged(object? sender, EventArgs e) =>
+        _dispatcher.BeginInvoke(RefreshQuotaText);
+
+    private void RefreshQuotaText() => OnPropertyChanged(nameof(QuotaText));
 
     private void OnOutputChanged(object? sender, EventArgs e) =>
         _dispatcher.BeginInvoke(RefreshOutputInfo);
@@ -386,6 +415,9 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         Title = track.DisplayTitle;
         Artist = track.DisplayArtist;
         CoverImage = CoverImageCache.Get(track.CoverHash);
+
+        // P3：切歌即异步加载歌词（.lrc > 缓存 > 在线匹配），失败不影响播放
+        _ = Lyrics.LoadForTrackAsync(track);
     }
 
     private static void BumpPlayCount(TrackRecord track)
@@ -460,6 +492,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             Artist = string.Empty;
             TechnicalInfo = string.Empty;
             CoverImage = null;
+            Lyrics.Reset();
         }
     });
 
@@ -519,7 +552,9 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _engine.TrackTransitioned -= OnTrackTransitioned;
         _engine.OutputChanged -= OnOutputChanged;
         _engine.ErrorOccurred -= OnErrorOccurred;
+        _client.Quota.Changed -= OnQuotaChanged;
 
+        Lyrics.Dispose();
         ConfigService.Save();
     }
 }

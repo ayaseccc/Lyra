@@ -1,6 +1,8 @@
 using Player.Core.Audio;
 using Player.Core.Infra;
 using Player.Core.Library;
+using Player.Core.Lyrics;
+using Player.Core.Online;
 
 namespace Player.Harness;
 
@@ -12,6 +14,9 @@ namespace Player.Harness;
 ///
 ///   dotnet run --project tools/Player.Harness -- library &lt;曲库目录&gt; [库外文件目录]
 ///       扫描 / 歌单 / 持久化的端到端验证（要真实音频文件，不需要声卡）
+///
+///   dotnet run --project tools/Player.Harness -- lyrics
+///       P3 歌词与在线层：LRC 解析 / 令牌桶 / 额度头 / 匹配算法 / 缓存存储（纯逻辑 + 临时库，无网络）
 ///
 /// 注意：ASIO / WASAPI 的出声效果没法离线验证，只能在装了声卡驱动的 Windows 上实听，
 /// 见 docs/ASIO-验收指引.md。
@@ -40,8 +45,12 @@ public static class Program
                 await RunLibraryChecksAsync(args[1], args.Length > 2 ? args[2] : null);
                 break;
 
+            case "lyrics":
+                await RunLyricsChecksAsync();
+                break;
+
             default:
-                Console.WriteLine($"未知模式：{mode}（可用：seamless / library）");
+                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics）");
                 return 2;
         }
 
@@ -205,6 +214,303 @@ public static class Program
         Check("重启后文件夹虚拟歌单能重建", reopened.GetFolderPlaylists().Count == library.GetFolderPlaylists().Count);
 
         LogSetup.Shutdown();
+    }
+
+
+    // ================= P3：歌词与在线层（纯逻辑 + 临时库，无网络） =================
+
+    private static async Task RunLyricsChecksAsync()
+    {
+        RunLrcChecks();
+        RunBucketChecks();
+        RunQuotaHeaderChecks();
+        RunMatcherChecks();
+        RunClientPureFunctionChecks();
+
+        // 存储层需要临时库
+        var dbPath = Path.Combine(Path.GetTempPath(), "harness-lyrics-" + Guid.NewGuid().ToString("N")[..8] + ".db");
+        try
+        {
+            Db.Initialize(dbPath);
+            RunCacheStoreChecks();
+            await RunLyricsServiceFallbackChecksAsync();
+        }
+        finally
+        {
+            try { File.Delete(dbPath); File.Delete(dbPath + "-wal"); File.Delete(dbPath + "-shm"); }
+            catch { /* 忽略清理失败 */ }
+        }
+    }
+
+    // ---------------- LRC 解析 ----------------
+
+    private static void RunLrcChecks()
+    {
+        Console.WriteLine("=== LRC 解析 ===");
+
+        var doc = LrcParser.Parse("""
+            [ti:测试]
+            [ar:某歌手]
+            [offset:+500]
+            [00:01.00]第一句
+            [00:03.00]第二句
+            [00:05.00]第三句
+            """);
+        Check("元数据标签被跳过、offset 标签被解析", doc.TagOffset == TimeSpan.FromMilliseconds(500));
+        Check("正常解析出行", doc.Lines.Count == 3 && doc.HasTimeline);
+        Check("时间轴按时间排序", doc.Lines[0].Time == TimeSpan.FromSeconds(1) && doc.Lines[2].Time == TimeSpan.FromSeconds(5));
+
+        var multi = LrcParser.Parse("[00:01.00][00:03.50]同一句重复");
+        Check("一行多时间标签展开成多行", multi.Lines.Count == 2);
+
+        var fractions = LrcParser.Parse("[00:01.2]点两位小数\n[00:02.345]点三位小数");
+        Check("小数位补零正确（.2 → 200ms）", fractions.Lines[0].Time == TimeSpan.FromMilliseconds(1200));
+        Check("小数位三位正确（.345 → 345ms）", fractions.Lines[1].Time == TimeSpan.FromMilliseconds(2345));
+
+        var plain = LrcParser.Parse("没有时间标签的第一行\n第二行");
+        Check("无时间轴降级为整篇静态", !plain.HasTimeline && plain.Lines.Count == 2);
+
+        Check("空内容返回 Empty", LrcParser.Parse(null).IsEmpty && LrcParser.Parse("").IsEmpty);
+
+        // FindIndexAt：位置在第一行前 → -1
+        Check("位置在第一行之前返回 -1", doc.FindIndexAt(TimeSpan.FromSeconds(0.5)) == -1);
+        Check("正好命中第二行", doc.FindIndexAt(TimeSpan.FromSeconds(3)) == 1);
+        Check("两行之间取上一行", doc.FindIndexAt(TimeSpan.FromSeconds(4.2)) == 1);
+        Check("超出最后一行取末行", doc.FindIndexAt(TimeSpan.FromSeconds(99)) == 2);
+
+        // Merge：翻译并轨（容差 500ms）
+        var original = LrcParser.Parse("[00:01.00]原文1\n[00:03.00]原文2");
+        var translation = LrcParser.Parse("[00:01.20]译1\n[00:03.30]译2");
+        var merged = LrcParser.Merge(original, translation, null);
+        Check("翻译在容差内并轨", merged.Lines[0].Translation == "译1");
+        Check("第二行 300ms 差也在容差内并轨", merged.Lines[1].Translation == "译2");
+
+        var far = LrcParser.Merge(
+            LrcParser.Parse("[00:01.00]A"), LrcParser.Parse("[00:05.00]B"), null);
+        Check("翻译距离超过容差 → 不并轨", far.Lines[0].Translation is null or "");
+
+        Console.WriteLine();
+    }
+
+    // ---------------- 令牌桶 ----------------
+
+    private static void RunBucketChecks()
+    {
+        Console.WriteLine("=== 令牌桶（18 次/分） ===");
+
+        var bucket = new TokenBucket(18, TimeSpan.FromMinutes(1));
+        var now = DateTime.UtcNow;
+
+        for (var i = 0; i < 18; i++)
+        {
+            var ok = bucket.TryTake(now, out _);
+            if (!ok) { Check($"第 {i + 1} 次应成功", false); break; }
+        }
+        Check("窗口内 18 次全部可取", bucket.AvailableNow == 0);
+
+        var blocked = bucket.TryTake(now, out var retryAfter);
+        Check("第 19 次被拒绝", !blocked);
+        Check("拒绝时给出等待时间", retryAfter > TimeSpan.Zero && retryAfter <= TimeSpan.FromMinutes(1));
+
+        var afterSlide = bucket.TryTake(now + TimeSpan.FromMinutes(1) + TimeSpan.FromSeconds(1), out _);
+        Check("窗口滑出后可再取", afterSlide);
+
+        var capacity = new TokenBucket(2, TimeSpan.FromMinutes(1));
+        capacity.TryTake(now, out _);
+        capacity.TryTake(now, out _);
+        var third = capacity.TryTake(now + TimeSpan.FromSeconds(59), out _);
+        Check("未滑出窗口前仍被拒", !third);
+
+        Console.WriteLine();
+    }
+
+    // ---------------- 额度响应头 ----------------
+
+    private static void RunQuotaHeaderChecks()
+    {
+        Console.WriteLine("=== 额度响应头解析 ===");
+
+        Check("正常数字", QuotaTracker.ParseHeader("358") == 358);
+        Check("带空白", QuotaTracker.ParseHeader(" 400 ") == 400);
+        Check("空头返回 null（不是 0）", QuotaTracker.ParseHeader(null) is null);
+        Check("非数字返回 null", QuotaTracker.ParseHeader("abc") is null);
+        Check("空字符串返回 null", QuotaTracker.ParseHeader("") is null);
+
+        var tracker = new QuotaTracker();
+        tracker.Update(name => name switch
+        {
+            "X-Quota-Free-Remaining" => "399",
+            "X-Quota-Paid-Remaining" => "0",
+            _ => null
+        });
+        Check("更新后 FreeRemaining=399", tracker.FreeRemaining == 399);
+        Check("更新后 PaidRemaining=0", tracker.PaidRemaining == 0);
+        Check("展示文案", tracker.DisplayText == "API 剩 399");
+
+        var exhausted = new QuotaTracker();
+        exhausted.Update(name => name == "X-Quota-Free-Remaining" ? "0" : "0");
+        Check("免费+付费都为 0 时视为额度用尽", exhausted.IsExhausted);
+
+        var unknown = new QuotaTracker();
+        Check("从未收到响应头时不算用尽", !unknown.IsExhausted);
+
+        Console.WriteLine();
+    }
+
+    // ---------------- 匹配算法 ----------------
+
+    private static void RunMatcherChecks()
+    {
+        Console.WriteLine("=== 网易云 ID 匹配 ===");
+
+        Check("全角转半角", LyricMatcher.Normalize("ＡＢＣ１２３") == "abc123");
+        Check("去括号及内容", LyricMatcher.Normalize("晴天 (Live)") == "晴天");
+        Check("去方括号内容", LyricMatcher.Normalize("晴天[翻唱]") == "晴天");
+        Check("空白压缩", LyricMatcher.Normalize("  晴  天  ") == "晴天");
+        Check("标点与空白直接丢弃（中文匹配更稳）", LyricMatcher.Normalize("Hello, World!") == "helloworld");
+        Check("大小写统一", LyricMatcher.Normalize("HELLO") == "hello");
+
+        Check("完全相同 = 1.0", LyricMatcher.TextSimilarity("晴天", "晴天") == 1.0);
+        Check("包含关系高分", LyricMatcher.TextSimilarity("晴天", "晴天 钢琴版") >= 0.55);
+        Check("完全不同 = 0", LyricMatcher.TextSimilarity("abc", "xyz") == 0);
+        Check("编辑距离相似度", LyricMatcher.TextSimilarity("晴天", "晴天2") > 0.8);
+
+        Check("时长差 3 秒内算命中", LyricMatcher.DurationInTolerance(252000, 253000));
+        Check("时长差超过 3 秒不算", !LyricMatcher.DurationInTolerance(260000, 253000));
+        Check("未知时长不算命中", !LyricMatcher.DurationInTolerance(0, 253000));
+
+        var search = new SearchResult
+        {
+            Songs = new List<SearchSong>
+            {
+                new() { Id = 1, Name = "晴天", Artists = "周杰伦", Duration = 269000 },
+                new() { Id = 2, Name = "晴天", Artists = "翻唱者", Duration = 120000 },   // 时长差太远
+                new() { Id = 3, Name = "晴天 (Live)", Artists = "周杰伦", Duration = 271000 }  // 相似但稍低
+            }
+        };
+
+        var best = LyricMatcher.PickBest(search, "晴天", "周杰伦", 269000);
+        Check("时长过滤 + 相似度择优 → 原版", best?.Id == 1);
+
+        var allWrong = new SearchResult
+        {
+            Songs = new List<SearchSong>
+            {
+                new() { Id = 9, Name = "阴天", Artists = "李四", Duration = 269000 }
+            }
+        };
+        Check("相似度过低 → 未匹配（宁可空）", LyricMatcher.PickBest(allWrong, "晴天", "周杰伦", 269000) is null);
+
+        var ranked = LyricMatcher.RankCandidates(search, "晴天", "周杰伦", 269000);
+        Check("候选排序第一位是原版", ranked[0].Id == 1);
+
+        Console.WriteLine();
+    }
+
+    // ---------------- ChkszClient 纯函数 ----------------
+
+    private static void RunClientPureFunctionChecks()
+    {
+        Console.WriteLine("=== ChkszClient 脱敏与错误映射 ===");
+
+        var redacted = ChkszClient.Redact("https://api.chksz.com/api/163_search?apikey=chksz_secret123&keyword=x");
+        Check("URL 脱敏 apikey", redacted.Contains("apikey=***") && !redacted.Contains("secret123"));
+
+        Check("400 → 参数错误", ChkszClient.MapError<int>(400, null).Error.Contains("参数"));
+        Check("401 → Key 无效", ChkszClient.MapError<int>(401, null).AuthFailed);
+        Check("402 → 额度用尽", ChkszClient.MapError<int>(402, null).QuotaExhausted);
+        Check("404 → 资源不存在", ChkszClient.MapError<int>(404, null).NotFound);
+        Check("429 → 频繁", ChkszClient.MapError<int>(429, null).Error.Contains("频繁"));
+        Check("503 → 稍后再试", ChkszClient.MapError<int>(503, null).Error.Contains("稍后"));
+        Check("200 未映射 → 通用错误", ChkszClient.MapError<int>(500, null).Error.Contains("500"));
+
+        Console.WriteLine();
+    }
+
+    // ---------------- 缓存存储（临时库） ----------------
+
+    private static void RunCacheStoreChecks()
+    {
+        Console.WriteLine("=== 歌词缓存存储 ===");
+
+        LyricsCacheStore.SaveCached("163:12345", new CachedLyric
+        {
+            Lrc = "[00:01.00]测试",
+            TranslatedLrc = "",
+            RomajiLrc = ""
+        });
+        var cached = LyricsCacheStore.GetCached("163:12345");
+        Check("歌词缓存往返", cached is not null && cached.Lrc == "[00:01.00]测试");
+        Check("不存在的缓存返回 null", LyricsCacheStore.GetCached("163:99999") is null);
+
+        // netease_id 挂在 tracks 行上：先造一行再写
+        LibraryDb.UpsertTracks(new[]
+        {
+            new TrackRecord { Path = @"C:\music\a.flac", Title = "a", DurationMs = 1000 }
+        });
+        LyricsCacheStore.SaveNeteaseId(@"C:\music\a.flac", 12345);
+        var map = LyricsCacheStore.LoadNeteaseIds();
+        Check("netease_id 持久化并可读回", map.TryGetValue(@"C:\music\a.flac", out var id) && id == 12345);
+
+        LyricsCacheStore.SaveManualOffset(@"C:\music\a.flac", TimeSpan.FromMilliseconds(300));
+        var offset = LyricsCacheStore.GetManualOffset(@"C:\music\a.flac");
+        Check("手动偏移存取", offset == TimeSpan.FromMilliseconds(300));
+        Check("未设置偏移返回 null", LyricsCacheStore.GetManualOffset(@"C:\music\b.flac") is null);
+
+        Console.WriteLine();
+    }
+
+    // ---------------- LyricsService 离线降级 ----------------
+
+    private static async Task RunLyricsServiceFallbackChecksAsync()
+    {
+        Console.WriteLine("=== LyricsService 离线降级 ===");
+
+        using var client = new ChkszClient();
+        using var service = new LyricsService(client);
+
+        // 没有 Key 时在线能力应整体降级
+        Check("无 Key → IsOnlineAvailable 为 false", !service.IsOnlineAvailable);
+
+        // .lrc 文件优先级：同目录同名
+        var dir = Path.Combine(Path.GetTempPath(), "harness-lrc-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(dir);
+        try
+        {
+            var audioPath = Path.Combine(dir, "song.flac");
+            await File.WriteAllTextAsync(audioPath, "fake");
+            await File.WriteAllTextAsync(Path.Combine(dir, "song.lrc"), "[00:01.00]本地歌词第一句\n[00:05.00]本地歌词第二句");
+
+            var track = new TrackRecord
+            {
+                Id = 1,
+                Path = audioPath,
+                Title = "song",
+                Artist = "test",
+                DurationMs = 300000
+            };
+
+            var result = await service.LoadForTrackAsync(track);
+            Check(".lrc 文件被优先加载", result.Source == LyricSource.LocalFile);
+            Check(".lrc 内容正确", result.Document.Lines.Count == 2 && result.Document.Lines[0].Text == "本地歌词第一句");
+            Check("无 Key 时没有在线歌词也不抛异常", result.Document.Lines.Count == 2);
+
+            // 没有 .lrc、没有 Key → 安静返回 Empty（不弹窗不崩溃）
+            var noLrc = new TrackRecord { Id = 2, Path = Path.Combine(dir, "no-lrc.flac"), Title = "x", DurationMs = 1000 };
+            var empty = await service.LoadForTrackAsync(noLrc);
+            Check("无 .lrc 无 Key → Empty（优雅降级）", empty.IsEmpty);
+
+            // 同一首歌第二次加载不再尝试匹配（会话记忆，不烧额度）
+            var again = await service.LoadForTrackAsync(noLrc);
+            Check("会话内重复加载稳定返回 Empty", again.IsEmpty);
+        }
+        finally
+        {
+            try { Directory.Delete(dir, true); }
+            catch { /* 忽略清理失败 */ }
+        }
+
+        Console.WriteLine();
     }
 
     private static void Check(string what, bool ok)

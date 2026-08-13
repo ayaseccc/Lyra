@@ -9,6 +9,7 @@ using Player.App.Views;
 using Player.Core.Audio;
 using Player.Core.Infra;
 using Player.Core.Library;
+using Player.Core.Online;
 using Serilog;
 using Wpf.Ui.Controls;
 
@@ -23,6 +24,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     private readonly LibraryService _library;
     private readonly PlaylistService _playlists;
     private readonly IPlaybackEngine _engine;
+    private readonly ChkszClient _client;
     private readonly Dispatcher _dispatcher;
 
     private bool _suppressNavigation;
@@ -32,11 +34,12 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     private bool _disposed;
 
     public ShellViewModel(LibraryService library, PlaylistService playlists, PlayerViewModel player,
-        IPlaybackEngine engine)
+        IPlaybackEngine engine, ChkszClient client)
     {
         _library = library;
         _playlists = playlists;
         _engine = engine;
+        _client = client;
         Player = player;
         _dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
 
@@ -277,7 +280,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             }
 
             case NavKind.Settings:
-                CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync);
+                CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client);
                 break;
         }
     }
@@ -418,7 +421,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     {
         // 设置页不在左侧栏列表里，进入时清空选中项
         SelectedNav = null;
-        CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync);
+        CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client);
     }
 
     [RelayCommand]

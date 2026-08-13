@@ -15,3 +15,11 @@ data/
 *.log
 Thumbs.db
 desktop.ini
+
+# ---- 离线构建辅助（本机无法访问 nuget.org 时用，不入仓） ----
+tools/nuget-offline/
+tools/rebuild-nuget-cache.ps1
+tools/pack-nupkg.ps1
+tools/fix-wpfui-id.ps1
+tools/fix-wpfui-id2.ps1
+tools/fix-wpfui-dep.ps1
