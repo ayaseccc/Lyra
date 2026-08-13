@@ -3,6 +3,7 @@
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  xmlns:vm="clr-namespace:Player.App.ViewModels"
+                 xmlns:lyr="clr-namespace:Player.Core.Lyrics;assembly=Player.Core"
                  Title="Player" Height="740" Width="1200" MinHeight="540" MinWidth="920"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
@@ -651,7 +652,7 @@
         <!-- ============ 歌词覆盖层（P3.1-③ 改版）：只覆盖主区+播放条（Row 1-2），
              标题栏始终可点；退出三通道：页内关闭按钮 / Esc / 点击封面收起。
              操作全部收敛到歌词列表右键菜单（显示模式 / 偏移 / 重新获取 / 重新匹配） ============ -->
-        <Grid Grid.Row="1" Grid.RowSpan="2" Panel.ZIndex="20"
+        <Grid Grid.Row="1" Panel.ZIndex="20"
               Visibility="{Binding Player.Lyrics.IsOpen, Converter={StaticResource BoolToVis}}"
               Background="{StaticResource LyricOverlayBackground}">
             <Grid.RowDefinitions>
@@ -671,15 +672,9 @@
                         <TextBlock Text="{Binding Player.Title}" Style="{StaticResource PageTitleStyle}" FontSize="18" />
                         <TextBlock Text="{Binding Player.Artist}" Style="{StaticResource SubTextStyle}"
                                    Margin="14,4,0,0" VerticalAlignment="Center" FontSize="12" />
-                        <Border CornerRadius="10" Padding="10,3" Margin="14,0,0,0" VerticalAlignment="Center"
-                                Background="{StaticResource HoverBrush}"
-                                Visibility="{Binding Player.Lyrics.SourceText, Converter={StaticResource NonEmptyToVis}}">
-                            <TextBlock Text="{Binding Player.Lyrics.SourceText}" FontSize="11"
-                                       Foreground="{StaticResource TextSecondaryBrush}" />
-                        </Border>
+
                     </StackPanel>
-                    <ui:Button Grid.Column="1" Content="关闭" Icon="{ui:SymbolIcon Dismiss24}" Appearance="Primary"
-                               Margin="12,0,0,0" Command="{Binding Player.Lyrics.CloseCommand}" />
+                    
                 </Grid>
             </Border>
 
@@ -710,20 +705,42 @@
                             <ContextMenu>
                                 <MenuItem Header="显示模式">
                                     <MenuItem Header="原文" IsCheckable="True"
-                                              IsChecked="{Binding Player.Lyrics.IsOriginalMode}"
+                                              IsChecked="{Binding Player.Lyrics.IsOriginalMode, Mode=OneWay}"
                                               Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
-                                              CommandParameter="Original" />
+                                              CommandParameter="{x:Static vm:LyricDisplayMode.Original}" />
                                     <MenuItem Header="双语（原文 + 翻译）" IsCheckable="True"
-                                              IsChecked="{Binding Player.Lyrics.IsBilingualMode}"
+                                              IsChecked="{Binding Player.Lyrics.IsBilingualMode, Mode=OneWay}"
                                               Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
-                                              CommandParameter="Bilingual" />
+                                              CommandParameter="{x:Static vm:LyricDisplayMode.Bilingual}" />
                                     <MenuItem Header="罗马音" IsCheckable="True"
-                                              IsChecked="{Binding Player.Lyrics.IsRomajiMode}"
+                                              IsChecked="{Binding Player.Lyrics.IsRomajiMode, Mode=OneWay}"
                                               Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
-                                              CommandParameter="Romaji" />
+                                              CommandParameter="{x:Static vm:LyricDisplayMode.Romaji}" />
                                 </MenuItem>
                                 <Separator />
-                                <MenuItem Header="偏移 -0.1 秒" Command="{Binding Player.Lyrics.OffsetEarlierCommand}" />
+<MenuItem Header="偏移 -0.1 秒" Command="{Binding Player.Lyrics.OffsetEarlierCommand}" />
+                                <MenuItem Header="歌词来源">
+                                    <MenuItem Header="自动（.lrc > 内嵌 > 缓存 > 网易云）" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefAuto, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.Auto}" />
+                                    <MenuItem Header="本地 .lrc 文件" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefLrcFile, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.LrcFile}" />
+                                    <MenuItem Header="内嵌标签" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefEmbedded, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.Embedded}" />
+                                    <MenuItem Header="网易云" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefOnline, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.Online}" />
+                                    <Separator />
+                                    <MenuItem Header="{Binding Player.Lyrics.SourceText}" IsEnabled="False" />
+                                </MenuItem>
+
+                                <Separator />
                                 <MenuItem Header="偏移 +0.1 秒" Command="{Binding Player.Lyrics.OffsetLaterCommand}" />
                                 <MenuItem Header="{Binding Player.Lyrics.OffsetText}" IsEnabled="False" />
                                 <Separator />

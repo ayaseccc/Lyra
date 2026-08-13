@@ -18,7 +18,19 @@ public sealed class LyricDisplayLine : System.ComponentModel.INotifyPropertyChan
 
     public required string PrimaryText { get; init; }
 
-    public string SecondaryText { get; init; } = string.Empty;
+    private string _secondaryText = string.Empty;
+
+    /// <summary>翻译/罗马音副行。切换显示模式时原地更新（不重建集合，滚动位置不受影响）。</summary>
+    public string SecondaryText
+    {
+        get => _secondaryText;
+        set
+        {
+            if (_secondaryText == value) return;
+            _secondaryText = value;
+            PropertyChanged?.Invoke(this, new System.ComponentModel.PropertyChangedEventArgs(nameof(SecondaryText)));
+        }
+    }
 
     public string TimeText => Time.TotalHours >= 1
         ? Time.ToString(@"h:mm:ss")
@@ -118,6 +130,39 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     public bool IsBilingualMode => DisplayMode == LyricDisplayMode.Bilingual;
 
     public bool IsRomajiMode => DisplayMode == LyricDisplayMode.Romaji;
+
+    // ---------------- 歌词来源偏好（右键菜单「歌词来源」，按曲目持久化） ----------------
+
+    public LyricPreference SourcePreference =>
+        _track is null ? LyricPreference.Auto : _lyrics.GetPreference(_track.Path);
+
+    public bool IsPrefAuto => SourcePreference == LyricPreference.Auto;
+
+    public bool IsPrefLrcFile => SourcePreference == LyricPreference.LrcFile;
+
+    public bool IsPrefEmbedded => SourcePreference == LyricPreference.Embedded;
+
+    public bool IsPrefOnline => SourcePreference == LyricPreference.Online;
+
+    /// <summary>右键菜单选择来源：保存偏好并立即按新来源重新加载。</summary>
+    [RelayCommand]
+    private void SetSourcePreference(LyricPreference preference)
+    {
+        if (_track is null) return;
+
+        _lyrics.SetPreference(_track.Path, preference);
+        NotifyPreferenceChanged();
+        _ = LoadForTrackAsync(_track);
+    }
+
+    private void NotifyPreferenceChanged()
+    {
+        OnPropertyChanged(nameof(SourcePreference));
+        OnPropertyChanged(nameof(IsPrefAuto));
+        OnPropertyChanged(nameof(IsPrefLrcFile));
+        OnPropertyChanged(nameof(IsPrefEmbedded));
+        OnPropertyChanged(nameof(IsPrefOnline));
+    }
 
     public string ModeText => DisplayMode switch
     {
@@ -230,8 +275,7 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
             _ => LyricDisplayMode.Original
         };
 
-        RebuildLines();
-        UpdateCurrentLine();
+        ApplyDisplayMode();
     }
 
     /// <summary>右键菜单直接选模式（P3.1-③）。</summary>
@@ -241,9 +285,30 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         if (DisplayMode == mode) return;
 
         DisplayMode = mode;
-        RebuildLines();
-        UpdateCurrentLine();
+        ApplyDisplayMode();
     }
+
+    /// <summary>
+    /// 切换显示模式：**原地更新每行副文本，不重建集合**。
+    /// 集合不变 → ListBox 滚动位置纹丝不动（修掉"切模式滑到底部"）。
+    /// </summary>
+    private void ApplyDisplayMode()
+    {
+        for (var i = 0; i < Lines.Count; i++)
+        {
+            var line = Lines[i];
+            var document = _document.Lines;
+            var secondary = i < document.Count ? SubTextFor(document[i]) : string.Empty;
+            line.SecondaryText = secondary;
+        }
+    }
+
+    private string SubTextFor(LyricLine line) => DisplayMode switch
+    {
+        LyricDisplayMode.Bilingual => line.Translation ?? string.Empty,
+        LyricDisplayMode.Romaji => line.Romaji ?? string.Empty,
+        _ => string.Empty
+    };
 
     private void RebuildLines()
     {
@@ -251,27 +316,16 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
 
         foreach (var line in _document.Lines)
         {
-            var secondary = DisplayMode switch
-            {
-                LyricDisplayMode.Bilingual => line.Translation ?? string.Empty,
-                LyricDisplayMode.Romaji => line.Romaji ?? string.Empty,
-                _ => string.Empty
-            };
-
             Lines.Add(new LyricDisplayLine
             {
                 Time = line.Time,
                 PrimaryText = line.Text,
-                SecondaryText = secondary
+                SecondaryText = SubTextFor(line)
             });
         }
 
         OnPropertyChanged(nameof(HasTimeline));
         OnPropertyChanged(nameof(HasLyrics));
-
-        // 集合整体重建后 ListBox 滚动位置可能被 clamp 到异常处（切换模式/新歌加载）。
-        // CurrentLineIndex 值可能没变，这里强制通知一次，让 UI 把当前行重新滚回可视区。
-        OnPropertyChanged(nameof(CurrentLineIndex));
     }
 
     // ---------------- 当前行跟随播放进度 ----------------

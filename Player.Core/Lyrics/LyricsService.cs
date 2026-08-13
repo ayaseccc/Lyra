@@ -23,6 +23,25 @@ public enum LyricSource
     Online
 }
 
+/// <summary>
+/// 用户手动指定的歌词来源偏好（右键菜单「歌词来源」，按曲目持久化）。
+/// 偏好来源找不到内容时自动回退到默认链的其余部分，不会让歌词变空。
+/// </summary>
+public enum LyricPreference
+{
+    /// <summary>默认链：.lrc &gt; 内嵌 &gt; 缓存 &gt; API。</summary>
+    Auto,
+
+    /// <summary>优先同目录 .lrc（跳过内嵌标签）。</summary>
+    LrcFile,
+
+    /// <summary>优先内嵌标签（.lrc 次之，仍跳过缓存/API 前的顺序调整）。</summary>
+    Embedded,
+
+    /// <summary>只用网易云（跳过 .lrc 与内嵌）。</summary>
+    Online
+}
+
 /// <summary>一次歌词加载的结果。UI 直接拿来显示。</summary>
 public sealed class LyricsLoadResult
 {
@@ -71,6 +90,7 @@ public sealed class LyricsService : IDisposable
     /// <summary>会话内已经尝试过自动匹配（且失败）的 path。避免每切一次歌就搜一次。</summary>
     private readonly HashSet<string> _matchAttempted = new(StringComparer.OrdinalIgnoreCase);
 
+
     private DateTime _quotaExhaustedUntil;
     private int _loadVersion;
     private bool _disposed;
@@ -94,6 +114,19 @@ public sealed class LyricsService : IDisposable
             return _neteaseIds.TryGetValue(path, out var id) ? id : null;
         }
     }
+
+    // ================= 用户来源偏好（右键菜单「歌词来源」，按曲目持久化） =================
+
+    /// <summary>读取来源偏好；未设置过返回 Auto。直接查库（本地 SQLite 微秒级，无需缓存）。</summary>
+    public LyricPreference GetPreference(string path)
+    {
+        var raw = LyricsCacheStore.GetLyricPreference(path);
+        return Enum.TryParse<LyricPreference>(raw, out var preference) ? preference : LyricPreference.Auto;
+    }
+
+    /// <summary>设置来源偏好并持久化（按曲目）。</summary>
+    public void SetPreference(string path, LyricPreference preference)
+        => LyricsCacheStore.SaveLyricPreference(path, preference.ToString());
 
     // ================= 加载歌词 =================
 
@@ -129,34 +162,73 @@ public sealed class LyricsService : IDisposable
     private async Task<LyricsLoadResult> LoadCoreAsync(
         TrackRecord track, bool useCache, CancellationToken cancellationToken)
     {
-        // ---- 第一优先级：同目录同名 .lrc ----
+        // 用户手动来源偏好（右键菜单「歌词来源」，按曲目持久化）；
+        // 偏好来源没有内容时回退到默认链的其余部分，绝不让歌词变空。
+        var preference = GetPreference(track.Path);
+
+        // Embedded 偏好：内嵌优先，.lrc 次之
+        if (preference == LyricPreference.Embedded)
+        {
+            var embedded = await ReadEmbeddedAsync(track).ConfigureAwait(false);
+            if (embedded is not null) return embedded;
+
+            var lrc = await TryReadLrcAsync(track, cancellationToken).ConfigureAwait(false);
+            if (lrc is not null) return lrc;
+
+            return await LoadOnlineAsync(track, useCache, cancellationToken).ConfigureAwait(false);
+        }
+
+        // 其余偏好（Auto / LrcFile）：.lrc 在默认链最前；Online 完全跳过本地来源
+        if (preference != LyricPreference.Online)
+        {
+            var lrc = await TryReadLrcAsync(track, cancellationToken).ConfigureAwait(false);
+            if (lrc is not null) return lrc;
+
+            // LrcFile 偏好：只想要 .lrc，跳过内嵌标签直接去在线
+            if (preference == LyricPreference.LrcFile)
+                return await LoadOnlineAsync(track, useCache, cancellationToken).ConfigureAwait(false);
+
+            var embedded = await ReadEmbeddedAsync(track).ConfigureAwait(false);
+            if (embedded is not null) return embedded;
+        }
+
+        // ---- 网易云（匹配 ID → 缓存 → API） ----
+        return await LoadOnlineAsync(track, useCache, cancellationToken).ConfigureAwait(false);
+    }
+
+    /// <summary>同目录同名 .lrc。文件损坏时返回 null（降级，不抛给播放链路）。</summary>
+    private async Task<LyricsLoadResult?> TryReadLrcAsync(TrackRecord track, CancellationToken cancellationToken)
+    {
         var lrcPath = Path.ChangeExtension(track.Path, ".lrc");
-        if (File.Exists(lrcPath))
-        {
-            try
-            {
-                var content = await File.ReadAllTextAsync(lrcPath, cancellationToken).ConfigureAwait(false);
-                var document = LrcParser.Parse(content);
-                return BuildResult(document, LyricSource.LocalFile, track.Path);
-            }
-            catch (Exception ex)
-            {
-                // .lrc 文件坏了就降级到在线，不把错误抛给播放链路
-                Log.Warning(ex, "读取本地 .lrc 失败：{Path}", lrcPath);
-            }
-        }
+        if (!File.Exists(lrcPath)) return null;
 
-        // ---- 第二优先级：内嵌标签歌词（P3.1-③）。有内嵌就不碰缓存和 API ----
+        try
+        {
+            var content = await File.ReadAllTextAsync(lrcPath, cancellationToken).ConfigureAwait(false);
+            return BuildResult(LrcParser.Parse(content), LyricSource.LocalFile, track.Path);
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "读取本地 .lrc 失败：{Path}", lrcPath);
+            return null;
+        }
+    }
+
+    /// <summary>内嵌标签歌词（USLT/LYRICS 等）。没有则返回 null。</summary>
+    private async Task<LyricsLoadResult?> ReadEmbeddedAsync(TrackRecord track)
+    {
         var embedded = await Task.Run(() => TagReader.ReadLyrics(track.Path)).ConfigureAwait(false);
-        if (!string.IsNullOrWhiteSpace(embedded))
-        {
-            var document = LrcParser.Parse(embedded);
-            return BuildResult(document, LyricSource.Embedded, track.Path);
-        }
+        if (string.IsNullOrWhiteSpace(embedded)) return null;
 
+        return BuildResult(LrcParser.Parse(embedded), LyricSource.Embedded, track.Path);
+    }
+
+    private async Task<LyricsLoadResult> LoadOnlineAsync(
+        TrackRecord track, bool useCache, CancellationToken cancellationToken)
+    {
         var neteaseId = GetNeteaseId(track.Path);
 
-        // ---- 没有 ID：尝试自动匹配（一次/会话） ----
+        // 没有 ID：尝试自动匹配（一次/会话）
         if (neteaseId is null)
         {
             lock (_gate)
@@ -173,7 +245,7 @@ public sealed class LyricsService : IDisposable
             neteaseId = matched;
         }
 
-        // ---- 第二优先级：本地缓存 ----
+        // 本地缓存
         var cacheKey = "163:" + neteaseId;
         if (useCache)
         {
@@ -185,7 +257,7 @@ public sealed class LyricsService : IDisposable
             }
         }
 
-        // ---- 第三优先级：API ----
+        // API
         if (!IsOnlineAvailable) return LyricsLoadResult.Empty;
 
         var lyricResult = await _client.GetLyricAsync(neteaseId.Value, cancellationToken).ConfigureAwait(false);

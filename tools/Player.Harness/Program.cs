@@ -598,6 +598,24 @@ public static class Program
                 var lrcFirst = await service.LoadForTrackAsync(embeddedTrack);
                 Check(".lrc 存在时优先于内嵌标签", lrcFirst.Source == LyricSource.LocalFile);
                 Check(".lrc 内容确实来自文件", lrcFirst.Document.Lines[0].Text == "本地歌词优先");
+
+                // ---- 来源偏好（右键菜单「歌词来源」，P3.1-④） ----
+                service.SetPreference(embeddedPath, LyricPreference.Embedded);
+                var prefEmbedded = await service.LoadForTrackAsync(embeddedTrack);
+                Check("偏好「内嵌标签」→ 跳过 .lrc 用内嵌", prefEmbedded.Source == LyricSource.Embedded);
+                Check("偏好持久化可读回", service.GetPreference(embeddedPath) == LyricPreference.Embedded);
+
+                service.SetPreference(embeddedPath, LyricPreference.Online);
+                var prefOnline = await service.LoadForTrackAsync(embeddedTrack);
+                Check("偏好「网易云」→ 跳过 .lrc 与内嵌（无 Key 时 Empty）", prefOnline.IsEmpty);
+
+                service.SetPreference(embeddedPath, LyricPreference.LrcFile);
+                var prefLrc = await service.LoadForTrackAsync(embeddedTrack);
+                Check("偏好「本地 .lrc」→ 用 .lrc", prefLrc.Source == LyricSource.LocalFile);
+
+                service.SetPreference(embeddedPath, LyricPreference.Auto);
+                var prefAuto = await service.LoadForTrackAsync(embeddedTrack);
+                Check("恢复「自动」→ 默认链（.lrc 优先）", prefAuto.Source == LyricSource.LocalFile);
             }
             else
             {

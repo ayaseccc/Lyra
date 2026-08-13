@@ -139,6 +139,53 @@ public static class LyricsCacheStore
 
     // ---------------- 用户手动偏移 ----------------
 
+    /// <summary>来源偏好 key（按曲目路径散列，同 offset 方案）。</summary>
+    public static string PreferenceKey(string path)
+    {
+        var bytes = System.Security.Cryptography.SHA1.HashData(
+            System.Text.Encoding.UTF8.GetBytes(path.ToLowerInvariant()));
+        return "pref:" + Convert.ToHexString(bytes)[..16].ToLowerInvariant();
+    }
+
+    public static string? GetLyricPreference(string path)
+    {
+        try
+        {
+            using var connection = Db.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = "SELECT content_json FROM lyrics_cache WHERE cache_key = @key;";
+            command.Parameters.AddWithValue("@key", PreferenceKey(path));
+            return command.ExecuteScalar() as string;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "读取来源偏好失败：{Path}", path);
+            return null;
+        }
+    }
+
+    public static void SaveLyricPreference(string path, string preference)
+    {
+        try
+        {
+            using var connection = Db.Open();
+            using var command = connection.CreateCommand();
+            command.CommandText = """
+                INSERT INTO lyrics_cache(cache_key, content_json, fetched_at)
+                VALUES(@key, @json, @at)
+                ON CONFLICT(cache_key) DO UPDATE SET content_json = excluded.content_json;
+                """;
+            command.Parameters.AddWithValue("@key", PreferenceKey(path));
+            command.Parameters.AddWithValue("@json", preference);
+            command.Parameters.AddWithValue("@at", DateTimeOffset.UtcNow.ToUnixTimeSeconds());
+            command.ExecuteNonQuery();
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "保存来源偏好失败：{Path}", path);
+        }
+    }
+
     /// <summary>偏移 key 与来源无关，按曲目路径散列，避免把路径写进缓存表。</summary>
     public static string OffsetKey(string path)
     {
