@@ -36,6 +36,16 @@ public partial class MainWindow : FluentWindow
     {
         InitializeComponent();
 
+        // 进度条的接管必须用 AddHandler(..., handledEventsToo: true)：
+        // Slider 的类处理器会在 IsMoveToPointEnabled 时把 PreviewMouseLeftButtonDown 标记为已处理，
+        // XAML 上挂的实例处理器默认收不到已处理事件 —— 这正是 P1.1-② 里"点击后弹回"的根因
+        // （BeginSeek 没跑 → EndSeek 被门禁挡掉 → 定时器把位置拉回去）。
+        SeekSlider.AddHandler(PreviewMouseLeftButtonDownEvent,
+            new MouseButtonEventHandler(OnSeekPressed), handledEventsToo: true);
+        SeekSlider.AddHandler(PreviewMouseLeftButtonUpEvent,
+            new MouseButtonEventHandler(OnSeekReleased), handledEventsToo: true);
+
+        // 拖动结束也走同一条释放路径（鼠标在窗口外松开时靠它兜底）
         SeekSlider.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler(OnSeekDragStarted));
         SeekSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(OnSeekDragCompleted));
     }
@@ -242,16 +252,17 @@ public partial class MainWindow : FluentWindow
         (Shell?.CurrentPage as ArtistPageViewModel)?.Open(artist);
     }
 
-    // ================= 进度条（P0.1 的时序） =================
+    // ================= 进度条（P0.1 时序 + P1.1-② 点击路径修复） =================
+
+    /// <summary>鼠标一按下就接管滑条：从这一刻起定时器不再回写，拖动不会"不跟手"。</summary>
+    private void OnSeekPressed(object sender, MouseButtonEventArgs e) => Player?.BeginSeek();
+
+    /// <summary>释放即 seek —— 点击和拖动都走这里，且必然执行一次。</summary>
+    private void OnSeekReleased(object sender, MouseButtonEventArgs e) => Player?.EndSeek(SeekSlider.Value);
 
     private void OnSeekDragStarted(object sender, DragStartedEventArgs e) => Player?.BeginSeek();
 
     private void OnSeekDragCompleted(object sender, DragCompletedEventArgs e) => Player?.EndSeek(SeekSlider.Value);
-
-    private void SeekSlider_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) => Player?.BeginSeek();
-
-    private void SeekSlider_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-        => Player?.EndSeek(SeekSlider.Value);
 
     // ================= 工具 =================
 

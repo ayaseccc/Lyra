@@ -243,17 +243,28 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     // ---------------- 进度条（P0.1 修复后的时序） ----------------
 
+    /// <summary>
+    /// 用户开始操作进度条（鼠标按下 / 开始拖动）。可重复调用。
+    /// 从这一刻起到 <see cref="EndSeek"/> 为止，定时器不再回写进度条。
+    /// </summary>
     public void BeginSeek() => _isSeeking = true;
 
+    /// <summary>
+    /// 松手：**无论点击还是拖动，释放时必然执行一次 seek**（P1.1-②）。
+    /// 之前这里用 _isSeeking 当门禁，而点击路径下 Slider 会吞掉 PreviewMouseLeftButtonDown，
+    /// BeginSeek 从未执行 → EndSeek 直接返回 → 700ms 静默窗口过期后滑块被拉回旧位置。
+    /// 现在按下/松开都用 handledEventsToo 的处理器接管，这里不再设门禁；
+    /// 同一次操作可能被"鼠标松开"和"拖动结束"各调一次，seek 到同一位置是幂等的。
+    /// </summary>
     public void EndSeek(double seconds)
     {
-        if (!_isSeeking) return;
         _isSeeking = false;
 
         if (!HasTrack) return;
 
         _engine.Seek(TimeSpan.FromSeconds(seconds));
 
+        // 乐观更新：立刻按目标值显示，不等下一个 tick 从引擎读回
         PositionSeconds = seconds;
         _pendingSeekTarget = seconds;
         _seekGuardUntil = DateTime.UtcNow.AddMilliseconds(700);
