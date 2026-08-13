@@ -1,0 +1,356 @@
+<ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:conv="clr-namespace:Player.App.Converters">
+
+    <!-- ============================================================
+         播放器自有的样式。颜色一律带透明度，好让 FluentWindow 的 Mica
+         背景透出来；控件本身的 Fluent 外观交给 WPF-UI 的 ControlsDictionary。
+         ============================================================ -->
+
+    <conv:CoverHashToImageConverter x:Key="CoverToImage" />
+    <conv:NullToVisibleConverter x:Key="NullToVisible" />
+    <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
+    <BooleanToVisibilityConverter x:Key="BoolToVis" />
+
+    <!-- = 调色板 = -->
+    <SolidColorBrush x:Key="TextPrimaryBrush" Color="#FFFFFFFF" />
+    <SolidColorBrush x:Key="TextSecondaryBrush" Color="#FFB6B6B6" />
+    <SolidColorBrush x:Key="TextTertiaryBrush" Color="#FF8B8B8B" />
+    <SolidColorBrush x:Key="AccentBrush" Color="#FF60CDFF" />
+    <SolidColorBrush x:Key="SurfaceBrush" Color="#B3202020" />
+    <SolidColorBrush x:Key="SurfaceStrongBrush" Color="#E61C1C1C" />
+    <SolidColorBrush x:Key="HoverBrush" Color="#1AFFFFFF" />
+    <SolidColorBrush x:Key="SelectedBrush" Color="#2EFFFFFF" />
+    <SolidColorBrush x:Key="BorderSoftBrush" Color="#26FFFFFF" />
+    <SolidColorBrush x:Key="TrackEmptyBrush" Color="#40FFFFFF" />
+
+    <!-- = 文本 = -->
+    <Style x:Key="TitleTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="FontSize" Value="13" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="SubTextStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="PageTitleStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="FontSize" Value="20" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
+    </Style>
+
+    <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="SemiBold" />
+        <Setter Property="Margin" Value="12,14,0,4" />
+    </Style>
+
+    <!-- = 播放条控制键 = -->
+    <Style x:Key="TransportButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="34" />
+        <Setter Property="Height" Value="34" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="17">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.35" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="PrimaryTransportButtonStyle" TargetType="Button" BasedOn="{StaticResource TransportButtonStyle}">
+        <Setter Property="Width" Value="42" />
+        <Setter Property="Height" Value="42" />
+        <Setter Property="Foreground" Value="#FF10131A" />
+        <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="21">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Opacity" Value="0.85" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- = 滑块（P0.1 验证过的手感，保持不变） = -->
+    <Style x:Key="SliderBarStyle" TargetType="RepeatButton">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="IsTabStop" Value="False" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="RepeatButton">
+                    <Border Background="Transparent" Height="16">
+                        <Border Height="4" CornerRadius="2" VerticalAlignment="Center"
+                                Background="{TemplateBinding Background}" />
+                    </Border>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SliderThumbStyle" TargetType="Thumb">
+        <Setter Property="OverridesDefaultStyle" Value="True" />
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="Width" Value="12" />
+        <Setter Property="Height" Value="12" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Ellipse Width="12" Height="12" Fill="{StaticResource TextPrimaryBrush}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SmallThumbStyle" TargetType="Thumb" BasedOn="{StaticResource SliderThumbStyle}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Thumb">
+                    <Ellipse Width="10" Height="10" Fill="{StaticResource TextPrimaryBrush}" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="SeekSliderStyle" TargetType="Slider">
+        <Setter Property="Focusable" Value="False" />
+        <Setter Property="IsMoveToPointEnabled" Value="True" />
+        <Setter Property="Minimum" Value="0" />
+        <Setter Property="Height" Value="16" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid Background="Transparent">
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource SliderBarStyle}"
+                                              Background="{StaticResource AccentBrush}"
+                                              Command="Slider.DecreaseLarge" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource SliderBarStyle}"
+                                              Background="{StaticResource TrackEmptyBrush}"
+                                              Command="Slider.IncreaseLarge" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource SliderThumbStyle}" />
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEnabled" Value="False">
+                            <Setter Property="Opacity" Value="0.45" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="VolumeSliderStyle" TargetType="Slider" BasedOn="{StaticResource SeekSliderStyle}">
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Slider">
+                    <Grid Background="Transparent">
+                        <Track x:Name="PART_Track">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource SliderBarStyle}"
+                                              Background="{StaticResource TextSecondaryBrush}"
+                                              Command="Slider.DecreaseLarge" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Style="{StaticResource SliderBarStyle}"
+                                              Background="{StaticResource TrackEmptyBrush}"
+                                              Command="Slider.IncreaseLarge" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb Style="{StaticResource SmallThumbStyle}" />
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- = 左侧栏导航 = -->
+    <Style x:Key="NavItemStyle" TargetType="ListBoxItem">
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="Margin" Value="6,1" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="5" Padding="8,0" Height="32">
+                        <Grid>
+                            <Border x:Name="Indicator" Width="3" Height="16" CornerRadius="2"
+                                    HorizontalAlignment="Left" Background="Transparent" />
+                            <ContentPresenter VerticalAlignment="Center" Margin="10,0,0,0" />
+                        </Grid>
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
+                            <Setter TargetName="Indicator" Property="Background" Value="{StaticResource AccentBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+        <Style.Triggers>
+            <!-- 分组标题：只显示不可选 -->
+            <DataTrigger Binding="{Binding IsHeader}" Value="True">
+                <Setter Property="IsHitTestVisible" Value="False" />
+                <Setter Property="Focusable" Value="False" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="ListBoxItem">
+                            <ContentPresenter />
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </DataTrigger>
+        </Style.Triggers>
+    </Style>
+
+    <!-- = 曲目列表（紧凑 28px 行高，PLAN 第 8 节） = -->
+    <Style x:Key="TrackRowStyle" TargetType="ListViewItem">
+        <Setter Property="Height" Value="28" />
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+        <Setter Property="SnapsToDevicePixels" Value="True" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListViewItem">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="6,0">
+                        <GridViewRowPresenter VerticalAlignment="Center"
+                                              Content="{TemplateBinding Content}"
+                                              Columns="{TemplateBinding GridView.ColumnCollection}" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
+                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 自带模板，不依赖系统主题：否则深色背景上会出现一条浅灰的 Aero 表头 -->
+    <Style x:Key="TrackHeaderStyle" TargetType="GridViewColumnHeader">
+        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="GridViewColumnHeader">
+                    <Grid>
+                        <Border x:Name="Bd" Background="Transparent" Padding="6,0"
+                                BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="0,0,0,1">
+                            <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Left" />
+                        </Border>
+                        <!-- 保留列宽拖拽手柄 -->
+                        <Thumb x:Name="PART_HeaderGripper" HorizontalAlignment="Right" Width="8" Cursor="SizeWE">
+                            <Thumb.Template>
+                                <ControlTemplate TargetType="Thumb">
+                                    <Border Background="Transparent" Width="8" />
+                                </ControlTemplate>
+                            </Thumb.Template>
+                        </Thumb>
+                    </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- 普通单列列表（设置页的目录列表等）：没有 GridView，不能用带 GridViewRowPresenter 的模板 -->
+    <Style x:Key="SimpleRowStyle" TargetType="ListBoxItem">
+        <Setter Property="Height" Value="32" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListBoxItem">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="8,0">
+                        <ContentPresenter VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- = 专辑 / 艺术家 / 大行列表 = -->
+    <Style x:Key="CardRowStyle" TargetType="ListViewItem">
+        <Setter Property="Height" Value="60" />
+        <Setter Property="Margin" Value="0,1" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ListViewItem">
+                    <Border x:Name="Bd" Background="Transparent" CornerRadius="6" Padding="8,0">
+                        <ContentPresenter VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+</ResourceDictionary>

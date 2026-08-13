@@ -1,12 +1,15 @@
 <Application x:Class="Player.App.App"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml">
     <Application.Resources>
         <ResourceDictionary>
             <ResourceDictionary.MergedDictionaries>
-                <ResourceDictionary Source="Themes/Dark.xaml" />
+                <!-- WPF-UI：Fluent 控件样式与深色主题（PLAN 第 2 节选型） -->
+                <ui:ThemesDictionary Theme="Dark" />
+                <ui:ControlsDictionary />
+                <ResourceDictionary Source="Themes/Player.xaml" />
             </ResourceDictionary.MergedDictionaries>
-            <BooleanToVisibilityConverter x:Key="BoolToVis" />
         </ResourceDictionary>
     </Application.Resources>
 </Application>

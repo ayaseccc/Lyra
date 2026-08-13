@@ -1,124 +1,213 @@
-using System.ComponentModel;
 using System.IO;
-using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
-using System.Windows.Interop;
+using System.Windows.Media;
 using Player.App.ViewModels;
 using Player.Core.Audio;
+using Player.Core.Library;
+using Wpf.Ui.Controls;
 
 namespace Player.App;
 
-public partial class MainWindow : Window
+public partial class MainWindow : FluentWindow
 {
+    /// <summary>列头文案 → 排序用的属性名。时长/采样率/位深要按数值排，不能按显示文本排。</summary>
+    private static readonly Dictionary<string, string> SortProperties = new()
+    {
+        ["标题"] = "DisplayTitle",
+        ["歌手"] = "DisplayArtist",
+        ["专辑"] = "DisplayAlbum",
+        ["时长"] = "DurationMs",
+        ["格式"] = "Format",
+        ["采样率"] = "SampleRate",
+        ["位深"] = "BitDepth"
+    };
+
+    private Point _dragStartPoint;
+    private TrackRecord? _draggingTrack;
+
     public MainWindow()
     {
         InitializeComponent();
 
-        // 进度条：鼠标按下或开始拖动就"接管"滑条（定时器停止回写），松手才真正 seek。
-        // 点击跳转和拖动两条路径都走同一对 Begin/EndSeek，由 VM 保证一次操作只 seek 一次。
         SeekSlider.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler(OnSeekDragStarted));
         SeekSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(OnSeekDragCompleted));
-
-        DataContextChanged += OnDataContextChanged;
     }
 
-    private PlayerViewModel? Vm => DataContext as PlayerViewModel;
+    private ShellViewModel? Shell => DataContext as ShellViewModel;
 
-    protected override void OnSourceInitialized(EventArgs e)
-    {
-        base.OnSourceInitialized(e);
-        TryEnableDarkTitleBar();
-    }
+    private PlayerViewModel? Player => Shell?.Player;
 
-    // 自动连播时让当前曲目保持在可视区内
-    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
-    {
-        if (e.OldValue is INotifyPropertyChanged oldVm)
-            oldVm.PropertyChanged -= OnViewModelPropertyChanged;
+    private TrackListPageViewModel? CurrentTrackPage => Shell?.CurrentPage as TrackListPageViewModel;
 
-        if (e.NewValue is INotifyPropertyChanged newVm)
-            newVm.PropertyChanged += OnViewModelPropertyChanged;
-    }
-
-    private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName != nameof(PlayerViewModel.SelectedIndex)) return;
-
-        var index = Vm?.SelectedIndex ?? -1;
-        if (index < 0 || index >= QueueList.Items.Count) return;
-
-        QueueList.ScrollIntoView(QueueList.Items[index]);
-    }
-
-    // ---------------- 拖放 ----------------
+    // ---------------- 拖放（窗口级：入库并开播） ----------------
 
     private void Window_OnDragOver(object sender, DragEventArgs e)
     {
-        e.Effects = ContainsPlayableFiles(e) ? DragDropEffects.Copy : DragDropEffects.None;
+        e.Effects = ContainsUsablePaths(e) ? DragDropEffects.Copy : DragDropEffects.None;
         e.Handled = true;
     }
 
-    private void Window_OnDrop(object sender, DragEventArgs e)
+    private async void Window_OnDrop(object sender, DragEventArgs e)
     {
-        if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && paths.Length > 0)
-            Vm?.LoadPaths(paths);
-
         e.Handled = true;
+
+        if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths || paths.Length == 0) return;
+        if (Shell is null) return;
+
+        await Shell.HandleDroppedPathsAsync(paths);
     }
 
-    private static bool ContainsPlayableFiles(DragEventArgs e)
+    private static bool ContainsUsablePaths(DragEventArgs e)
     {
         if (!e.Data.GetDataPresent(DataFormats.FileDrop)) return false;
         if (e.Data.GetData(DataFormats.FileDrop) is not string[] paths) return false;
         return paths.Any(p => Directory.Exists(p) || AudioFormats.IsSupported(p));
     }
 
-    // ---------------- 队列 ----------------
+    // ---------------- 曲目列表 ----------------
 
-    private void QueueList_OnMouseDoubleClick(object sender, MouseButtonEventArgs e)
+    private void OnTrackHeaderClick(object sender, RoutedEventArgs e)
     {
-        if (e.OriginalSource is not DependencyObject source) return;
-        if (ItemsControl.ContainerFromElement(QueueList, source) is not ListBoxItem container) return;
+        if (e.OriginalSource is not GridViewColumnHeader header) return;
+        if (header.Role == GridViewColumnHeaderRole.Padding) return;
+        if (header.Content is not string text) return;
+        if (!SortProperties.TryGetValue(text, out var property)) return;
 
-        var index = QueueList.ItemContainerGenerator.IndexFromContainer(container);
-        if (index >= 0) Vm?.PlayQueueItem(index);
+        CurrentTrackPage?.SortBy(property);
     }
 
-    // ---------------- 进度条 ----------------
-
-    private void OnSeekDragStarted(object sender, DragStartedEventArgs e) => Vm?.BeginSeek();
-
-    private void OnSeekDragCompleted(object sender, DragCompletedEventArgs e) => Vm?.EndSeek(SeekSlider.Value);
-
-    private void SeekSlider_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) => Vm?.BeginSeek();
-
-    private void SeekSlider_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => Vm?.EndSeek(SeekSlider.Value);
-
-    // ---------------- 深色标题栏 ----------------
-
-    private const int DwmwaUseImmersiveDarkMode = 20;
-    private const int DwmwaUseImmersiveDarkModeBefore20H1 = 19;
-
-    [DllImport("dwmapi.dll", PreserveSig = true)]
-    private static extern int DwmSetWindowAttribute(IntPtr hwnd, int attribute, ref int value, int size);
-
-    private void TryEnableDarkTitleBar()
+    private void OnTrackListDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        try
-        {
-            var handle = new WindowInteropHelper(this).Handle;
-            if (handle == IntPtr.Zero) return;
+        var track = FindDataContext<TrackRecord>(e.OriginalSource as DependencyObject);
+        if (track is null) return;
 
-            var enabled = 1;
-            if (DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkMode, ref enabled, sizeof(int)) != 0)
-                DwmSetWindowAttribute(handle, DwmwaUseImmersiveDarkModeBefore20H1, ref enabled, sizeof(int));
-        }
-        catch
+        CurrentTrackPage?.Play(track);
+    }
+
+    private void OnTrackListPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _dragStartPoint = e.GetPosition(null);
+        _draggingTrack = FindDataContext<TrackRecord>(e.OriginalSource as DependencyObject);
+    }
+
+    private void OnTrackListMouseMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _draggingTrack is null) return;
+        // 只有手工歌单、且没有列排序/过滤时才允许拖拽排序（否则可见顺序与底层顺序对不上）
+        if (CurrentTrackPage?.CanReorderNow != true) return;
+
+        var position = e.GetPosition(null);
+        if (Math.Abs(position.X - _dragStartPoint.X) < SystemParameters.MinimumHorizontalDragDistance &&
+            Math.Abs(position.Y - _dragStartPoint.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        var data = new DataObject(typeof(TrackRecord), _draggingTrack);
+        DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Move);
+        _draggingTrack = null;
+    }
+
+    /// <summary>WPF 的 ListBox 右键不会改变选中项，这里手动选中命中的那一行，右键菜单才不会作用错对象。</summary>
+    private void OnNavListPreviewRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ListBox list) return;
+
+        var source = e.OriginalSource as DependencyObject;
+        while (source is not null && source is not ListBoxItem)
         {
-            // 老系统没有该属性，忽略即可
+            source = source is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
         }
+
+        if (source is ListBoxItem { DataContext: NavItemViewModel nav } && !nav.IsHeader)
+            list.SelectedItem = nav;
+    }
+
+    private void OnTrackListDragOver(object sender, DragEventArgs e)
+    {
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            e.Effects = ContainsUsablePaths(e) ? DragDropEffects.Copy : DragDropEffects.None;
+            e.Handled = true;
+            return;
+        }
+
+        e.Effects = e.Data.GetDataPresent(typeof(TrackRecord)) && CurrentTrackPage?.CanReorderNow == true
+            ? DragDropEffects.Move
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private async void OnTrackListDrop(object sender, DragEventArgs e)
+    {
+        // 外部文件拖到列表上，等同于拖到窗口上
+        if (e.Data.GetDataPresent(DataFormats.FileDrop))
+        {
+            e.Handled = true;
+            if (e.Data.GetData(DataFormats.FileDrop) is string[] paths && paths.Length > 0 && Shell is not null)
+                await Shell.HandleDroppedPathsAsync(paths);
+            return;
+        }
+
+        if (e.Data.GetData(typeof(TrackRecord)) is not TrackRecord dragged) return;
+
+        var page = CurrentTrackPage;
+        if (page?.CanReorderNow != true) return;
+
+        var target = FindDataContext<TrackRecord>(e.OriginalSource as DependencyObject);
+        if (target is null || ReferenceEquals(target, dragged)) return;
+
+        page.MoveItem(page.Items.IndexOf(dragged), page.Items.IndexOf(target));
+        e.Handled = true;
+    }
+
+    // ---------------- 专辑 / 艺术家 ----------------
+
+    private void OnAlbumListDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        var album = FindDataContext<AlbumGroup>(e.OriginalSource as DependencyObject);
+        if (album is null) return;
+
+        (Shell?.CurrentPage as AlbumPageViewModel)?.Open(album);
+    }
+
+    private void OnArtistListDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        var artist = FindDataContext<ArtistGroup>(e.OriginalSource as DependencyObject);
+        if (artist is null) return;
+
+        (Shell?.CurrentPage as ArtistPageViewModel)?.Open(artist);
+    }
+
+    // ---------------- 进度条（P0.1 的时序，勿动） ----------------
+
+    private void OnSeekDragStarted(object sender, DragStartedEventArgs e) => Player?.BeginSeek();
+
+    private void OnSeekDragCompleted(object sender, DragCompletedEventArgs e) => Player?.EndSeek(SeekSlider.Value);
+
+    private void SeekSlider_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) => Player?.BeginSeek();
+
+    private void SeekSlider_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
+        => Player?.EndSeek(SeekSlider.Value);
+
+    // ---------------- 工具 ----------------
+
+    /// <summary>从被点中的元素往上找到列表行，取它的数据对象。</summary>
+    private static T? FindDataContext<T>(DependencyObject? source) where T : class
+    {
+        while (source is not null)
+        {
+            if (source is ListBoxItem item)
+                return item.DataContext as T;
+
+            source = source is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
+        }
+
+        return null;
     }
 }

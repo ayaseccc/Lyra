@@ -1,18 +1,293 @@
-<Window x:Class="Player.App.MainWindow"
-        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
-        xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
-        xmlns:vm="clr-namespace:Player.App.ViewModels"
-        mc:Ignorable="d"
-        d:DataContext="{d:DesignInstance Type=vm:PlayerViewModel}"
-        Title="Player" Height="580" Width="960" MinHeight="440" MinWidth="760"
-        Background="{StaticResource WindowBgBrush}"
-        FontFamily="Microsoft YaHei UI, Segoe UI"
-        TextOptions.TextFormattingMode="Display"
-        AllowDrop="True"
-        DragOver="Window_OnDragOver"
-        Drop="Window_OnDrop">
+<ui:FluentWindow x:Class="Player.App.MainWindow"
+                 xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+                 xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                 xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+                 xmlns:vm="clr-namespace:Player.App.ViewModels"
+                 Title="Player" Height="740" Width="1200" MinHeight="540" MinWidth="920"
+                 ExtendsContentIntoTitleBar="True"
+                 WindowBackdropType="Mica"
+                 WindowCornerPreference="Round"
+                 AllowDrop="True"
+                 DragOver="Window_OnDragOver"
+                 Drop="Window_OnDrop"
+                 FontFamily="Microsoft YaHei UI, Segoe UI"
+                 TextOptions.TextFormattingMode="Display">
+
+    <ui:FluentWindow.Resources>
+
+        <!-- ============ 曲目列表页 ============ -->
+        <DataTemplate DataType="{x:Type vm:TrackListPageViewModel}">
+            <Grid Margin="18,8,18,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <!-- 返回（从专辑/艺术家钻进来时才有） -->
+                <ui:Button Grid.Row="0" Margin="0,0,0,6" Appearance="Transparent"
+                           Icon="{ui:SymbolIcon ArrowLeft24}"
+                           Content="{Binding BackTitle}"
+                           Command="{Binding BackCommand}"
+                           Visibility="{Binding HasBack, Converter={StaticResource BoolToVis}}" />
+
+                <!-- 标题栏 -->
+                <Grid Grid.Row="1" Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleStyle}" />
+                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
+                    </StackPanel>
+
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:TextBox Width="220" PlaceholderText="过滤 标题 / 歌手 / 专辑"
+                                    Icon="{ui:SymbolIcon Search24}"
+                                    Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
+                        <ui:Button Margin="8,0,0,0" Appearance="Primary" Content="播放全部"
+                                   Icon="{ui:SymbolIcon Play24}" Command="{Binding PlayAllCommand}" />
+                        <ui:Button Margin="8,0,0,0" Content="导出"
+                                   Icon="{ui:SymbolIcon ArrowExport24}"
+                                   Command="{Binding DataContext.ExportM3uCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    </StackPanel>
+                </Grid>
+
+                <!-- 列表 -->
+                <Grid Grid.Row="2">
+                    <ListView ItemsSource="{Binding View}"
+                              SelectedItem="{Binding SelectedTrack}"
+                              ItemContainerStyle="{StaticResource TrackRowStyle}"
+                              Background="Transparent" BorderThickness="0"
+                              AllowDrop="True"
+                              GridViewColumnHeader.Click="OnTrackHeaderClick"
+                              MouseDoubleClick="OnTrackListDoubleClick"
+                              PreviewMouseLeftButtonDown="OnTrackListPreviewMouseLeftButtonDown"
+                              MouseMove="OnTrackListMouseMove"
+                              DragOver="OnTrackListDragOver"
+                              Drop="OnTrackListDrop"
+                              VirtualizingPanel.IsVirtualizing="True"
+                              VirtualizingPanel.VirtualizationMode="Recycling"
+                              ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                        <ListView.View>
+                            <GridView ColumnHeaderContainerStyle="{StaticResource TrackHeaderStyle}">
+                                <GridViewColumn Header="标题" Width="300" DisplayMemberBinding="{Binding DisplayTitle}" />
+                                <GridViewColumn Header="歌手" Width="180" DisplayMemberBinding="{Binding DisplayArtist}" />
+                                <GridViewColumn Header="专辑" Width="200" DisplayMemberBinding="{Binding DisplayAlbum}" />
+                                <GridViewColumn Header="时长" Width="70" DisplayMemberBinding="{Binding DurationText}" />
+                                <GridViewColumn Header="格式" Width="64" DisplayMemberBinding="{Binding Format}" />
+                                <GridViewColumn Header="采样率" Width="86" DisplayMemberBinding="{Binding SampleRateText}" />
+                                <GridViewColumn Header="位深" Width="64" DisplayMemberBinding="{Binding BitDepthText}" />
+                            </GridView>
+                        </ListView.View>
+                        <ListView.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="播放" Command="{Binding PlaySelectedCommand}" />
+                                <MenuItem Header="添加到歌单"
+                                          ItemsSource="{Binding DataContext.PlaylistTargets, RelativeSource={RelativeSource AncestorType=Window}}">
+                                    <MenuItem.ItemContainerStyle>
+                                        <Style TargetType="MenuItem">
+                                            <Setter Property="Header" Value="{Binding Name}" />
+                                            <Setter Property="Command"
+                                                    Value="{Binding DataContext.AddToPlaylistCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                            <Setter Property="CommandParameter" Value="{Binding}" />
+                                        </Style>
+                                    </MenuItem.ItemContainerStyle>
+                                </MenuItem>
+                                <Separator />
+                                <MenuItem Header="从歌单中移除" Command="{Binding RemoveSelectedCommand}" />
+                            </ContextMenu>
+                        </ListView.ContextMenu>
+                    </ListView>
+
+                    <!-- 空状态 -->
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
+                        <ui:SymbolIcon Symbol="MusicNote224" FontSize="42" HorizontalAlignment="Center"
+                                       Foreground="{StaticResource TrackEmptyBrush}" />
+                        <TextBlock Text="这里还没有歌曲" Margin="0,14,0,0" HorizontalAlignment="Center"
+                                   Style="{StaticResource TitleTextStyle}" />
+                        <TextBlock Text="把音乐文件夹拖进窗口，或到设置里添加媒体库目录" Margin="0,6,0,0"
+                                   HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" />
+                        <ui:Button Content="添加音乐文件夹" Margin="0,16,0,0" HorizontalAlignment="Center"
+                                   Icon="{ui:SymbolIcon FolderOpen24}"
+                                   Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </DataTemplate>
+
+        <!-- ============ 专辑页 ============ -->
+        <DataTemplate DataType="{x:Type vm:AlbumPageViewModel}">
+            <Grid Margin="18,8,18,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleStyle}" />
+                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:TextBox Width="200" PlaceholderText="过滤专辑 / 艺术家"
+                                    Icon="{ui:SymbolIcon Search24}"
+                                    Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
+                        <ui:Button Margin="8,0,0,0" Appearance="Primary" Content="播放选中"
+                                   Icon="{ui:SymbolIcon Play24}" Command="{Binding PlaySelectedCommand}" />
+                    </StackPanel>
+                </Grid>
+
+                <ListView Grid.Row="1" ItemsSource="{Binding View}"
+                          SelectedItem="{Binding SelectedAlbum}"
+                          ItemContainerStyle="{StaticResource CardRowStyle}"
+                          Background="Transparent" BorderThickness="0"
+                          MouseDoubleClick="OnAlbumListDoubleClick"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="44" Height="44" CornerRadius="4"
+                                        Background="{StaticResource HoverBrush}">
+                                    <Grid>
+                                        <ui:SymbolIcon Symbol="Album24" FontSize="18"
+                                                       Foreground="{StaticResource TextTertiaryBrush}"
+                                                       Visibility="{Binding CoverHash, Converter={StaticResource NullToVisible}}" />
+                                        <Image Source="{Binding CoverHash, Converter={StaticResource CoverToImage}}"
+                                               Stretch="UniformToFill" />
+                                    </Grid>
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Album}" Style="{StaticResource TitleTextStyle}" />
+                                    <TextBlock Text="{Binding SubText}" Style="{StaticResource SubTextStyle}"
+                                               Margin="0,3,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </DataTemplate>
+
+        <!-- ============ 艺术家页 ============ -->
+        <DataTemplate DataType="{x:Type vm:ArtistPageViewModel}">
+            <Grid Margin="18,8,18,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <Grid Margin="0,0,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel VerticalAlignment="Center">
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleStyle}" />
+                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
+                    </StackPanel>
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <ui:TextBox Width="200" PlaceholderText="过滤艺术家"
+                                    Icon="{ui:SymbolIcon Search24}"
+                                    Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
+                        <ui:Button Margin="8,0,0,0" Appearance="Primary" Content="播放选中"
+                                   Icon="{ui:SymbolIcon Play24}" Command="{Binding PlaySelectedCommand}" />
+                    </StackPanel>
+                </Grid>
+
+                <ListView Grid.Row="1" ItemsSource="{Binding View}"
+                          SelectedItem="{Binding SelectedArtist}"
+                          ItemContainerStyle="{StaticResource CardRowStyle}"
+                          Background="Transparent" BorderThickness="0"
+                          MouseDoubleClick="OnArtistListDoubleClick"
+                          VirtualizingPanel.IsVirtualizing="True"
+                          VirtualizingPanel.VirtualizationMode="Recycling">
+                    <ListView.ItemTemplate>
+                        <DataTemplate>
+                            <Grid>
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="Auto" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <Border Width="44" Height="44" CornerRadius="22"
+                                        Background="{StaticResource HoverBrush}">
+                                    <ui:SymbolIcon Symbol="Person24" FontSize="18"
+                                                   Foreground="{StaticResource TextTertiaryBrush}" />
+                                </Border>
+                                <StackPanel Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center">
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource TitleTextStyle}" />
+                                    <TextBlock Text="{Binding SubText}" Style="{StaticResource SubTextStyle}"
+                                               Margin="0,3,0,0" />
+                                </StackPanel>
+                            </Grid>
+                        </DataTemplate>
+                    </ListView.ItemTemplate>
+                </ListView>
+            </Grid>
+        </DataTemplate>
+
+        <!-- ============ 设置页 ============ -->
+        <DataTemplate DataType="{x:Type vm:SettingsPageViewModel}">
+            <Grid Margin="18,8,18,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <StackPanel Margin="0,0,0,14">
+                    <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleStyle}" />
+                    <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
+                </StackPanel>
+
+                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,10">
+                    <ui:Button Content="添加文件夹" Appearance="Primary"
+                               Icon="{ui:SymbolIcon FolderOpen24}" Command="{Binding AddFolderCommand}" />
+                    <ui:Button Content="移除所选" Margin="8,0,0,0"
+                               Icon="{ui:SymbolIcon Delete24}" Command="{Binding RemoveFolderCommand}" />
+                    <ui:Button Content="重新扫描（全量）" Margin="8,0,0,0"
+                               Icon="{ui:SymbolIcon ArrowSync24}" Command="{Binding RescanCommand}" />
+                    <ui:Button Content="检查更新（增量）" Margin="8,0,0,0"
+                               Command="{Binding IncrementalScanCommand}" />
+                    <ui:Button Content="停止扫描" Margin="8,0,0,0"
+                               Icon="{ui:SymbolIcon Dismiss24}" Command="{Binding CancelScanCommand}" />
+                </StackPanel>
+
+                <Border Grid.Row="2" CornerRadius="6" Padding="4"
+                        Background="{StaticResource SurfaceBrush}"
+                        BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1"
+                        VerticalAlignment="Top" MaxHeight="320">
+                    <ListBox ItemsSource="{Binding Folders}" SelectedItem="{Binding SelectedFolder}"
+                             Background="Transparent" BorderThickness="0"
+                             ItemContainerStyle="{StaticResource SimpleRowStyle}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Folder24" FontSize="14" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource TextTertiaryBrush}" />
+                                    <TextBlock Text="{Binding}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                               Foreground="{StaticResource TextPrimaryBrush}" FontSize="12" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+                </Border>
+            </Grid>
+        </DataTemplate>
+
+    </ui:FluentWindow.Resources>
 
     <Grid>
         <Grid.RowDefinitions>
@@ -21,84 +296,109 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <!-- ===== 顶部信息条：引擎状态 + 提示信息 ===== -->
-        <Grid Grid.Row="0" Margin="20,14,20,8">
-            <TextBlock Text="{Binding EngineInfo}" Style="{StaticResource SubTextStyle}" />
-            <TextBlock Text="{Binding StatusText}" Style="{StaticResource SubTextStyle}"
-                       Foreground="{StaticResource AccentBrush}"
-                       HorizontalAlignment="Right" MaxWidth="520" />
+        <ui:TitleBar Grid.Row="0" Title="Player" Icon="{ui:SymbolIcon MusicNote224}" />
+
+        <!-- ============ 三栏主体：左侧栏 + 内容 ============ -->
+        <Grid Grid.Row="1">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="236" MinWidth="190" MaxWidth="380" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="*" />
+            </Grid.ColumnDefinitions>
+
+            <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8,0,0,0">
+                <DockPanel>
+                    <!-- 底部：歌单操作 + 设置 + 扫描状态 -->
+                    <StackPanel DockPanel.Dock="Bottom" Margin="10,6,10,10">
+                        <Border Height="1" Background="{StaticResource BorderSoftBrush}" Margin="0,0,0,8" />
+
+                        <StackPanel Orientation="Horizontal">
+                            <ui:Button Appearance="Transparent" ToolTip="新建歌单"
+                                       Icon="{ui:SymbolIcon Add24}" Command="{Binding CreatePlaylistCommand}" />
+                            <ui:Button Appearance="Transparent" Margin="4,0,0,0" ToolTip="导入 m3u8"
+                                       Icon="{ui:SymbolIcon ArrowImport24}" Command="{Binding ImportM3uCommand}" />
+                            <ui:Button Appearance="Transparent" Margin="4,0,0,0" ToolTip="设置"
+                                       Icon="{ui:SymbolIcon Settings24}" Command="{Binding OpenSettingsCommand}" />
+                        </StackPanel>
+
+                        <ProgressBar Margin="0,8,0,0" Height="2" Minimum="0" Maximum="100"
+                                     Value="{Binding ScanPercent}"
+                                     Visibility="{Binding IsScanning, Converter={StaticResource BoolToVis}}" />
+                        <TextBlock Text="{Binding ScanStatus}" Style="{StaticResource SubTextStyle}"
+                                   Margin="0,6,0,0" TextWrapping="Wrap" MaxHeight="48" />
+                    </StackPanel>
+
+                    <ListBox ItemsSource="{Binding NavItems}"
+                             SelectedItem="{Binding SelectedNav}"
+                             ItemContainerStyle="{StaticResource NavItemStyle}"
+                             Background="Transparent" BorderThickness="0"
+                             PreviewMouseRightButtonDown="OnNavListPreviewRightButtonDown"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <!-- 分组标题 -->
+                                    <TextBlock Text="{Binding Title}" Style="{StaticResource SectionHeaderStyle}"
+                                               Visibility="{Binding IsHeader, Converter={StaticResource BoolToVis}}" />
+                                    <!-- 普通条目 -->
+                                    <Grid Visibility="{Binding IsHeader, Converter={StaticResource InverseBoolToVisibility}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="Auto" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <ui:SymbolIcon Symbol="{Binding Icon}" FontSize="15" VerticalAlignment="Center"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                                        <TextBlock Grid.Column="1" Text="{Binding Title}" Margin="10,0,6,0"
+                                                   VerticalAlignment="Center" FontSize="12"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   Foreground="{StaticResource TextPrimaryBrush}" />
+                                        <TextBlock Grid.Column="2" Text="{Binding CountText}" VerticalAlignment="Center"
+                                                   FontSize="11" Foreground="{StaticResource TextTertiaryBrush}" />
+                                    </Grid>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                        <ListBox.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="重命名歌单"
+                                          Command="{Binding PlacementTarget.DataContext.RenamePlaylistCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                          CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                                <MenuItem Header="删除歌单"
+                                          Command="{Binding PlacementTarget.DataContext.DeletePlaylistCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
+                                          CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
+                    </ListBox>
+                </DockPanel>
+            </Border>
+
+            <GridSplitter Grid.Column="1" Width="3" HorizontalAlignment="Stretch"
+                          Background="Transparent" />
+
+            <ContentControl Grid.Column="2" Content="{Binding CurrentPage}" />
         </Grid>
 
-        <!-- ===== 主区：播放队列 / 空状态 ===== -->
-        <Grid Grid.Row="1" Margin="14,4,14,10">
-
-            <ListBox x:Name="QueueList"
-                     Visibility="{Binding HasQueue, Converter={StaticResource BoolToVis}}"
-                     ItemsSource="{Binding QueueItems}"
-                     SelectedIndex="{Binding SelectedIndex, Mode=TwoWay}"
-                     ItemContainerStyle="{StaticResource QueueItemStyle}"
-                     Background="Transparent" BorderThickness="0"
-                     ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                     MouseDoubleClick="QueueList_OnMouseDoubleClick">
-                <ListBox.ItemTemplate>
-                    <DataTemplate>
-                        <Grid Height="28">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="18" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="▶" FontSize="9" VerticalAlignment="Center"
-                                       Foreground="{StaticResource AccentBrush}"
-                                       Visibility="{Binding IsCurrent, Converter={StaticResource BoolToVis}}" />
-                            <TextBlock Grid.Column="1" Text="{Binding Display}" FontSize="12"
-                                       VerticalAlignment="Center" TextTrimming="CharacterEllipsis">
-                                <TextBlock.Style>
-                                    <Style TargetType="TextBlock">
-                                        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsCurrent}" Value="True">
-                                                <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
-                        </Grid>
-                    </DataTemplate>
-                </ListBox.ItemTemplate>
-            </ListBox>
-
-            <StackPanel Visibility="{Binding IsQueueEmpty, Converter={StaticResource BoolToVis}}"
-                        HorizontalAlignment="Center" VerticalAlignment="Center">
-                <TextBlock Text="♪" FontSize="46" HorizontalAlignment="Center"
-                           Foreground="{StaticResource TrackEmptyBrush}" />
-                <TextBlock Text="把音频文件或文件夹拖进窗口即可播放" Margin="0,16,0,0"
-                           HorizontalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                <TextBlock Text="mp3 · flac · m4a · ape · wv · ogg · opus · wav · aiff" Margin="0,8,0,0"
-                           HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" />
-                <Button Content="打开文件…" Margin="0,20,0,0" HorizontalAlignment="Center"
-                        Style="{StaticResource PillButtonStyle}"
-                        Command="{Binding OpenFilesCommand}" />
-            </StackPanel>
-        </Grid>
-
-        <!-- ===== 底部播放条 ===== -->
-        <Border Grid.Row="2" Background="{StaticResource SurfaceBrush}"
-                BorderBrush="{StaticResource BorderBrush}" BorderThickness="0,1,0,0">
-            <Grid Margin="20,12">
+        <!-- ============ 底部播放条 ============ -->
+        <Border Grid.Row="2" Background="{StaticResource SurfaceStrongBrush}"
+                BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="0,1,0,0">
+            <Grid Margin="18,10" DataContext="{Binding Player}">
                 <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="*" MinWidth="200" />
+                    <ColumnDefinition Width="*" MinWidth="220" />
                     <ColumnDefinition Width="2.4*" />
-                    <ColumnDefinition Width="*" MaxWidth="230" />
+                    <ColumnDefinition Width="*" MaxWidth="270" />
                 </Grid.ColumnDefinitions>
 
-                <!-- 封面占位 + 曲目信息 -->
-                <StackPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <Border Width="46" Height="46" CornerRadius="6"
-                            Background="{StaticResource SurfaceAltBrush}"
-                            BorderBrush="{StaticResource BorderBrush}" BorderThickness="1">
-                        <TextBlock Text="♪" FontSize="20" HorizontalAlignment="Center" VerticalAlignment="Center"
-                                   Foreground="{StaticResource TextSecondaryBrush}" />
+                <!-- 封面 + 曲目信息 -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border Width="48" Height="48" CornerRadius="6"
+                            Background="{StaticResource HoverBrush}"
+                            BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1">
+                        <Grid>
+                            <ui:SymbolIcon Symbol="MusicNote224" FontSize="20"
+                                           Foreground="{StaticResource TextTertiaryBrush}" />
+                            <Image Source="{Binding CoverImage}" Stretch="UniformToFill" />
+                        </Grid>
                     </Border>
                     <StackPanel Margin="12,0,8,0" VerticalAlignment="Center">
                         <TextBlock Text="{Binding Title}" Style="{StaticResource TitleTextStyle}" />
@@ -113,36 +413,27 @@
                     <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
                         <Button Style="{StaticResource TransportButtonStyle}"
                                 Command="{Binding PreviousCommand}" ToolTip="上一首">
-                            <Path Data="{StaticResource PreviousGeometry}" Fill="{StaticResource TextPrimaryBrush}"
-                                  Width="18" Height="18" Stretch="Uniform" />
+                            <ui:SymbolIcon Symbol="Previous24" FontSize="18" />
                         </Button>
 
-                        <Button Style="{StaticResource PrimaryButtonStyle}" Margin="10,0"
+                        <Button Style="{StaticResource PrimaryTransportButtonStyle}" Margin="10,0"
                                 Command="{Binding PlayPauseCommand}" ToolTip="播放 / 暂停">
-                            <Path Width="17" Height="17" Stretch="Uniform" Fill="#FF10131A">
-                                <Path.Style>
-                                    <Style TargetType="Path">
-                                        <Setter Property="Data" Value="{StaticResource PlayGeometry}" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding IsPlaying}" Value="True">
-                                                <Setter Property="Data" Value="{StaticResource PauseGeometry}" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </Path.Style>
-                            </Path>
+                            <Grid>
+                                <ui:SymbolIcon Symbol="Play24" FontSize="19"
+                                               Visibility="{Binding IsPlaying, Converter={StaticResource InverseBoolToVisibility}}" />
+                                <ui:SymbolIcon Symbol="Pause24" FontSize="19"
+                                               Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVis}}" />
+                            </Grid>
                         </Button>
 
                         <Button Style="{StaticResource TransportButtonStyle}"
                                 Command="{Binding StopCommand}" ToolTip="停止">
-                            <Path Data="{StaticResource StopGeometry}" Fill="{StaticResource TextPrimaryBrush}"
-                                  Width="14" Height="14" Stretch="Uniform" />
+                            <ui:SymbolIcon Symbol="Stop24" FontSize="16" />
                         </Button>
 
                         <Button Style="{StaticResource TransportButtonStyle}" Margin="4,0,0,0"
                                 Command="{Binding NextCommand}" ToolTip="下一首">
-                            <Path Data="{StaticResource NextGeometry}" Fill="{StaticResource TextPrimaryBrush}"
-                                  Width="18" Height="18" Stretch="Uniform" />
+                            <ui:SymbolIcon Symbol="Next24" FontSize="18" />
                         </Button>
                     </StackPanel>
 
@@ -162,16 +453,22 @@
                                 LargeChange="5" SmallChange="1"
                                 PreviewMouseLeftButtonDown="SeekSlider_OnPreviewMouseLeftButtonDown"
                                 PreviewMouseLeftButtonUp="SeekSlider_OnPreviewMouseLeftButtonUp" />
-                        <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource SubTextStyle}"
-                                   Width="42" VerticalAlignment="Center" />
+                        <TextBlock Grid.Column="2" Text="{Binding DurationText}"
+                                   Style="{StaticResource SubTextStyle}" Width="42" VerticalAlignment="Center" />
                     </Grid>
                 </StackPanel>
 
-                <!-- 音量 -->
+                <!-- 播放模式 + 音量 -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal"
                             HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <Path Data="{StaticResource VolumeGeometry}" Fill="{StaticResource TextSecondaryBrush}"
-                          Width="15" Height="15" Stretch="Uniform" VerticalAlignment="Center" />
+                    <Button Style="{StaticResource TransportButtonStyle}"
+                            Command="{Binding CyclePlayModeCommand}"
+                            ToolTip="{Binding PlayModeText}">
+                        <ui:SymbolIcon Symbol="{Binding PlayModeIcon}" FontSize="17" />
+                    </Button>
+                    <ui:SymbolIcon Symbol="Speaker224" FontSize="15" Margin="10,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="{StaticResource TextSecondaryBrush}" />
                     <Slider Width="92" Margin="8,0" Maximum="1" LargeChange="0.1" SmallChange="0.05"
                             Value="{Binding Volume, Mode=TwoWay}"
                             Style="{StaticResource VolumeSliderStyle}" VerticalAlignment="Center" />
@@ -181,4 +478,4 @@
             </Grid>
         </Border>
     </Grid>
-</Window>
+</ui:FluentWindow>

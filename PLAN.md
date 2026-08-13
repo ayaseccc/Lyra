@@ -83,7 +83,7 @@ SQLite 核心表结构：
 ```sql
 tracks(id, path UNIQUE, title, artist, album, album_artist, track_no, disc_no,
        duration_ms, sample_rate, bit_depth, bitrate, file_size, mtime,
-       added_at, play_count, last_played)
+       added_at, play_count, last_played, cover_hash)   -- cover_hash 为 P1 实现时新增
 playlists(id, name, sort_order, source, source_id, synced_at)   -- source: local | netease
 playlist_items(playlist_id, position, track_id NULL,            -- 本地曲目指向 tracks
        online_id NULL, online_title, online_artist, online_album, online_duration_ms)
@@ -247,6 +247,16 @@ FileSystemWatcher）、TagLibSharp 读标签与封面 hash 缓存（标题/艺�
 「入库并开播」。
 约束：扫描不得阻塞 UI 线程；完成后用一个大目录实测扫描耗时并核对 P1 验收标准。
 ```
+
+**P1 实施记录（2026-08-13 完成，待用户实机验收）**：
+
+- **数据层**：`Infra/Db.cs` 按第 5 节 schema 建库（WAL + busy_timeout），`tracks` 表比原 schema 多一列 `cover_hash`（封面按内容 hash 存盘，表里要有一列指过去）；`Infra/ConfigService.cs` 落地第 9 节的 config.json 结构（apiKey 字段先占位，P3 才用）。**文件夹虚拟歌单刻意不落库**，由曲目路径与根目录在内存中推导，这样根目录增删或改名后不会留下脏数据。
+- **扫描**：`LibraryScanner` 全量/增量（判据 mtime + 文件大小）、并行读标签、分批事务写入、进度单调上报、可取消。**安全策略**：某个根目录本次不可访问（U 盘拔了、网络盘断了）时，其下曲目一律保留不删——否则会连带清空 `playlist_items`，盘回来后 id 变化导致歌单内容永久丢失。
+- **标签**：TagLibSharp 标签优先、文件名兜底；兜底会先剥掉曲号前缀（`01 - 歌手 - 标题` 不会把 01 当成歌手，这是实测 10000 首样本时发现并修掉的）。
+- **播放**：P0 的 `PlaybackQueue` 已删除，由 `Audio/PlaybackList` 取代（顺序/列表循环/单曲循环/随机四种模式，列表内容由 PlaylistService 与媒体库各视图提供）。
+- **界面**：按用户决定引入 WPF-UI 4.3.0（FluentWindow + TitleBar + Mica + ControlsDictionary 的 Fluent 控件样式），播放器自有的调色板与控件样式在 `Themes/Player.xaml`；**刻意不引用 WPF-UI 的主题资源键**（StaticResource 键缺失会在启动时崩溃，自己定义可控）。左侧栏为「媒体库（全部歌曲/专辑/艺术家）+ 歌单 + 文件夹」三组导航。
+- **与规划的偏差**：① 专辑/艺术家视图做成**虚拟化列表**（缩略图 + 名称 + 计数）而非封面墙——WPF 没有内置的虚拟化 WrapPanel，万级曲库下封面墙会卡；② 列表里暂无「正在播放」行高亮，播放中曲目只在播放条显示，进 backlog；③ 曲目加入歌单目前走右键菜单「添加到歌单」，把曲目拖到侧边栏歌单上的交互进 backlog。
+- **沙盒实测（2 核 Linux 容器，10000 个文件、10 个顶层文件夹 × 20 专辑 × 50 首）**：全量扫描 **1.7 秒**、增量（无变化）**0.1 秒**、增删各一 **0.3 秒**、万级内存过滤单次 **1.0 毫秒**；封面去重有效（4759 首命中同一封面只存 1 个文件）；歌单增删改 / 拖拽排序回写 / m3u8 导出再导入 500 首全部正确；重启后曲库、歌单、文件夹虚拟歌单完整重建。注意真实曲库单文件远大于测试样本（读标签只读文件头，仍应远低于 2 分钟验收线），最终以用户实机为准。
 
 ### P2 ASIO 与输出设备（本项目的灵魂，单独一个阶段慢慢调）
 

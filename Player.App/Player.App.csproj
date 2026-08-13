@@ -13,11 +13,11 @@
     <!-- 原生 bass 系列为 x64，进程必须是 64 位 -->
     <PlatformTarget>x64</PlatformTarget>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <ApplicationIcon></ApplicationIcon>
   </PropertyGroup>
 
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="WPF-UI" Version="4.3.0" />
   </ItemGroup>
 
   <ItemGroup>

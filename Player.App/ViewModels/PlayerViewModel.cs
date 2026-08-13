@@ -1,65 +1,55 @@
-using System.Collections.ObjectModel;
-using System.IO;
 using System.Windows;
+using System.Windows.Media;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
-using Microsoft.Win32;
+using Player.App.Infra;
 using Player.Core.Audio;
+using Player.Core.Infra;
+using Player.Core.Library;
 using Serilog;
+using Wpf.Ui.Controls;
 
 namespace Player.App.ViewModels;
 
-/// <summary>队列里的一行。</summary>
-public sealed partial class QueueItemViewModel : ObservableObject
-{
-    public QueueItemViewModel(string path)
-    {
-        Path = path;
-        Display = System.IO.Path.GetFileName(path);
-    }
-
-    public string Path { get; }
-
-    public string Display { get; }
-
-    [ObservableProperty]
-    private bool _isCurrent;
-}
-
 /// <summary>
-/// P0 主视图模型：把 Player.Core 的播放引擎与队列包装成界面可绑定的状态。
-/// 引擎事件可能来自 BASS 线程，这里统一切回 UI 线程再更新。
+/// 底部播放条。P1 起播放列表由 <see cref="PlaybackList"/> 承载（取代 P0 的 PlaybackQueue），
+/// 曲目信息优先用媒体库里的标签，技术参数仍取自 BASS 打开流后的真实值。
 /// </summary>
 public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 {
     private readonly IPlaybackEngine _engine;
-    private readonly PlaybackQueue _queue = new();
+    private readonly PlaybackList _list = new();
     private readonly Dispatcher _dispatcher;
     private readonly DispatcherTimer _timer;
 
     private bool _isSeeking;
+    private double? _pendingSeekTarget;
+    private DateTime _seekGuardUntil;
+    private DateTime _lastTrackStartedAt;
+    private int _consecutiveQuickEnds;
     private bool _disposed;
 
-    /// <summary>刚 seek 到的目标位置。BASS 在 seek 后的极短时间内仍可能报告旧位置，
-    /// 引擎位置追上目标之前不允许定时器回写滑条，否则滑块会弹回去（P0.1）。</summary>
-    private double? _pendingSeekTarget;
-
-    private DateTime _seekGuardUntil;
+    /// <summary>连续跳过坏文件的上限。曲库所在盘掉线时不能拿一万首在 UI 线程上硬试。</summary>
+    private const int MaxSkipAttempts = 10;
 
     public PlayerViewModel(IPlaybackEngine engine)
     {
         _engine = engine;
         _dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
 
+        Volume = Math.Clamp(ConfigService.Current.Ui.Volume, 0, 1);
         _engine.Volume = Volume;
+
+        PlayMode = Enum.TryParse<PlayMode>(ConfigService.Current.Ui.PlayMode, out var mode)
+            ? mode
+            : PlayMode.RepeatAll;
+        _list.Mode = PlayMode;
+
         _engine.TrackOpened += OnTrackOpened;
         _engine.StateChanged += OnStateChanged;
         _engine.TrackEnded += OnTrackEnded;
         _engine.ErrorOccurred += OnErrorOccurred;
-
-        EngineInfo = $"BASS {BassRuntime.BassVersion} · 输出 {BassRuntime.OutputDeviceName} · " +
-                     $"格式插件 {BassRuntime.LoadedPlugins.Count} 个";
 
         _timer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
         {
@@ -69,7 +59,10 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _timer.Start();
     }
 
-    public ObservableCollection<QueueItemViewModel> QueueItems { get; } = new();
+    public PlaybackList List => _list;
+
+    /// <summary>当前播放的曲目，供列表页高亮用。</summary>
+    public TrackRecord? CurrentTrack => _list.Current;
 
     [ObservableProperty]
     private string _title = "未在播放";
@@ -78,7 +71,10 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     private string _artist = string.Empty;
 
     [ObservableProperty]
-    private string _technicalInfo = "拖入音频文件即可播放";
+    private string _technicalInfo = "拖入音频文件或先在设置里添加音乐文件夹";
+
+    [ObservableProperty]
+    private ImageSource? _coverImage;
 
     [ObservableProperty]
     private bool _isPlaying;
@@ -89,17 +85,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     private bool _hasTrack;
 
     [ObservableProperty]
-    [NotifyPropertyChangedFor(nameof(HasQueue))]
-    private bool _isQueueEmpty = true;
-
-    [ObservableProperty]
     private string _statusText = string.Empty;
-
-    [ObservableProperty]
-    private string _engineInfo = string.Empty;
-
-    [ObservableProperty]
-    private int _selectedIndex = -1;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PositionText))]
@@ -113,7 +99,10 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(VolumePercentText))]
     private double _volume = 0.6;
 
-    public bool HasQueue => !IsQueueEmpty;
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(PlayModeIcon))]
+    [NotifyPropertyChangedFor(nameof(PlayModeText))]
+    private PlayMode _playMode = PlayMode.RepeatAll;
 
     public string PositionText => FormatTime(HasTrack ? PositionSeconds : 0);
 
@@ -121,9 +110,57 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     public string VolumePercentText => ((int)Math.Round(Volume * 100)) + "%";
 
-    /// <summary>音量是 UI → 引擎的单向写入：引擎侧不存在任何回写音量的路径，
-    /// 定时器也不读引擎音量，滑条因此不会被抢（P0.1）。</summary>
-    partial void OnVolumeChanged(double value) => _engine.Volume = value;
+    public SymbolRegular PlayModeIcon => PlayMode switch
+    {
+        PlayMode.Sequential => SymbolRegular.ArrowRight24,
+        PlayMode.RepeatAll => SymbolRegular.ArrowRepeatAll24,
+        PlayMode.RepeatOne => SymbolRegular.ArrowRepeat124,
+        PlayMode.Shuffle => SymbolRegular.ArrowShuffle24,
+        _ => SymbolRegular.ArrowRepeatAll24
+    };
+
+    public string PlayModeText => PlayMode switch
+    {
+        PlayMode.Sequential => "顺序播放",
+        PlayMode.RepeatAll => "列表循环",
+        PlayMode.RepeatOne => "单曲循环",
+        PlayMode.Shuffle => "随机播放",
+        _ => "列表循环"
+    };
+
+    /// <summary>音量是 UI → 引擎的单向写入，定时器不回写（P0.1）。</summary>
+    partial void OnVolumeChanged(double value)
+    {
+        _engine.Volume = value;
+        ConfigService.Current.Ui.Volume = value;
+    }
+
+    partial void OnPlayModeChanged(PlayMode value)
+    {
+        _list.Mode = value;
+        ConfigService.Current.Ui.PlayMode = value.ToString();
+    }
+
+    // ---------------- 对外播放入口 ----------------
+
+    /// <summary>用一批曲目替换播放列表并从指定位置开始播放。</summary>
+    public void PlayTracks(IReadOnlyList<TrackRecord> tracks, int startIndex, string sourceName)
+    {
+        if (tracks.Count == 0)
+        {
+            StatusText = "这个列表是空的";
+            return;
+        }
+
+        _list.Replace(tracks, sourceName, startIndex);
+        PlayCurrentOrSkip();
+    }
+
+    public void PlayTrack(TrackRecord track, IReadOnlyList<TrackRecord> context, string sourceName)
+    {
+        var index = context.ToList().FindIndex(t => ReferenceEquals(t, track));
+        PlayTracks(context, index < 0 ? 0 : index, sourceName);
+    }
 
     // ---------------- 命令 ----------------
 
@@ -132,12 +169,12 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     {
         if (!HasTrack)
         {
-            if (_queue.Count == 0)
+            if (_list.Count == 0)
             {
-                StatusText = "队列为空，先拖入或打开音频文件";
+                StatusText = "还没有可播放的内容";
                 return;
             }
-            PlayIndex(Math.Max(0, _queue.CurrentIndex));
+            PlayCurrentOrSkip();
             return;
         }
 
@@ -149,29 +186,31 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     {
         _engine.Stop();
         PositionSeconds = 0;
+        _pendingSeekTarget = null;
     }
 
     [RelayCommand]
     private void Next()
     {
-        if (_queue.Count == 0)
+        if (_list.Count == 0)
         {
-            StatusText = "队列为空，先拖入或打开音频文件";
+            StatusText = "还没有可播放的内容";
             return;
         }
 
-        if (!_queue.HasNext)
+        if (_list.MoveNext(userInitiated: true) is null)
         {
             StatusText = "已经是最后一首";
             return;
         }
-        PlayIndex(_queue.CurrentIndex + 1);
+
+        PlayCurrentOrSkip();
     }
 
     [RelayCommand]
     private void Previous()
     {
-        // 播放超过 3 秒时，"上一首"先回到本曲开头（常见播放器行为）
+        // 播放超过 3 秒时先回到本曲开头，这是常见播放器的习惯
         if (HasTrack && PositionSeconds > 3)
         {
             _engine.Seek(TimeSpan.Zero);
@@ -179,63 +218,33 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             return;
         }
 
-        if (!_queue.HasPrevious)
+        if (_list.MovePrevious() is null)
         {
             _engine.Seek(TimeSpan.Zero);
             PositionSeconds = 0;
             return;
         }
-        PlayIndex(_queue.CurrentIndex - 1);
+
+        PlayCurrentOrSkip();
     }
 
     [RelayCommand]
-    private void OpenFiles()
+    private void CyclePlayMode()
     {
-        var dialog = new OpenFileDialog
+        PlayMode = PlayMode switch
         {
-            Title = "选择音频文件",
-            Multiselect = true,
-            Filter = AudioFormats.DialogFilter
+            PlayMode.Sequential => PlayMode.RepeatAll,
+            PlayMode.RepeatAll => PlayMode.RepeatOne,
+            PlayMode.RepeatOne => PlayMode.Shuffle,
+            _ => PlayMode.Sequential
         };
-
-        if (dialog.ShowDialog() == true)
-            LoadPaths(dialog.FileNames);
+        StatusText = PlayModeText;
     }
 
-    // ---------------- 外部调用（拖放 / 双击） ----------------
+    // ---------------- 进度条（P0.1 修复后的时序） ----------------
 
-    /// <summary>拖入或打开一批路径：整批替换队列并从第一首开始播放。</summary>
-    public void LoadPaths(IEnumerable<string> paths)
-    {
-        var files = ExpandPaths(paths);
-        if (files.Count == 0)
-        {
-            StatusText = "没有找到可播放的音频文件";
-            return;
-        }
-
-        _queue.Replace(files);
-        RebuildQueueItems();
-        StatusText = $"已加入 {files.Count} 个文件";
-        PlayIndex(0);
-    }
-
-    public void PlayQueueItem(int index)
-    {
-        if (index < 0 || index >= _queue.Count) return;
-        PlayIndex(index);
-    }
-
-    /// <summary>
-    /// 用户开始操作进度条（鼠标按下 / 开始拖动）。可重复调用。
-    /// 从这一刻起到 <see cref="EndSeek"/> 为止，定时器不再回写进度条。
-    /// </summary>
     public void BeginSeek() => _isSeeking = true;
 
-    /// <summary>
-    /// 用户松手：此时才真正执行 seek。鼠标松开与拖动结束两个事件都会调到这里，
-    /// 靠 _isSeeking 保证一次操作只 seek 一次。
-    /// </summary>
     public void EndSeek(double seconds)
     {
         if (!_isSeeking) return;
@@ -245,7 +254,6 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
         _engine.Seek(TimeSpan.FromSeconds(seconds));
 
-        // 乐观更新：立刻按目标值显示，不等下一个 tick 从引擎读回
         PositionSeconds = seconds;
         _pendingSeekTarget = seconds;
         _seekGuardUntil = DateTime.UtcNow.AddMilliseconds(700);
@@ -253,89 +261,53 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     // ---------------- 内部 ----------------
 
-    private void PlayIndex(int index)
+    private void PlayCurrentOrSkip()
     {
-        // 坏文件（损坏 / 缺插件）自动往后跳；用循环而不是递归，
-        // 拖入一堆坏文件时才不会把调用栈越堆越深
-        var target = index;
+        var attempts = Math.Min(MaxSkipAttempts, Math.Max(1, _list.Count));
 
-        while (true)
+        for (var i = 0; i < attempts; i++)
         {
-            var path = _queue.MoveTo(target);
-            if (path is null) return;
+            var track = _list.Current;
+            if (track is null) return;
 
-            if (_engine.Open(path))
+            if (_engine.Open(track.Path))
             {
                 _engine.Play();
-                UpdateQueueHighlight();
+                ApplyTrackDisplay(track);
+                BumpPlayCount(track);
+                _lastTrackStartedAt = DateTime.UtcNow;
+                OnPropertyChanged(nameof(CurrentTrack));
                 return;
             }
 
-            if (!_queue.HasNext)
-            {
-                UpdateQueueHighlight();
-                return;
-            }
-
-            target++;
+            // 打开失败（文件被删/格式插件缺失）——跳到下一首继续试
+            if (_list.MoveNext(userInitiated: true) is null) break;
         }
+
+        StatusText = "连续多个文件都打不开，已停止（详见 data/logs）";
+        OnPropertyChanged(nameof(CurrentTrack));
     }
 
-    private void RebuildQueueItems()
+    private void ApplyTrackDisplay(TrackRecord track)
     {
-        QueueItems.Clear();
-        foreach (var path in _queue.Items)
-            QueueItems.Add(new QueueItemViewModel(path));
-        IsQueueEmpty = QueueItems.Count == 0;
+        Title = track.DisplayTitle;
+        Artist = track.DisplayArtist;
+        CoverImage = CoverImageCache.Get(track.CoverHash);
     }
 
-    private void UpdateQueueHighlight()
+    private static void BumpPlayCount(TrackRecord track)
     {
-        for (var i = 0; i < QueueItems.Count; i++)
-            QueueItems[i].IsCurrent = i == _queue.CurrentIndex;
-        SelectedIndex = _queue.CurrentIndex;
-    }
+        if (track.Id <= 0) return;
 
-    private static List<string> ExpandPaths(IEnumerable<string> paths)
-    {
-        var result = new List<string>();
-
-        foreach (var path in paths)
+        Task.Run(() =>
         {
-            try
-            {
-                if (Directory.Exists(path))
-                {
-                    // IgnoreInaccessible 必须开：拖入盘符根目录会遇到 System Volume Information
-                    // 之类的无权限目录，默认设置直接抛异常，会导致整批文件被丢弃
-                    var options = new EnumerationOptions
-                    {
-                        RecurseSubdirectories = true,
-                        IgnoreInaccessible = true
-                    };
-
-                    result.AddRange(Directory
-                        .EnumerateFiles(path, "*", options)
-                        .Where(AudioFormats.IsSupported)
-                        .OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
-                }
-                else if (File.Exists(path) && AudioFormats.IsSupported(path))
-                {
-                    result.Add(path);
-                }
-            }
-            catch (Exception ex)
-            {
-                Log.Warning(ex, "展开拖入路径失败：{Path}", path);
-            }
-        }
-
-        return result;
+            try { LibraryDb.IncrementPlayCount(track.Id); }
+            catch (Exception ex) { Log.Debug(ex, "更新播放次数失败"); }
+        });
     }
 
     private void OnTimerTick(object? sender, EventArgs e)
     {
-        // 用户正在操作进度条：绝不回写，避免和用户输入抢滑块
         if (_isSeeking || !HasTrack) return;
         if (_engine.State != PlayerState.Playing) return;
 
@@ -344,24 +316,21 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         if (_pendingSeekTarget is { } target)
         {
             var caughtUp = Math.Abs(enginePosition - target) <= 1.0;
-            if (!caughtUp && DateTime.UtcNow < _seekGuardUntil)
-                return; // 引擎还在报 seek 之前的旧位置，先不回写
-
+            if (!caughtUp && DateTime.UtcNow < _seekGuardUntil) return;
             _pendingSeekTarget = null;
         }
 
         PositionSeconds = enginePosition;
     }
 
-    private void OnTrackOpened(object? sender, TrackInfo track) => _dispatcher.BeginInvoke(() =>
+    // 引擎只提供技术参数与时长；标题/艺术家一律以媒体库标签为准
+    private void OnTrackOpened(object? sender, TrackInfo info) => _dispatcher.BeginInvoke(() =>
     {
-        Title = track.DisplayTitle;
-        Artist = string.IsNullOrWhiteSpace(track.Artist) ? "未知艺术家" : track.Artist;
-        TechnicalInfo = track.TechnicalSummary;
-        DurationSeconds = track.Duration.TotalSeconds > 0 ? track.Duration.TotalSeconds : 1;
+        TechnicalInfo = info.TechnicalSummary;
+        DurationSeconds = info.Duration.TotalSeconds > 0 ? info.Duration.TotalSeconds : 1;
         PositionSeconds = 0;
         HasTrack = true;
-        // 这里不清空 StatusText：跳过坏文件的提示要留给用户看见
+        _pendingSeekTarget = null;
     });
 
     private void OnStateChanged(object? sender, PlayerState state) => _dispatcher.BeginInvoke(() =>
@@ -370,33 +339,47 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
         if (state == PlayerState.Stopped && _engine.CurrentTrack is null)
         {
-            // 打开失败导致没有任何流：把播放条整体复位，
-            // 否则会停留在上一首的标题上、而按钮已经无流可操作
             HasTrack = false;
             IsPlaying = false;
             PositionSeconds = 0;
             DurationSeconds = 1;
             Title = "未在播放";
             Artist = string.Empty;
-            TechnicalInfo = "拖入音频文件即可播放";
+            TechnicalInfo = string.Empty;
+            CoverImage = null;
         }
     });
 
-    // 该事件来自 BASS 回调线程，必须切回 UI 线程后再操作流（释放/换曲）
+    // 来自 BASS 回调线程，必须切回 UI 线程再换曲（换曲会释放旧流）
     private void OnTrackEnded(object? sender, EventArgs e) => _dispatcher.BeginInvoke(() =>
     {
-        if (_queue.HasNext)
+        // 0 长度或立刻结束的文件会让"结束→下一首"在消息队列里空转，连着几首就停下来
+        if (DateTime.UtcNow - _lastTrackStartedAt < TimeSpan.FromMilliseconds(600))
         {
-            PlayIndex(_queue.CurrentIndex + 1);
+            if (++_consecutiveQuickEnds >= 5)
+            {
+                _consecutiveQuickEnds = 0;
+                _engine.Stop();
+                IsPlaying = false;
+                StatusText = "连续多首文件无法正常播放，已停止";
+                return;
+            }
         }
         else
         {
-            // 回卷到开头，保证界面显示的 0:00 与流的真实位置一致，再点播放才有声
+            _consecutiveQuickEnds = 0;
+        }
+
+        if (_list.MoveNext(userInitiated: false) is null)
+        {
             _engine.Stop();
             IsPlaying = false;
             PositionSeconds = 0;
             StatusText = "播放结束";
+            return;
         }
+
+        PlayCurrentOrSkip();
     });
 
     private void OnErrorOccurred(object? sender, string message) =>
@@ -406,9 +389,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     {
         if (double.IsNaN(seconds) || double.IsInfinity(seconds) || seconds < 0) seconds = 0;
         var time = TimeSpan.FromSeconds(seconds);
-        return time.TotalHours >= 1
-            ? time.ToString(@"h\:mm\:ss")
-            : time.ToString(@"m\:ss");
+        return time.TotalHours >= 1 ? time.ToString(@"h\:mm\:ss") : time.ToString(@"m\:ss");
     }
 
     public void Dispose()
@@ -423,5 +404,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _engine.StateChanged -= OnStateChanged;
         _engine.TrackEnded -= OnTrackEnded;
         _engine.ErrorOccurred -= OnErrorOccurred;
+
+        ConfigService.Save();
     }
 }

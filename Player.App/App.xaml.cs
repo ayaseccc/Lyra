@@ -3,6 +3,7 @@ using System.Windows.Threading;
 using Player.App.ViewModels;
 using Player.Core.Audio;
 using Player.Core.Infra;
+using Player.Core.Library;
 using Serilog;
 
 namespace Player.App;
@@ -10,9 +11,12 @@ namespace Player.App;
 public partial class App : Application
 {
     private PlaybackEngine? _engine;
-    private PlayerViewModel? _viewModel;
+    private LibraryService? _library;
+    private PlaylistService? _playlists;
+    private PlayerViewModel? _player;
+    private ShellViewModel? _shell;
 
-    protected override void OnStartup(StartupEventArgs e)
+    protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
@@ -36,6 +40,19 @@ public partial class App : Application
 
         try
         {
+            Db.Initialize();
+        }
+        catch (Exception ex)
+        {
+            Log.Fatal(ex, "媒体库数据库初始化失败");
+            MessageBox.Show("媒体库数据库打开失败：\n" + ex.Message + "\n\n详见 data/logs 下的日志。",
+                "Player", MessageBoxButton.OK, MessageBoxImage.Error);
+            Shutdown(1);
+            return;
+        }
+
+        try
+        {
             BassRuntime.Initialize();
         }
         catch (Exception ex)
@@ -50,23 +67,39 @@ public partial class App : Application
         }
 
         _engine = new PlaybackEngine();
-        _viewModel = new PlayerViewModel(_engine);
+        _library = new LibraryService();
+        _playlists = new PlaylistService(_library);
+        _player = new PlayerViewModel(_engine);
+        _shell = new ShellViewModel(_library, _playlists, _player);
 
-        var window = new MainWindow { DataContext = _viewModel };
+        var window = new MainWindow { DataContext = _shell };
         MainWindow = window;
         window.Show();
 
-        // 支持命令行传入文件（"用 Player 打开"）
-        if (e.Args.Length > 0)
-            _viewModel.LoadPaths(e.Args);
+        try
+        {
+            // 载入曲库 + 启动增量扫描，全程不阻塞 UI
+            await _shell.InitializeAsync();
+
+            if (e.Args.Length > 0)
+                await _shell.HandleDroppedPathsAsync(e.Args);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "启动初始化失败");
+        }
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
-        // 顺序很重要：先停 UI 计时器与事件订阅，再放流，最后放 BASS，保证退出无残留线程
-        _viewModel?.Dispose();
+        // 顺序很重要：先停 UI 侧的订阅与计时器，再停监听与扫描，最后放流与 BASS
+        _shell?.Dispose();
+        _player?.Dispose();
+        _library?.StopWatching();
+        _library?.Dispose();
         _engine?.Dispose();
         BassRuntime.Shutdown();
+        ConfigService.Save();
         LogSetup.Shutdown();
 
         base.OnExit(e);
