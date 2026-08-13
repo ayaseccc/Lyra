@@ -228,12 +228,16 @@ public static class Program
         RunClientPureFunctionChecks();
 
         // 存储层需要临时库
+        // 内嵌歌词（P3.1-③）：用 format-test 的 FLAC 样本 + TagLibSharp 写入后读回
+        var sampleDir = Path.GetFullPath(Path.Combine("publish", "format-test", "hires"));
+        RunEmbeddedLyricsChecks(sampleDir);
+
         var dbPath = Path.Combine(Path.GetTempPath(), "harness-lyrics-" + Guid.NewGuid().ToString("N")[..8] + ".db");
         try
         {
             Db.Initialize(dbPath);
             RunCacheStoreChecks();
-            await RunLyricsServiceFallbackChecksAsync();
+            await RunLyricsServiceFallbackChecksAsync(sampleDir);
         }
         finally
         {
@@ -427,6 +431,62 @@ public static class Program
         Console.WriteLine();
     }
 
+
+    // ---------------- 内嵌标签歌词（P3.1-③） ----------------
+
+    private static void RunEmbeddedLyricsChecks(string sampleDir)
+    {
+        Console.WriteLine("=== 内嵌标签歌词（TagLibSharp 读 USLT/LYRICS） ===");
+
+        var sample = Path.Combine(sampleDir, "flac_44k_440Hz.flac");
+        if (!File.Exists(sample))
+        {
+            Console.WriteLine("  跳过：找不到 format-test 样本（publish/format-test/hires/flac_44k_440Hz.flac）");
+            return;
+        }
+
+        var target = Path.Combine(Path.GetTempPath(), "embedded-" + Guid.NewGuid().ToString("N")[..8] + ".flac");
+        File.Copy(sample, target);
+
+        try
+        {
+            // 形态一：带 LRC 时间轴
+            using (var file = TagLib.File.Create(target))
+            {
+                file.Tag.Lyrics = "[00:01.00]内嵌第一句\n[00:05.00]内嵌第二句";
+                file.Save();
+            }
+
+            var lyrics = TagReader.ReadLyrics(target);
+            Check("内嵌歌词读回", lyrics is not null && lyrics.Contains("内嵌第一句"));
+
+            var doc = LrcParser.Parse(lyrics);
+            Check("内嵌带时间轴 → 滚动形态", doc.HasTimeline && doc.Lines.Count == 2);
+
+            // 形态二：纯文本
+            using (var file2 = TagLib.File.Create(target))
+            {
+                file2.Tag.Lyrics = "没有时间轴的纯文本歌词";
+                file2.Save();
+            }
+
+            var plain = LrcParser.Parse(TagReader.ReadLyrics(target));
+            Check("内嵌纯文本 → 静态形态", !plain.HasTimeline && plain.Lines.Count == 1 && plain.PlainText.Contains("纯文本"));
+
+            // 没有内嵌歌词的文件 → null
+            File.Delete(target);
+            File.Copy(sample, target);
+            Check("无内嵌歌词返回 null", TagReader.ReadLyrics(target) is null);
+        }
+        finally
+        {
+            try { File.Delete(target); }
+            catch { /* 忽略清理失败 */ }
+        }
+
+        Console.WriteLine();
+    }
+
     // ---------------- 缓存存储（临时库） ----------------
 
     private static void RunCacheStoreChecks()
@@ -462,9 +522,9 @@ public static class Program
 
     // ---------------- LyricsService 离线降级 ----------------
 
-    private static async Task RunLyricsServiceFallbackChecksAsync()
+    private static async Task RunLyricsServiceFallbackChecksAsync(string sampleDir)
     {
-        Console.WriteLine("=== LyricsService 离线降级 ===");
+        Console.WriteLine("=== LyricsService 离线降级与优先级 ===");
 
         using var client = new ChkszClient();
         using var service = new LyricsService(client);
@@ -503,6 +563,46 @@ public static class Program
             // 同一首歌第二次加载不再尝试匹配（会话记忆，不烧额度）
             var again = await service.LoadForTrackAsync(noLrc);
             Check("会话内重复加载稳定返回 Empty", again.IsEmpty);
+
+            // ---- P3.1-③ 内嵌歌词与优先级链 ----
+            var sample = Path.Combine(sampleDir, "flac_44k_440Hz.flac");
+            if (File.Exists(sample))
+            {
+                var embeddedPath = Path.Combine(dir, "embedded.flac");
+                File.Copy(sample, embeddedPath);
+                using (var file = TagLib.File.Create(embeddedPath))
+                {
+                    file.Tag.Lyrics = "[00:01.00]内嵌第一句\n[00:05.00]内嵌第二句";
+                    file.Save();
+                }
+
+                var embeddedTrack = new TrackRecord
+                {
+                    Id = 3,
+                    Path = embeddedPath,
+                    Title = "embedded",
+                    Artist = "test",
+                    DurationMs = 300000
+                };
+
+                // 无 .lrc 有内嵌 → Embedded，且不碰 API（无 Key 环境下也验证来源标记）
+                var embeddedResult = await service.LoadForTrackAsync(embeddedTrack);
+                Check("无 .lrc 有内嵌 → 内嵌标签来源", embeddedResult.Source == LyricSource.Embedded);
+                Check("内嵌带时间轴 → 滚动", embeddedResult.Document.HasTimeline && embeddedResult.Document.Lines.Count == 2);
+                Check("有内嵌时不尝试在线匹配（会话内不烧额度）",
+                    service.GetNeteaseId(embeddedPath) is null);
+
+                // 同目录 .lrc 存在 → .lrc 优先于内嵌
+                await File.WriteAllTextAsync(Path.Combine(dir, "embedded.lrc"),
+                    "[00:01.00]本地歌词优先\n[00:05.00]第二句");
+                var lrcFirst = await service.LoadForTrackAsync(embeddedTrack);
+                Check(".lrc 存在时优先于内嵌标签", lrcFirst.Source == LyricSource.LocalFile);
+                Check(".lrc 内容确实来自文件", lrcFirst.Document.Lines[0].Text == "本地歌词优先");
+            }
+            else
+            {
+                Console.WriteLine("  跳过：内嵌优先级断言（找不到 format-test 样本）");
+            }
         }
         finally
         {

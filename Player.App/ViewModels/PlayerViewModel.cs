@@ -59,14 +59,12 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _engine.TrackTransitioned += OnTrackTransitioned;
         _engine.OutputChanged += OnOutputChanged;
         _engine.ErrorOccurred += OnErrorOccurred;
-        _client.Quota.Changed += OnQuotaChanged;
 
         Lyrics = new LyricsViewModel(_lyrics, this);
 
         // 输出设置在这里只是"记下"，真正开设备要等第一次播放（见 PlaybackEngine 注释）
         _engine.ApplyOutputSettings(ConfigService.Current.Output.ToSettings());
         RefreshOutputInfo();
-        RefreshQuotaText();
 
         _timer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
         {
@@ -80,16 +78,6 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     /// <summary>歌词覆盖层（点击底部封面展开）。</summary>
     public LyricsViewModel Lyrics { get; private set; } = null!;
-
-    /// <summary>播放条上的额度指示（P3）："API 剩 358" 或 "在线未启用"。</summary>
-    public string QuotaText
-    {
-        get
-        {
-            if (!ChkszClient.HasApiKey) return "在线未启用";
-            return _client.Quota.DisplayText;
-        }
-    }
 
     /// <summary>当前播放的曲目，供列表页高亮用。</summary>
     public TrackRecord? CurrentTrack => _list.Current;
@@ -160,12 +148,6 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         IsBitPerfect = _engine.IsBitPerfect;
         OnPropertyChanged(nameof(OutputHint));
     }
-
-    /// <summary>额度头解析线程不定，切回 UI 线程再刷新。</summary>
-    private void OnQuotaChanged(object? sender, EventArgs e) =>
-        _dispatcher.BeginInvoke(RefreshQuotaText);
-
-    private void RefreshQuotaText() => OnPropertyChanged(nameof(QuotaText));
 
     private void OnOutputChanged(object? sender, EventArgs e) =>
         _dispatcher.BeginInvoke(RefreshOutputInfo);
@@ -552,7 +534,6 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _engine.TrackTransitioned -= OnTrackTransitioned;
         _engine.OutputChanged -= OnOutputChanged;
         _engine.ErrorOccurred -= OnErrorOccurred;
-        _client.Quota.Changed -= OnQuotaChanged;
 
         Lyrics.Dispose();
         ConfigService.Save();

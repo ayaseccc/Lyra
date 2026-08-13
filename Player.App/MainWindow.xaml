@@ -430,6 +430,15 @@
                                 </StackPanel>
                             </Border>
 
+                            <Border Background="{StaticResource HoverBrush}" CornerRadius="6" Padding="10,8" Margin="0,8,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Cloud24" FontSize="14" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource AccentBrush}" />
+                                    <TextBlock Text="{Binding QuotaDisplay}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                               TextWrapping="Wrap" Style="{StaticResource SubTextStyle}" />
+                                </StackPanel>
+                            </Border>
+
                             <TextBlock Margin="0,8,0,0" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
                                        Text="Key 只保存在本地 data/config.json（不会出现在日志里）。歌词自动匹配、在线搜索、歌单同步都依赖它；今日免费额度以服务端响应头为准，见播放条右侧指示。" />
                         </StackPanel>
@@ -621,14 +630,6 @@
                 <!-- 播放模式 + 音量 -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal"
                             HorizontalAlignment="Right" VerticalAlignment="Center">
-                    <!-- 额度指示（P3）：数字来自 X-Quota-* 响应头 -->
-                    <StackPanel Orientation="Horizontal" Margin="0,0,10,0"
-                                ToolTip="ChKSz API 今日剩余额度（以服务端响应头为准）">
-                        <ui:SymbolIcon Symbol="Cloud24" FontSize="14" VerticalAlignment="Center"
-                                       Foreground="{StaticResource TextTertiaryBrush}" />
-                        <TextBlock Text="{Binding QuotaText}" Margin="4,0,0,0" VerticalAlignment="Center"
-                                   Style="{StaticResource SubTextStyle}" />
-                    </StackPanel>
                     <Button Style="{StaticResource TransportButtonStyle}"
                             Command="{Binding CyclePlayModeCommand}"
                             ToolTip="{Binding PlayModeText}">
@@ -647,8 +648,9 @@
             </Grid>
         </Border>
 
-        <!-- ============ 歌词覆盖层（P3）：点击播放条封面展开 ============ -->
-        <Grid Grid.RowSpan="3" Panel.ZIndex="20"
+        <!-- ============ 歌词覆盖层（P3.1-②）：只覆盖主区+播放条（Row 1-2），
+             标题栏始终可点；退出三通道：页内关闭按钮 / Esc / 点击封面收起 ============ -->
+        <Grid Grid.Row="1" Grid.RowSpan="2" Panel.ZIndex="20"
               Visibility="{Binding Player.Lyrics.IsOpen, Converter={StaticResource BoolToVis}}"
               Background="#F0121418">
             <Grid.RowDefinitions>
@@ -711,7 +713,17 @@
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling"
                              MouseLeftButtonUp="OnLyricListClick"
-                             Visibility="{Binding Player.Lyrics.HasTimeline, Converter={StaticResource BoolToVis}}" />
+                             Visibility="{Binding Player.Lyrics.HasTimeline, Converter={StaticResource BoolToVis}}">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <StackPanel>
+                                    <TextBlock Text="{Binding PrimaryText}" FontSize="15" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding SecondaryText}" FontSize="12" Opacity="0.65"
+                                               TextWrapping="Wrap" Margin="0,3,0,0" />
+                                </StackPanel>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
 
                     <!-- 无时间轴：整篇静态显示 -->
                     <ScrollViewer VerticalScrollBarVisibility="Auto"

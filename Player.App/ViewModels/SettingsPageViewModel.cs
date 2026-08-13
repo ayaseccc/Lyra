@@ -366,12 +366,42 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             ? ApiKey[..Math.Min(4, ApiKey.Length)] + "…"
             : ApiKey[..6] + "…" + ApiKey[^4..];
 
+    /// <summary>额度展示（P3.1-④ 从播放条迁到设置页）：免费/付费余量 + UTC+8 重置时间。</summary>
+    public string QuotaDisplay
+    {
+        get
+        {
+            var quota = _client.Quota;
+
+            if (quota.FreeRemaining is null)
+                return "尚未收到额度信息（点「测试连接」后显示，数字以服务端响应头为准）";
+
+            var text = $"今日免费剩余 {quota.FreeRemaining}";
+            if (quota.PaidRemaining is > 0) text += $" · 付费 {quota.PaidRemaining}";
+            text += $" · {NextResetUtc8():HH:mm}（UTC+8）重置";
+
+            return text;
+        }
+    }
+
+    /// <summary>下一个 UTC+8 零点（额度重置时刻）。</summary>
+    private static DateTimeOffset NextResetUtc8()
+    {
+        TimeZoneInfo cst;
+        try { cst = TimeZoneInfo.FindSystemTimeZoneById("China Standard Time"); }
+        catch { cst = TimeZoneInfo.CreateCustomTimeZone("CST", TimeSpan.FromHours(8), "CST", "CST"); }
+
+        var nowCst = TimeZoneInfo.ConvertTime(DateTimeOffset.UtcNow, cst);
+        return TimeZoneInfo.ConvertTime(new DateTimeOffset(nowCst.Date.AddDays(1), cst.GetUtcOffset(nowCst)), TimeZoneInfo.Utc);
+    }
+
     private void RefreshKeyStatus()
     {
         KeyStatus = string.IsNullOrWhiteSpace(ConfigService.Current.ApiKey)
             ? "还没有填写 API Key。在线搜索 / 歌词 / 歌单同步都依赖它（只保存在本地 data/config.json）。"
-            : $"已配置（{KeyMasked}）。今日免费额度以服务端响应头为准，见播放条右侧指示。";
+            : $"已配置（{KeyMasked}）。额度与限流以服务端响应头为准，见下方今日额度。";
         OnPropertyChanged(nameof(KeyMasked));
+        OnPropertyChanged(nameof(QuotaDisplay));
     }
 
     /// <summary>把 Key 写入 config.json。空输入 = 清除。</summary>
@@ -411,8 +441,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
             if (result.Success)
             {
-                KeyStatus = $"连接正常：搜索到 {result.Data?.Total ?? 0} 条结果，剩余额度 {_client.Quota.FreeRemaining?.ToString() ?? "未知"}。";
                 RefreshKeyStatus();
+                OnPropertyChanged(nameof(QuotaDisplay));
                 KeyStatus = $"连接正常（剩余额度 {_client.Quota.FreeRemaining?.ToString() ?? "未知"}）。";
             }
             else if (result.AuthFailed)

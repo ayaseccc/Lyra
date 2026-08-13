@@ -78,6 +78,27 @@ public static partial class TagReader
     }
 
     /// <summary>
+    /// 读取内嵌歌词（P3.1-③ 新需求）：ID3v2 USLT / APE Lyrics / VorbisComment LYRICS /
+    /// MP4 ©lyr 等。TagLibSharp 的 <see cref="TagLib.Tag.Lyrics"/> 已做聚合；返回 null
+    /// 表示文件没有内嵌歌词（也可能是标签读不出来）。内容可能是纯文本或带 LRC 时间轴，
+    /// 由调用方按 LRC 解析决定展示形态。
+    /// </summary>
+    public static string? ReadLyrics(string path)
+    {
+        try
+        {
+            using var file = TagLib.File.Create(path);
+            var lyrics = file.Tag?.Lyrics;
+            return string.IsNullOrWhiteSpace(lyrics) ? null : lyrics.Trim();
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "读取内嵌歌词失败：{File}", path);
+            return null;
+        }
+    }
+
+    /// <summary>
     /// 标签缺失时用文件名兜底。先剥掉开头的曲号（"01 - "、"01."、"01_"），
     /// 再按「歌手 - 标题」惯例拆分——否则 "01 - 周杰伦 - 晴天.flac" 会把 01 当成歌手。
     /// </summary>

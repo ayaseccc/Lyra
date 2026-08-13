@@ -330,9 +330,14 @@ public partial class MainWindow : FluentWindow
 
     // ================= 歌词覆盖层（P3） =================
 
-    /// <summary>点击底部封面：展开 / 收起歌词覆盖层。</summary>
-    private void OnCoverClick(object sender, MouseButtonEventArgs e) =>
-        Player?.Lyrics.ToggleOpenCommand.Execute(null);
+    /// <summary>点击底部封面：已打开则收起，否则展开（P3.1-② 三种退出之一）。</summary>
+    private void OnCoverClick(object sender, MouseButtonEventArgs e)
+    {
+        var lyrics = Player?.Lyrics;
+        if (lyrics is null) return;
+        if (lyrics.IsOpen) lyrics.CloseCommand.Execute(null);
+        else lyrics.ToggleOpenCommand.Execute(null);
+    }
 
     /// <summary>点击歌词行：跳到对应时间点。</summary>
     private void OnLyricListClick(object sender, MouseButtonEventArgs e)

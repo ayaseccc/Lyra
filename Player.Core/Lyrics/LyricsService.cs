@@ -4,7 +4,7 @@ using Serilog;
 
 namespace Player.Core.Lyrics;
 
-/// <summary>歌词来源（PLAN 第 7.2 节三级优先级）。</summary>
+/// <summary>歌词来源（P3.1-③ 起为四级优先级：.lrc > 内嵌标签 > 缓存 > API）。</summary>
 public enum LyricSource
 {
     /// <summary>没找到歌词。</summary>
@@ -12,6 +12,9 @@ public enum LyricSource
 
     /// <summary>同目录同名 .lrc 文件。</summary>
     LocalFile,
+
+    /// <summary>文件内嵌标签歌词（USLT / LYRICS 等，P3.1-③ 新需求）。</summary>
+    Embedded,
 
     /// <summary>本地缓存（lyrics_cache 表）。</summary>
     Cache,
@@ -33,6 +36,7 @@ public sealed class LyricsLoadResult
     public string SourceText => Source switch
     {
         LyricSource.LocalFile => "本地 .lrc",
+        LyricSource.Embedded => "内嵌标签",
         LyricSource.Cache => "缓存",
         LyricSource.Online => "在线",
         _ => string.Empty
@@ -45,10 +49,11 @@ public sealed class LyricsLoadResult
 }
 
 /// <summary>
-/// 歌词服务（PLAN 第 7.2 节）：
+/// 歌词服务（PLAN 第 7.2 节 + P3.1-③）：
 ///
-/// 优先级：同目录同名 .lrc 文件 ＞ 本地缓存 ＞ ChKSz API（取歌词前先按 标题+歌手+时长
-/// 匹配网易云 ID，结果持久化到 tracks.netease_id，支持手动重新匹配）。
+/// 优先级：同目录同名 .lrc 文件 ＞ 文件内嵌标签歌词（USLT/LYRICS，有内嵌不碰 API）＞
+/// 本地缓存 ＞ ChKSz API（取歌词前先按 标题+歌手+时长匹配网易云 ID，结果持久化到
+/// tracks.netease_id，支持手动重新匹配）。
 ///
 /// 铁律：
 /// ① 任何在线失败都**不影响本地播放**，也不弹窗 —— 歌词页显示"未找到"即可；
@@ -139,6 +144,14 @@ public sealed class LyricsService : IDisposable
                 // .lrc 文件坏了就降级到在线，不把错误抛给播放链路
                 Log.Warning(ex, "读取本地 .lrc 失败：{Path}", lrcPath);
             }
+        }
+
+        // ---- 第二优先级：内嵌标签歌词（P3.1-③）。有内嵌就不碰缓存和 API ----
+        var embedded = await Task.Run(() => TagReader.ReadLyrics(track.Path)).ConfigureAwait(false);
+        if (!string.IsNullOrWhiteSpace(embedded))
+        {
+            var document = LrcParser.Parse(embedded);
+            return BuildResult(document, LyricSource.Embedded, track.Path);
         }
 
         var neteaseId = GetNeteaseId(track.Path);
