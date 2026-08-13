@@ -159,6 +159,8 @@
                                 Maximum="{Binding DurationSeconds}"
                                 Value="{Binding PositionSeconds, Mode=TwoWay}"
                                 IsEnabled="{Binding HasTrack}"
+                                LargeChange="5" SmallChange="1"
+                                PreviewMouseLeftButtonDown="SeekSlider_OnPreviewMouseLeftButtonDown"
                                 PreviewMouseLeftButtonUp="SeekSlider_OnPreviewMouseLeftButtonUp" />
                         <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource SubTextStyle}"
                                    Width="42" VerticalAlignment="Center" />

@@ -13,13 +13,12 @@ namespace Player.App;
 
 public partial class MainWindow : Window
 {
-    private bool _isDraggingSeek;
-
     public MainWindow()
     {
         InitializeComponent();
 
-        // 进度条拖动：拖动期间暂停由计时器回写进度，松手后才真正 seek
+        // 进度条：鼠标按下或开始拖动就"接管"滑条（定时器停止回写），松手才真正 seek。
+        // 点击跳转和拖动两条路径都走同一对 Begin/EndSeek，由 VM 保证一次操作只 seek 一次。
         SeekSlider.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler(OnSeekDragStarted));
         SeekSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(OnSeekDragCompleted));
 
@@ -90,24 +89,13 @@ public partial class MainWindow : Window
 
     // ---------------- 进度条 ----------------
 
-    private void OnSeekDragStarted(object sender, DragStartedEventArgs e)
-    {
-        _isDraggingSeek = true;
-        Vm?.BeginSeek();
-    }
+    private void OnSeekDragStarted(object sender, DragStartedEventArgs e) => Vm?.BeginSeek();
 
-    private void OnSeekDragCompleted(object sender, DragCompletedEventArgs e)
-    {
-        _isDraggingSeek = false;
-        Vm?.EndSeek(SeekSlider.Value);
-    }
+    private void OnSeekDragCompleted(object sender, DragCompletedEventArgs e) => Vm?.EndSeek(SeekSlider.Value);
 
-    // 隧道事件先于 DragCompleted 触发；拖动场景交给 DragCompleted，避免一次操作 seek 两遍
-    private void SeekSlider_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e)
-    {
-        if (_isDraggingSeek) return;
-        Vm?.EndSeek(SeekSlider.Value);
-    }
+    private void SeekSlider_OnPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e) => Vm?.BeginSeek();
+
+    private void SeekSlider_OnPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => Vm?.EndSeek(SeekSlider.Value);
 
     // ---------------- 深色标题栏 ----------------
 

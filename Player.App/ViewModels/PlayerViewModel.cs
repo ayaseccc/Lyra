@@ -41,6 +41,12 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     private bool _isSeeking;
     private bool _disposed;
 
+    /// <summary>刚 seek 到的目标位置。BASS 在 seek 后的极短时间内仍可能报告旧位置，
+    /// 引擎位置追上目标之前不允许定时器回写滑条，否则滑块会弹回去（P0.1）。</summary>
+    private double? _pendingSeekTarget;
+
+    private DateTime _seekGuardUntil;
+
     public PlayerViewModel(IPlaybackEngine engine)
     {
         _engine = engine;
@@ -115,6 +121,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     public string VolumePercentText => ((int)Math.Round(Volume * 100)) + "%";
 
+    /// <summary>音量是 UI → 引擎的单向写入：引擎侧不存在任何回写音量的路径，
+    /// 定时器也不读引擎音量，滑条因此不会被抢（P0.1）。</summary>
     partial void OnVolumeChanged(double value) => _engine.Volume = value;
 
     // ---------------- 命令 ----------------
@@ -218,14 +226,29 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         PlayIndex(index);
     }
 
+    /// <summary>
+    /// 用户开始操作进度条（鼠标按下 / 开始拖动）。可重复调用。
+    /// 从这一刻起到 <see cref="EndSeek"/> 为止，定时器不再回写进度条。
+    /// </summary>
     public void BeginSeek() => _isSeeking = true;
 
+    /// <summary>
+    /// 用户松手：此时才真正执行 seek。鼠标松开与拖动结束两个事件都会调到这里，
+    /// 靠 _isSeeking 保证一次操作只 seek 一次。
+    /// </summary>
     public void EndSeek(double seconds)
     {
+        if (!_isSeeking) return;
         _isSeeking = false;
+
         if (!HasTrack) return;
+
         _engine.Seek(TimeSpan.FromSeconds(seconds));
-        PositionSeconds = _engine.Position.TotalSeconds;
+
+        // 乐观更新：立刻按目标值显示，不等下一个 tick 从引擎读回
+        PositionSeconds = seconds;
+        _pendingSeekTarget = seconds;
+        _seekGuardUntil = DateTime.UtcNow.AddMilliseconds(700);
     }
 
     // ---------------- 内部 ----------------
@@ -312,9 +335,22 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     private void OnTimerTick(object? sender, EventArgs e)
     {
+        // 用户正在操作进度条：绝不回写，避免和用户输入抢滑块
         if (_isSeeking || !HasTrack) return;
         if (_engine.State != PlayerState.Playing) return;
-        PositionSeconds = _engine.Position.TotalSeconds;
+
+        var enginePosition = _engine.Position.TotalSeconds;
+
+        if (_pendingSeekTarget is { } target)
+        {
+            var caughtUp = Math.Abs(enginePosition - target) <= 1.0;
+            if (!caughtUp && DateTime.UtcNow < _seekGuardUntil)
+                return; // 引擎还在报 seek 之前的旧位置，先不回写
+
+            _pendingSeekTarget = null;
+        }
+
+        PositionSeconds = enginePosition;
     }
 
     private void OnTrackOpened(object? sender, TrackInfo track) => _dispatcher.BeginInvoke(() =>
