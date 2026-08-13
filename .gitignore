@@ -23,3 +23,4 @@ tools/pack-nupkg.ps1
 tools/fix-wpfui-id.ps1
 tools/fix-wpfui-id2.ps1
 tools/fix-wpfui-dep.ps1
+nuget.config
