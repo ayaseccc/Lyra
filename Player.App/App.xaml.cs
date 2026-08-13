@@ -70,7 +70,7 @@ public partial class App : Application
         _library = new LibraryService();
         _playlists = new PlaylistService(_library);
         _player = new PlayerViewModel(_engine);
-        _shell = new ShellViewModel(_library, _playlists, _player);
+        _shell = new ShellViewModel(_library, _playlists, _player, _engine);
 
         var window = new MainWindow { DataContext = _shell };
         MainWindow = window;

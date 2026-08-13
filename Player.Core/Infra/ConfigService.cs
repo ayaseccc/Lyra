@@ -20,14 +20,62 @@ public sealed class AppConfig
 
 public sealed class OutputConfig
 {
-    /// <summary>P2 起可选 asio / wasapi / directsound；P1 只有 directsound。</summary>
+    /// <summary>directsound / wasapi / asio</summary>
     public string Backend { get; set; } = "directsound";
 
+    /// <summary>设备名（按名字记，插拔后序号会变）。</summary>
     public string Device { get; set; } = string.Empty;
 
     public bool Exclusive { get; set; } = true;
 
+    /// <summary>follow / fixed</summary>
     public string RateStrategy { get; set; } = "follow";
+
+    public int FixedSampleRate { get; set; } = 48000;
+
+    /// <summary>ASIO 缓冲区（采样点），0 = 驱动首选。</summary>
+    public int AsioBufferSamples { get; set; }
+
+    /// <summary>ASIO 起始输出声道，0 = 设备的第一对。</summary>
+    public int AsioFirstChannel { get; set; }
+
+    public int WasapiBufferMs { get; set; } = 50;
+
+    public Audio.OutputSettings ToSettings() => new()
+    {
+        Backend = Backend?.ToLowerInvariant() switch
+        {
+            "asio" => Audio.OutputBackendKind.Asio,
+            "wasapi" => Audio.OutputBackendKind.Wasapi,
+            _ => Audio.OutputBackendKind.DirectSound
+        },
+        DeviceName = Device ?? string.Empty,
+        Exclusive = Exclusive,
+        RateMode = string.Equals(RateStrategy, "fixed", StringComparison.OrdinalIgnoreCase)
+            ? Audio.SampleRateMode.Fixed
+            : Audio.SampleRateMode.Follow,
+        FixedSampleRate = FixedSampleRate > 0 ? FixedSampleRate : 48000,
+        AsioBufferSamples = AsioBufferSamples,
+        AsioFirstChannel = AsioFirstChannel,
+        WasapiBufferMs = WasapiBufferMs > 0 ? WasapiBufferMs : 50
+    };
+
+    public void CopyFrom(Audio.OutputSettings settings)
+    {
+        Backend = settings.Backend switch
+        {
+            Audio.OutputBackendKind.Asio => "asio",
+            Audio.OutputBackendKind.Wasapi => "wasapi",
+            _ => "directsound"
+        };
+        Device = settings.DeviceName;
+        Exclusive = settings.Exclusive;
+        RateStrategy = settings.RateMode == Audio.SampleRateMode.Fixed ? "fixed" : "follow";
+        FixedSampleRate = settings.FixedSampleRate;
+        AsioBufferSamples = settings.AsioBufferSamples;
+        AsioFirstChannel = settings.AsioFirstChannel;
+        WasapiBufferMs = settings.WasapiBufferMs;
+    }
 }
 
 public sealed class LibraryConfig

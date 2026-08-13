@@ -2,7 +2,9 @@
 
 Windows 本地音乐播放器（类 foobar2000 的轻量定位 + 现代简洁界面），核心卖点是 ASIO / WASAPI 独占的位完美输出，以及通过 ChKSz API 接入的网易云在线能力。
 
-完整规划见 [PLAN.md](PLAN.md)。**当前进度：P0（基础播放）+ P0.1（滑条修复）+ P1（媒体库 / 歌单 / 三栏主界面）已完成。**
+完整规划见 [PLAN.md](PLAN.md)。**当前进度：P0（基础播放）+ P1（媒体库 / 歌单 / 三栏主界面）已验收；P2（ASIO / WASAPI 独占 / 无缝播放）已完成，待实机验收。**
+
+ASIO 实机验收步骤见 [docs/ASIO-验收指引.md](docs/ASIO-验收指引.md)。
 
 ---
 
@@ -45,8 +47,12 @@ dotnet publish Player.App -c Release -r win-x64 --self-contained -o publish
 MusicPlayer/
 ├── PLAN.md                 开发规划（唯一事实来源，改需求先改它）
 ├── Player.sln
+├── docs/                   ASIO 实机验收指引等
+├── tools/Player.Harness/   离线自测工具（无缝决策 + 媒体库端到端）
 ├── Player.Core/            全部业务逻辑，纯 net8.0，不引用任何 WPF 类型
-│   ├── Audio/              BassRuntime、PlaybackEngine、PlaybackList（含四种播放模式）
+│   ├── Audio/              BassRuntime、PlaybackEngine（decode → bassmix → 输出后端）、
+│   │                       IOutputBackend + ASIO / WASAPI / 系统输出三后端、
+│   │                       SeamlessPolicy、PlaybackList（四种播放模式）
 │   ├── Library/            LibraryDb / LibraryScanner / LibraryWatcher / LibraryService
 │   │                       TagReader（TagLibSharp）、PlaylistService、M3uFile
 │   └── Infra/              AppPaths、Db（SQLite）、ConfigService、LogSetup（Serilog）
@@ -81,10 +87,11 @@ data/
 | `bassopus.dll` | Opus |
 | `bass_aac.dll` | AAC / MP4（第三方 add-on，下载路径在 `files/z/2/` 下） |
 | `bassalac.dll` | ALAC |
+| `bassasio.dll` | ASIO 输出（P2） |
+| `bassmix.dll` | 混音器，无缝播放靠它（P2） |
+| `basswasapi.dll` | WASAPI 独占 / 共享输出（P2） |
 
 要手动补充或升级时：从官网下载对应 zip，取出其中 **`x64/` 子目录里的 DLL**，放进 `native/x64/`，重新构建即可。程序启动时会逐个 `Bass.PluginLoad`，加载结果写在日志里。
-
-P2 做 ASIO / WASAPI 时还需要再补 `bassasio.dll`、`bassmix.dll`、`basswasapi.dll`（同样取 x64 版本）。
 
 > BASS 个人非商业使用免费；将来若要商用需向 un4seen 购买授权（PLAN 第 11 节）。
 
@@ -102,8 +109,22 @@ P2 做 ASIO / WASAPI 时还需要再补 `bassasio.dll`、`bassmix.dll`、`basswa
 
 **拖放（P1）**：拖入文件夹 = 加入媒体库并开播；拖入文件 = 直接播放（不入库）。
 
-**还没有的**（按规划分别属于后续阶段）：ASIO / WASAPI 独占与无缝播放（P2）；在线搜索、歌词、歌单同步、下载（P3–P5）；媒体键、托盘、SMTC（P6）。
+**输出与无缝（P2）**：三种输出后端可在运行时切换，不需要重启——ASIO（采样率跟随源文件，可位完美）、WASAPI 独占/共享、系统输出（兜底）；同采样率的连续曲目样本级无缝衔接（提前 5 秒预载）；采样率跟随或固定 + 重采样两种策略；设备被占用、拔出、驱动复位一律自动回退系统输出并提示；左下角常驻输出指示，位完美时点亮。
 
-## 六、安全约定
+**还没有的**（按规划分别属于后续阶段）：在线搜索、歌词、歌单同步、下载（P3–P5）；媒体键、托盘、SMTC（P6）。
+
+## 六、离线自测
+
+```powershell
+# 无缝衔接与播放模式的决策逻辑（纯函数，不需要声卡）
+dotnet run --project tools/Player.Harness -- seamless
+
+# 扫描 / 歌单 / 持久化端到端（需要一个真实的音乐目录）
+dotnet run --project tools/Player.Harness -- library "D:\Music" 
+```
+
+ASIO / WASAPI 的出声效果没法离线验证，按 [docs/ASIO-验收指引.md](docs/ASIO-验收指引.md) 在设备上实听。
+
+## 七、安全约定
 
 API Key 只能存在 `data/config.json` 并在设置页填写，**永远不进仓库、不进日志、不进任何报错信息**。提交前请确认 `git status` 里没有 `data/` 目录。

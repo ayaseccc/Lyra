@@ -128,6 +128,31 @@ public sealed class PlaybackList
         return MoveTo(previous);
     }
 
+    /// <summary>
+    /// 看一眼"自动续播时的下一曲"是谁，但不移动游标。用于提前预载做无缝衔接。
+    /// 单曲循环下返回当前曲（重复播放同一首同样是无缝的）。
+    /// </summary>
+    public TrackRecord? PeekNext()
+    {
+        if (_items.Count == 0) return null;
+
+        if (_mode == PlayMode.RepeatOne) return Current;
+
+        if (_mode == PlayMode.Shuffle)
+        {
+            if (_shuffleOrder.Count != _items.Count) return null;   // 洗牌表还没建好
+            var next = _shufflePosition + 1;
+            if (next >= _shuffleOrder.Count) return null;           // 一轮放完要重洗，无法预知
+            return _items[_shuffleOrder[next]];
+        }
+
+        var index = CurrentIndex + 1;
+        if (index >= _items.Count)
+            return _mode == PlayMode.RepeatAll ? _items[0] : null;
+
+        return _items[index];
+    }
+
     public void Clear()
     {
         _items.Clear();

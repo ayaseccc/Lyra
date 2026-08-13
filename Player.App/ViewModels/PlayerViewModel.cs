@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -49,7 +50,13 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _engine.TrackOpened += OnTrackOpened;
         _engine.StateChanged += OnStateChanged;
         _engine.TrackEnded += OnTrackEnded;
+        _engine.TrackTransitioned += OnTrackTransitioned;
+        _engine.OutputChanged += OnOutputChanged;
         _engine.ErrorOccurred += OnErrorOccurred;
+
+        // 输出设置在这里只是"记下"，真正开设备要等第一次播放（见 PlaybackEngine 注释）
+        _engine.ApplyOutputSettings(ConfigService.Current.Output.ToSettings());
+        RefreshOutputInfo();
 
         _timer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
         {
@@ -110,6 +117,69 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     public string VolumePercentText => ((int)Math.Round(Volume * 100)) + "%";
 
+    /// <summary>播放条上的输出指示，如「ASIO · TOPPING E1x2 · 96000 Hz · 缓冲 256 samples」。</summary>
+    [ObservableProperty]
+    private string _outputDescription = string.Empty;
+
+    /// <summary>音量 100% 且没有重采样时为真，界面提示"位完美"。</summary>
+    [ObservableProperty]
+    private bool _isBitPerfect;
+
+    public string OutputHint => IsBitPerfect
+        ? "位完美输出（音量 100%，未重采样）"
+        : Math.Abs(Volume - 1.0) > 0.0001
+            ? "音量不是 100%，输出经过了软件衰减"
+            : "输出经过重采样（采样率与源文件不一致）";
+
+    private void RefreshOutputInfo()
+    {
+        OutputDescription = _engine.OutputDescription;
+        IsBitPerfect = _engine.IsBitPerfect;
+        OnPropertyChanged(nameof(OutputHint));
+    }
+
+    private void OnOutputChanged(object? sender, EventArgs e) =>
+        _dispatcher.BeginInvoke(RefreshOutputInfo);
+
+    /// <summary>无缝衔接已经发生：引擎自己换到了预载好的下一曲，这里把列表游标和界面追上去。</summary>
+    private void OnTrackTransitioned(object? sender, string path) => _dispatcher.BeginInvoke(() =>
+    {
+        var next = _list.PeekNext();
+        if (next is not null && string.Equals(next.Path, path, StringComparison.OrdinalIgnoreCase))
+        {
+            _list.MoveNext(userInitiated: false);
+        }
+        else
+        {
+            // 预载之后用户可能改了列表/模式，游标对不上就按路径找回来，
+            // 否则后续 PeekNext 会一直基于错误位置，界面和实际播放永久错位
+            var matched = _list.Items.FirstOrDefault(t =>
+                string.Equals(t.Path, path, StringComparison.OrdinalIgnoreCase));
+
+            if (matched is not null) _list.MoveToTrack(matched);
+            else Log.Warning("无缝切到了不在当前列表里的曲目：{Path}", path);
+        }
+
+        var track = _list.Current;
+        if (track is not null && string.Equals(track.Path, path, StringComparison.OrdinalIgnoreCase))
+        {
+            ApplyTrackDisplay(track);
+            BumpPlayCount(track);
+        }
+
+        // 无缝路径不会触发 TrackOpened，技术信息要在这里自己刷新
+        if (_engine.CurrentTrack is { } info) TechnicalInfo = info.TechnicalSummary;
+
+        _lastTrackStartedAt = DateTime.UtcNow;
+        _consecutiveQuickEnds = 0;
+        _pendingSeekTarget = null;
+        PositionSeconds = 0;
+        DurationSeconds = _engine.Duration.TotalSeconds > 0 ? _engine.Duration.TotalSeconds : 1;
+        RefreshOutputInfo();
+        OnPropertyChanged(nameof(CurrentTrack));
+        StatusText = "无缝衔接：" + (track?.DisplayTitle ?? Path.GetFileNameWithoutExtension(path));
+    });
+
     public SymbolRegular PlayModeIcon => PlayMode switch
     {
         PlayMode.Sequential => SymbolRegular.ArrowRight24,
@@ -133,12 +203,17 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     {
         _engine.Volume = value;
         ConfigService.Current.Ui.Volume = value;
+        IsBitPerfect = _engine.IsBitPerfect;
+        OnPropertyChanged(nameof(OutputHint));
     }
 
     partial void OnPlayModeChanged(PlayMode value)
     {
         _list.Mode = value;
         ConfigService.Current.Ui.PlayMode = value.ToString();
+
+        // 换了模式，之前预载的"下一曲"可能已经不是下一曲了
+        _engine.ClearPreload();
     }
 
     // ---------------- 对外播放入口 ----------------
@@ -345,6 +420,19 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         }
 
         PositionSeconds = enginePosition;
+
+        TryPreloadNext();
+    }
+
+    /// <summary>PLAN 第 4 节：下一曲提前 5 秒预创建解码流，采样率一致时可做到样本级无缝。</summary>
+    private void TryPreloadNext()
+    {
+        if (!SeamlessPolicy.ShouldPreload(PositionSeconds, DurationSeconds, _engine.IsNextSeamless)) return;
+
+        var next = _list.PeekNext();
+        if (next is null) return;
+
+        _engine.PreloadNext(next.Path);
     }
 
     // 引擎只提供技术参数与时长；标题/艺术家一律以媒体库标签为准
@@ -355,6 +443,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         PositionSeconds = 0;
         HasTrack = true;
         _pendingSeekTarget = null;
+        RefreshOutputInfo();
     });
 
     private void OnStateChanged(object? sender, PlayerState state) => _dispatcher.BeginInvoke(() =>
@@ -427,6 +516,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _engine.TrackOpened -= OnTrackOpened;
         _engine.StateChanged -= OnStateChanged;
         _engine.TrackEnded -= OnTrackEnded;
+        _engine.TrackTransitioned -= OnTrackTransitioned;
+        _engine.OutputChanged -= OnOutputChanged;
         _engine.ErrorOccurred -= OnErrorOccurred;
 
         ConfigService.Save();

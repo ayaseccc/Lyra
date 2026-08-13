@@ -6,6 +6,8 @@ Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Player.Core", "Player.Core\
 EndProject
 Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Player.App", "Player.App\Player.App.csproj", "{2C1B4E70-4E1A-4B2E-9A11-0D0C6E1F1A02}"
 EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Player.Harness", "tools\Player.Harness\Player.Harness.csproj", "{2C1B4E70-4E1A-4B2E-9A11-0D0C6E1F1A03}"
+EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
@@ -20,6 +22,10 @@ Global
 		{2C1B4E70-4E1A-4B2E-9A11-0D0C6E1F1A02}.Debug|Any CPU.Build.0 = Debug|Any CPU
 		{2C1B4E70-4E1A-4B2E-9A11-0D0C6E1F1A02}.Release|Any CPU.ActiveCfg = Release|Any CPU
 		{2C1B4E70-4E1A-4B2E-9A11-0D0C6E1F1A02}.Release|Any CPU.Build.0 = Release|Any CPU
+		{2C1B4E70-4E1A-4B2E-9A11-0D0C6E1F1A03}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{2C1B4E70-4E1A-4B2E-9A11-0D0C6E1F1A03}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{2C1B4E70-4E1A-4B2E-9A11-0D0C6E1F1A03}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{2C1B4E70-4E1A-4B2E-9A11-0D0C6E1F1A03}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE
