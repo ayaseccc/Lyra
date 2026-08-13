@@ -31,6 +31,7 @@ public partial class MainWindow : FluentWindow
     private Point _dragStartPoint;
     private TrackRecord? _draggingTrack;
     private TrackRecord[] _dragPayload = Array.Empty<TrackRecord>();
+    private bool _seekPressedOnSlider;
 
     public MainWindow()
     {
@@ -174,9 +175,21 @@ public partial class MainWindow : FluentWindow
             return;
 
         // 任何列表的行都可以拖（拖到侧边栏歌单 = 加入），是否允许落回本列表由落点决定
-        var data = new DataObject(TrackDragFormat, _dragPayload);
-        DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Copy | DragDropEffects.Move);
+        try
+        {
+            var data = new DataObject(TrackDragFormat, _dragPayload);
+            DragDrop.DoDragDrop((DependencyObject)sender, data, DragDropEffects.Copy | DragDropEffects.Move);
+        }
+        finally
+        {
+            ClearDragState();
+        }
+    }
 
+    private void OnTrackListPreviewMouseLeftButtonUp(object sender, MouseButtonEventArgs e) => ClearDragState();
+
+    private void ClearDragState()
+    {
         _draggingTrack = null;
         _dragPayload = Array.Empty<TrackRecord>();
     }
@@ -218,7 +231,9 @@ public partial class MainWindow : FluentWindow
         if (!page.CanEdit) return;
 
         var targetRow = FindDataContext<TrackRecord>(e.OriginalSource as DependencyObject);
-        var insertIndex = page.IndexOfRow(targetRow);
+
+        // 列表正被排序/过滤时可见顺序与底层顺序不一致，落点没有意义，一律追加到末尾
+        var insertIndex = page.IsViewSortedOrFiltered ? page.Items.Count : page.IndexOfRow(targetRow);
 
         if (e.Data.GetDataPresent(DataFormats.FileDrop))
         {
@@ -255,14 +270,33 @@ public partial class MainWindow : FluentWindow
     // ================= 进度条（P0.1 时序 + P1.1-② 点击路径修复） =================
 
     /// <summary>鼠标一按下就接管滑条：从这一刻起定时器不再回写，拖动不会"不跟手"。</summary>
-    private void OnSeekPressed(object sender, MouseButtonEventArgs e) => Player?.BeginSeek();
+    private void OnSeekPressed(object sender, MouseButtonEventArgs e)
+    {
+        _seekPressedOnSlider = true;
+        Player?.BeginSeek();
+    }
 
     /// <summary>释放即 seek —— 点击和拖动都走这里，且必然执行一次。</summary>
-    private void OnSeekReleased(object sender, MouseButtonEventArgs e) => Player?.EndSeek(SeekSlider.Value);
+    private void OnSeekReleased(object sender, MouseButtonEventArgs e)
+    {
+        // 按下不在滑条上（只是抬手时正好经过）就不该产生跳转
+        if (!_seekPressedOnSlider) return;
 
-    private void OnSeekDragStarted(object sender, DragStartedEventArgs e) => Player?.BeginSeek();
+        _seekPressedOnSlider = false;
+        Player?.EndSeek(SeekSlider.Value);
+    }
 
-    private void OnSeekDragCompleted(object sender, DragCompletedEventArgs e) => Player?.EndSeek(SeekSlider.Value);
+    private void OnSeekDragStarted(object sender, DragStartedEventArgs e)
+    {
+        _seekPressedOnSlider = true;
+        Player?.BeginSeek();
+    }
+
+    private void OnSeekDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        _seekPressedOnSlider = false;
+        Player?.EndSeek(SeekSlider.Value);
+    }
 
     // ================= 工具 =================
 

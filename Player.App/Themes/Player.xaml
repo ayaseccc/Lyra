@@ -241,6 +241,18 @@
                     </Setter.Value>
                 </Setter>
             </DataTrigger>
+
+            <!-- 只有手工歌单条目才有右键菜单，且命令绑在条目自己身上 -->
+            <DataTrigger Binding="{Binding IsPlaylist}" Value="True">
+                <Setter Property="ContextMenu">
+                    <Setter.Value>
+                        <ContextMenu>
+                            <MenuItem Header="重命名歌单" Command="{Binding RenameCommand}" />
+                            <MenuItem Header="删除歌单" Command="{Binding DeleteCommand}" />
+                        </ContextMenu>
+                    </Setter.Value>
+                </Setter>
+            </DataTrigger>
         </Style.Triggers>
     </Style>
 

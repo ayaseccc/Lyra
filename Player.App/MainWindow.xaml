@@ -67,6 +67,7 @@
                               SelectionChanged="OnTrackListSelectionChanged"
                               MouseDoubleClick="OnTrackListDoubleClick"
                               PreviewMouseLeftButtonDown="OnTrackListPreviewMouseLeftButtonDown"
+                              PreviewMouseLeftButtonUp="OnTrackListPreviewMouseLeftButtonUp"
                               MouseMove="OnTrackListMouseMove"
                               DragOver="OnTrackListDragOver"
                               Drop="OnTrackListDrop"
@@ -105,14 +106,16 @@
                         </ListView.ContextMenu>
                     </ListView>
 
-                    <!-- 曲库页空状态 -->
+                    <!-- 曲库页空状态。图标与说明文字设为不可命中：它们盖在列表上面，
+                         否则会把拖放事件截走，导致拖到空列表中央走成"入库并开播"；
+                         按钮本身必须保持可点 -->
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                                 Visibility="{Binding ShowLibraryEmptyState, Converter={StaticResource BoolToVis}}">
-                        <ui:SymbolIcon Symbol="MusicNote224" FontSize="42" HorizontalAlignment="Center"
+                        <ui:SymbolIcon IsHitTestVisible="False" Symbol="MusicNote224" FontSize="42" HorizontalAlignment="Center"
                                        Foreground="{StaticResource TrackEmptyBrush}" />
-                        <TextBlock Text="这里还没有歌曲" Margin="0,14,0,0" HorizontalAlignment="Center"
+                        <TextBlock IsHitTestVisible="False" Text="这里还没有歌曲" Margin="0,14,0,0" HorizontalAlignment="Center"
                                    Style="{StaticResource TitleTextStyle}" />
-                        <TextBlock Text="把音乐文件夹拖进窗口，或点下面的按钮添加媒体库目录" Margin="0,6,0,0"
+                        <TextBlock IsHitTestVisible="False" Text="把音乐文件夹拖进窗口，或点下面的按钮添加媒体库目录" Margin="0,6,0,0"
                                    HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" />
                         <ui:Button Content="添加音乐文件夹" Margin="0,16,0,0" HorizontalAlignment="Center"
                                    Appearance="Primary"
@@ -123,11 +126,11 @@
                     <!-- 歌单页空状态 -->
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                                 Visibility="{Binding ShowPlaylistEmptyState, Converter={StaticResource BoolToVis}}">
-                        <ui:SymbolIcon Symbol="AppsList24" FontSize="42" HorizontalAlignment="Center"
+                        <ui:SymbolIcon IsHitTestVisible="False" Symbol="AppsList24" FontSize="42" HorizontalAlignment="Center"
                                        Foreground="{StaticResource TrackEmptyBrush}" />
-                        <TextBlock Text="这个歌单还是空的" Margin="0,14,0,0" HorizontalAlignment="Center"
+                        <TextBlock IsHitTestVisible="False" Text="这个歌单还是空的" Margin="0,14,0,0" HorizontalAlignment="Center"
                                    Style="{StaticResource TitleTextStyle}" />
-                        <TextBlock Text="把曲目或文件夹拖到左侧的歌单上，或在曲目上右键「添加到歌单」" Margin="0,6,0,0"
+                        <TextBlock IsHitTestVisible="False" Text="把曲目或文件夹拖到左侧的歌单上，或在曲目上右键「添加到歌单」" Margin="0,6,0,0"
                                    HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" />
                         <ui:Button Content="添加文件…" Margin="0,16,0,0" HorizontalAlignment="Center"
                                    Appearance="Primary"
@@ -381,16 +384,6 @@
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
-                        <ListBox.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="重命名歌单"
-                                          Command="{Binding PlacementTarget.DataContext.RenamePlaylistCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                          CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                                <MenuItem Header="删除歌单"
-                                          Command="{Binding PlacementTarget.DataContext.DeletePlaylistCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}"
-                                          CommandParameter="{Binding PlacementTarget.SelectedItem, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                            </ContextMenu>
-                        </ListBox.ContextMenu>
                     </ListBox>
                 </DockPanel>
             </Border>

@@ -225,8 +225,8 @@ public sealed partial class TrackListPageViewModel : ObservableObject
             ? _selectedTracks
             : SelectedTrack is null ? Array.Empty<TrackRecord>() : new[] { SelectedTrack };
 
-        if (tracks.Count == 0) return;
-
+        // 一首都没选时也照样回调，让 Shell 在状态栏提示"先选中歌曲"，
+        // 而不是静默无反应 —— 静默正是这一轮要消灭的观感
         AddToPlaylistRequested?.Invoke(playlist, tracks);
     }
 
@@ -264,8 +264,18 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         InsertRequested?.Invoke(index, tracks);
     }
 
-    /// <summary>算出落点索引：落在某一行上就用它的位置，落在空白处就追加到末尾。</summary>
-    public int IndexOfRow(TrackRecord? row) => row is null ? Items.Count : Math.Max(0, Items.IndexOf(row));
+    /// <summary>算出落点索引：落在某一行上就用它的位置，落在空白处（或找不到）就追加到末尾。</summary>
+    public int IndexOfRow(TrackRecord? row)
+    {
+        if (row is null) return Items.Count;
+
+        var index = Items.IndexOf(row);
+        return index < 0 ? Items.Count : index;
+    }
+
+    /// <summary>视图正被排序或过滤时，可见顺序与底层顺序对不上，落点索引没有意义。</summary>
+    public bool IsViewSortedOrFiltered =>
+        View.SortDescriptions.Count > 0 || _appliedFilter.Length > 0;
 
     private void NotifyItemsChanged()
     {

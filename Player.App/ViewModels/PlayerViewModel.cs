@@ -262,6 +262,13 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
         if (!HasTrack) return;
 
+        // 一次拖动会被"鼠标松开"和"拖动结束"各调一次，同一位置只真正 seek 一次，
+        // 免得 BASS 多冲一次缓冲（可能有极轻微爆音）
+        if (_pendingSeekTarget is { } pending &&
+            Math.Abs(pending - seconds) < 0.05 &&
+            DateTime.UtcNow < _seekGuardUntil)
+            return;
+
         _engine.Seek(TimeSpan.FromSeconds(seconds));
 
         // 乐观更新：立刻按目标值显示，不等下一个 tick 从引擎读回
@@ -319,6 +326,12 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     private void OnTimerTick(object? sender, EventArgs e)
     {
+        // 自愈：IsMoveToPointEnabled 的点击路径下 Slider 不做鼠标捕获，
+        // 用户若在滑条上按下、把鼠标移开再松手，释放事件收不到，
+        // _isSeeking 会一直挂着导致进度条永久冻结 —— 发现左键已松开就解除接管。
+        if (_isSeeking && System.Windows.Input.Mouse.LeftButton == System.Windows.Input.MouseButtonState.Released)
+            _isSeeking = false;
+
         if (_isSeeking || !HasTrack) return;
         if (_engine.State != PlayerState.Playing) return;
 

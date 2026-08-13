@@ -25,6 +25,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     private readonly Dispatcher _dispatcher;
 
     private bool _suppressNavigation;
+    private bool _rebuildQueued;
+    private bool _pendingLibraryChanged;
     private long? _pendingPlaylistSelection;
     private bool _disposed;
 
@@ -46,9 +48,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     public PlayerViewModel Player { get; }
 
     public ObservableCollection<NavItemViewModel> NavItems { get; } = new();
-
-    /// <summary>「添加到歌单」子菜单的数据源。</summary>
-    public ObservableCollection<PlaylistRecord> PlaylistTargets { get; } = new();
 
     [ObservableProperty]
     private NavItemViewModel? _selectedNav;
@@ -107,7 +106,24 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     private static string? NavKey(NavItemViewModel? nav) =>
         nav is null ? null : $"{nav.Kind}|{nav.PlaylistId}|{nav.FolderPath}";
 
-    private void RebuildNavigation()
+    /// <summary>把重建排进队列；同一轮里多次触发（载入曲库 + 载入歌单 + 扫描完成）只重建一次。</summary>
+    private void QueueRebuild(bool libraryChanged)
+    {
+        _pendingLibraryChanged |= libraryChanged;
+
+        if (_rebuildQueued) return;
+        _rebuildQueued = true;
+
+        _dispatcher.BeginInvoke(() =>
+        {
+            _rebuildQueued = false;
+            var flag = _pendingLibraryChanged;
+            _pendingLibraryChanged = false;
+            RebuildNavigation(flag);
+        });
+    }
+
+    private void RebuildNavigation(bool libraryChanged = false)
     {
         var previousKey = NavKey(SelectedNav);
 
@@ -142,12 +158,17 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         }
         foreach (var playlist in manual)
         {
+            var id = playlist.Id;
+            var name = playlist.Name;
+
             NavItems.Add(new NavItemViewModel
             {
                 Kind = NavKind.Playlist,
-                Title = playlist.Name,
+                Title = name,
                 Icon = SymbolRegular.AppsList24,
-                PlaylistId = playlist.Id
+                PlaylistId = id,
+                RenameCommand = new RelayCommand(() => RenamePlaylist(id, name)),
+                DeleteCommand = new RelayCommand(() => DeletePlaylist(id, name))
             });
         }
 
@@ -167,11 +188,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                 });
             }
         }
-
-        // 「添加到歌单」子菜单同步刷新
-        PlaylistTargets.Clear();
-        foreach (var playlist in manual)
-            PlaylistTargets.Add(playlist);
 
         // 新建/导入歌单后要跳到那个歌单上；歌单列表是异步重建的，所以用一个待选 id 转交
         NavItemViewModel? target = null;
@@ -200,6 +216,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
         // 只是数据刷新：从专辑/艺术家钻进来的页面保持原样，免得把用户弹回上一层
         if (CurrentPage is TrackListPageViewModel { HasBack: true }) return;
+
+        // 当前页的数据没变就别重建：重建会把滚动位置、多选、列排序全丢掉。
+        // 歌单变更只影响歌单页；曲库变更才影响全部歌曲/文件夹等页面。
+        var pageAffected = libraryChanged || CurrentPage is TrackListPageViewModel { IsPlaylistPage: true };
+        if (!pageAffected) return;
 
         Navigate(target, isRefresh: true);
     }
@@ -235,7 +256,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             {
                 var playlistId = nav.PlaylistId;
                 CurrentPage = CreateTrackPage(
-                    nav.Title, _playlists.GetTracks(playlistId), "歌单：" + nav.Title, playlistId: playlistId);
+                    nav.Title, _playlists.GetTracks(playlistId), "歌单：" + nav.Title,
+                    playlistId: playlistId, filter: keepFilter);
                 break;
             }
 
@@ -380,12 +402,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     private void OnLibraryChanged(object? sender, EventArgs e) => _dispatcher.BeginInvoke(() =>
     {
         HasRoots = _library.Roots.Count > 0;
-        // 重建左侧栏时会恢复选中项，选中项变化本身就会把当前页刷成最新数据
-        RebuildNavigation();
+        QueueRebuild(libraryChanged: true);
     });
 
     private void OnPlaylistsChanged(object? sender, EventArgs e) =>
-        _dispatcher.BeginInvoke(RebuildNavigation);
+        _dispatcher.BeginInvoke(() => QueueRebuild(libraryChanged: false));
 
     // ---------------- 命令 ----------------
 
@@ -567,29 +588,23 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
-    [RelayCommand]
-    private void RenamePlaylist(NavItemViewModel? nav)
+    private void RenamePlaylist(long playlistId, string currentName)
     {
-        if (nav is null || nav.Kind != NavKind.Playlist) return;
-
-        var name = InputDialog.Show("重命名歌单", "歌单名称", nav.Title);
+        var name = InputDialog.Show("重命名歌单", "歌单名称", currentName);
         if (string.IsNullOrWhiteSpace(name)) return;
 
-        _playlists.Rename(nav.PlaylistId, name);
+        _playlists.Rename(playlistId, name);
     }
 
-    [RelayCommand]
-    private void DeletePlaylist(NavItemViewModel? nav)
+    private void DeletePlaylist(long playlistId, string name)
     {
-        if (nav is null || nav.Kind != NavKind.Playlist) return;
-
         var confirm = System.Windows.MessageBox.Show(
-            $"确定删除歌单「{nav.Title}」吗？（只删歌单，不动音频文件）",
+            $"确定删除歌单「{name}」吗？（只删歌单，不动音频文件）",
             "Player", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Question);
 
         if (confirm != System.Windows.MessageBoxResult.OK) return;
 
-        _playlists.Delete(nav.PlaylistId);
+        _playlists.Delete(playlistId);
         SelectFirstPage();
     }
 
