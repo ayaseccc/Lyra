@@ -140,6 +140,96 @@ public sealed class LibraryService : IDisposable
 
     public void StopWatching() => _watcher.Stop();
 
+    /// <summary>
+    /// 把一批文件/文件夹并入曲库并返回对应曲目（拖到歌单上、或"添加文件"用）。
+    /// 已在库的直接复用，不在库的读标签后入库——**即使它们不在任何媒体库根目录下**，
+    /// 扫描器不会删除根目录之外的曲目，所以这类手动加入的歌不会莫名消失。
+    /// </summary>
+    public async Task<IReadOnlyList<TrackRecord>> ImportFilesAsync(
+        IEnumerable<string> paths, CancellationToken cancellationToken = default)
+    {
+        var files = await Task.Run(() => ExpandToAudioFiles(paths), cancellationToken).ConfigureAwait(false);
+        if (files.Count == 0) return Array.Empty<TrackRecord>();
+
+        var missing = files.Where(f => GetByPath(f) is null).ToList();
+
+        if (missing.Count > 0)
+        {
+            await Task.Run(() =>
+            {
+                var records = new List<TrackRecord>(missing.Count);
+                foreach (var path in missing)
+                {
+                    var record = TagReader.Read(path);
+                    if (record is not null) records.Add(record);
+                }
+
+                if (records.Count > 0)
+                {
+                    LibraryDb.UpsertTracks(records);
+                    SwapSnapshot(LibraryDb.GetAllTracks());   // 重新载入才能拿到自增 id
+                }
+            }, cancellationToken).ConfigureAwait(false);
+
+            Log.Information("手动导入 {Count} 个文件进曲库", missing.Count);
+        }
+
+        // 按用户给的顺序返回
+        var result = new List<TrackRecord>(files.Count);
+        foreach (var file in files)
+        {
+            var track = GetByPath(file);
+            if (track is not null) result.Add(track);
+        }
+
+        return result;
+    }
+
+    /// <summary>移除某个根目录时，把它下面的曲目一并清出曲库（扫描器已不再负责这件事）。</summary>
+    public void RemoveTracksUnderRoot(string root)
+    {
+        var normalized = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var ids = _tracks
+            .Where(t => LibraryScanner.IsUnderAnyRoot(t.Path, new[] { normalized }))
+            .Select(t => t.Id)
+            .ToList();
+
+        if (ids.Count == 0) return;
+
+        LibraryDb.DeleteTracks(ids);
+        SwapSnapshot(LibraryDb.GetAllTracks());
+        Log.Information("已移除根目录 {Root} 下的 {Count} 首曲目", normalized, ids.Count);
+    }
+
+    private static List<string> ExpandToAudioFiles(IEnumerable<string> paths)
+    {
+        var result = new List<string>();
+        var options = new EnumerationOptions { RecurseSubdirectories = true, IgnoreInaccessible = true };
+
+        foreach (var path in paths)
+        {
+            try
+            {
+                if (Directory.Exists(path))
+                {
+                    result.AddRange(Directory.EnumerateFiles(path, "*", options)
+                        .Where(Audio.AudioFormats.IsSupported)
+                        .OrderBy(p => p, StringComparer.CurrentCultureIgnoreCase));
+                }
+                else if (File.Exists(path) && Audio.AudioFormats.IsSupported(path))
+                {
+                    result.Add(path);
+                }
+            }
+            catch (Exception ex)
+            {
+                Log.Warning(ex, "展开路径失败：{Path}", path);
+            }
+        }
+
+        return result;
+    }
+
     private async void OnWatcherChangesSettled(object? sender, EventArgs e)
     {
         if (_disposed) return;

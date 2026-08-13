@@ -79,18 +79,20 @@ public static class LibraryScanner
             needRead.Add(file.Path);
         }
 
-        // 不可访问的根目录（U 盘拔了、网络盘断了）下的曲目**绝不能删**：
-        // 一删连 playlist_items 一起没，盘回来后 id 变了，歌单内容就永久丢了。
-        var unreachableRoots = roots
-            .Where(r => !string.IsNullOrWhiteSpace(r) && !reachableRoots.Contains(r, StringComparer.OrdinalIgnoreCase))
+        // 只清理"位于本次成功扫描过的根目录之下、但文件已经不在了"的曲目。
+        // 两类曲目因此被保护：① 根目录本次不可访问（U 盘拔了、网络盘断了）——误删会连带
+        // 清空 playlist_items，盘回来后 id 变化导致歌单永久丢失；② 用户手动拖进歌单、
+        // 位于任何根目录之外的曲目——它们不归扫描管。
+        var normalizedReachable = reachableRoots
             .Select(r => r.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
             .ToList();
 
-        if (unreachableRoots.Count > 0)
-            Log.Warning("以下根目录本次不可访问，其下曲目将保留：{Roots}", string.Join("、", unreachableRoots));
+        var unreachableCount = roots.Count(r => !string.IsNullOrWhiteSpace(r)) - normalizedReachable.Count;
+        if (unreachableCount > 0)
+            Log.Warning("有 {Count} 个根目录本次不可访问，其下曲目一律保留", unreachableCount);
 
         var removedIds = index
-            .Where(kv => !present.Contains(kv.Key) && !IsUnderAnyRoot(kv.Key, unreachableRoots))
+            .Where(kv => !present.Contains(kv.Key) && IsUnderAnyRoot(kv.Key, normalizedReachable))
             .Select(kv => kv.Value.Id)
             .ToList();
 

@@ -89,6 +89,29 @@ public sealed class PlaylistService
         SetTracks(playlistId, existing);
     }
 
+    /// <summary>
+    /// 按落点插入。已经在歌单里的曲目会先从原位置摘掉再插入，
+    /// 因此"页内拖动已有条目"和"从外面拖新条目进来"走的是同一条路径。
+    /// </summary>
+    public void InsertTracks(long playlistId, int index, IEnumerable<TrackRecord> tracks)
+    {
+        var incoming = tracks.ToList();
+        if (incoming.Count == 0) return;
+
+        var existing = GetTracks(playlistId).ToList();
+        var incomingIds = incoming.Select(t => t.Id).ToHashSet();
+
+        // 计算插入点时要按"摘掉待插入条目之后"的列表来算，否则往后拖会偏一位
+        var target = Math.Clamp(index, 0, existing.Count);
+        var removedBefore = existing.Take(target).Count(t => incomingIds.Contains(t.Id));
+
+        var remaining = existing.Where(t => !incomingIds.Contains(t.Id)).ToList();
+        var insertAt = Math.Clamp(target - removedBefore, 0, remaining.Count);
+
+        remaining.InsertRange(insertAt, incoming);
+        SetTracks(playlistId, remaining);
+    }
+
     public void RemoveTracks(long playlistId, IEnumerable<TrackRecord> tracks)
     {
         var removing = tracks.Select(t => t.Id).ToHashSet();

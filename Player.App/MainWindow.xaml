@@ -51,7 +51,7 @@
                                    Icon="{ui:SymbolIcon Play24}" Command="{Binding PlayAllCommand}" />
                         <ui:Button Margin="8,0,0,0" Content="导出"
                                    Icon="{ui:SymbolIcon ArrowExport24}"
-                                   Command="{Binding DataContext.ExportM3uCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                   Command="{Binding ExportM3uCommand}" />
                     </StackPanel>
                 </Grid>
 
@@ -59,10 +59,12 @@
                 <Grid Grid.Row="2">
                     <ListView ItemsSource="{Binding View}"
                               SelectedItem="{Binding SelectedTrack}"
+                              SelectionMode="Extended"
                               ItemContainerStyle="{StaticResource TrackRowStyle}"
                               Background="Transparent" BorderThickness="0"
                               AllowDrop="True"
                               GridViewColumnHeader.Click="OnTrackHeaderClick"
+                              SelectionChanged="OnTrackListSelectionChanged"
                               MouseDoubleClick="OnTrackListDoubleClick"
                               PreviewMouseLeftButtonDown="OnTrackListPreviewMouseLeftButtonDown"
                               MouseMove="OnTrackListMouseMove"
@@ -86,34 +88,51 @@
                             <ContextMenu>
                                 <MenuItem Header="播放" Command="{Binding PlaySelectedCommand}" />
                                 <MenuItem Header="添加到歌单"
-                                          ItemsSource="{Binding DataContext.PlaylistTargets, RelativeSource={RelativeSource AncestorType=Window}}">
+                                          IsEnabled="{Binding HasPlaylistTargets}"
+                                          ItemsSource="{Binding PlaylistMenuItems}">
                                     <MenuItem.ItemContainerStyle>
                                         <Style TargetType="MenuItem">
                                             <Setter Property="Header" Value="{Binding Name}" />
-                                            <Setter Property="Command"
-                                                    Value="{Binding DataContext.AddToPlaylistCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
-                                            <Setter Property="CommandParameter" Value="{Binding}" />
+                                            <Setter Property="Command" Value="{Binding Command}" />
+                                            <Setter Property="CommandParameter" Value="{Binding Playlist}" />
                                         </Style>
                                     </MenuItem.ItemContainerStyle>
                                 </MenuItem>
                                 <Separator />
-                                <MenuItem Header="从歌单中移除" Command="{Binding RemoveSelectedCommand}" />
+                                <MenuItem Header="从歌单中移除" Command="{Binding RemoveSelectedCommand}"
+                                          IsEnabled="{Binding CanEdit}" />
                             </ContextMenu>
                         </ListView.ContextMenu>
                     </ListView>
 
-                    <!-- 空状态 -->
+                    <!-- 曲库页空状态 -->
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                                Visibility="{Binding IsEmpty, Converter={StaticResource BoolToVis}}">
+                                Visibility="{Binding ShowLibraryEmptyState, Converter={StaticResource BoolToVis}}">
                         <ui:SymbolIcon Symbol="MusicNote224" FontSize="42" HorizontalAlignment="Center"
                                        Foreground="{StaticResource TrackEmptyBrush}" />
                         <TextBlock Text="这里还没有歌曲" Margin="0,14,0,0" HorizontalAlignment="Center"
                                    Style="{StaticResource TitleTextStyle}" />
-                        <TextBlock Text="把音乐文件夹拖进窗口，或到设置里添加媒体库目录" Margin="0,6,0,0"
+                        <TextBlock Text="把音乐文件夹拖进窗口，或点下面的按钮添加媒体库目录" Margin="0,6,0,0"
                                    HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" />
                         <ui:Button Content="添加音乐文件夹" Margin="0,16,0,0" HorizontalAlignment="Center"
+                                   Appearance="Primary"
                                    Icon="{ui:SymbolIcon FolderOpen24}"
-                                   Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}" />
+                                   Command="{Binding AddLibraryFolderCommand}" />
+                    </StackPanel>
+
+                    <!-- 歌单页空状态 -->
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Visibility="{Binding ShowPlaylistEmptyState, Converter={StaticResource BoolToVis}}">
+                        <ui:SymbolIcon Symbol="AppsList24" FontSize="42" HorizontalAlignment="Center"
+                                       Foreground="{StaticResource TrackEmptyBrush}" />
+                        <TextBlock Text="这个歌单还是空的" Margin="0,14,0,0" HorizontalAlignment="Center"
+                                   Style="{StaticResource TitleTextStyle}" />
+                        <TextBlock Text="把曲目或文件夹拖到左侧的歌单上，或在曲目上右键「添加到歌单」" Margin="0,6,0,0"
+                                   HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" />
+                        <ui:Button Content="添加文件…" Margin="0,16,0,0" HorizontalAlignment="Center"
+                                   Appearance="Primary"
+                                   Icon="{ui:SymbolIcon Add24}"
+                                   Command="{Binding AddFilesCommand}" />
                     </StackPanel>
                 </Grid>
             </Grid>
@@ -332,6 +351,9 @@
                              SelectedItem="{Binding SelectedNav}"
                              ItemContainerStyle="{StaticResource NavItemStyle}"
                              Background="Transparent" BorderThickness="0"
+                             AllowDrop="True"
+                             DragOver="OnNavDragOver"
+                             Drop="OnNavDrop"
                              PreviewMouseRightButtonDown="OnNavListPreviewRightButtonDown"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>

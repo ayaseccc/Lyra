@@ -63,11 +63,13 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     {
         if (SelectedFolder is null) return;
 
-        Folders.Remove(SelectedFolder);
+        var folder = SelectedFolder;
+        Folders.Remove(folder);
         SelectedFolder = null;
         PersistFolders();
 
-        // 目录移除后跑一次增量扫描，把库里已经不属于任何根目录的曲目清掉
+        // 扫描器只负责"根目录之内"的曲目，移除根目录时要显式把它下面的曲目清出去
+        await Task.Run(() => _library.RemoveTracksUnderRoot(folder));
         await _requestScan(false);
     }
 

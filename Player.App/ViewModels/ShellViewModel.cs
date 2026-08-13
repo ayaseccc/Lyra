@@ -220,7 +220,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         switch (nav.Kind)
         {
             case NavKind.AllTracks:
-                CurrentPage = NewTrackList("全部歌曲", _library.Tracks, "全部歌曲", keepFilter);
+                CurrentPage = CreateTrackPage("全部歌曲", _library.Tracks, "全部歌曲", filter: keepFilter);
                 break;
 
             case NavKind.Albums:
@@ -234,13 +234,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             case NavKind.Playlist:
             {
                 var playlistId = nav.PlaylistId;
-                var tracks = _playlists.GetTracks(playlistId);
-                var page = new TrackListPageViewModel(nav.Title, tracks, "歌单：" + nav.Title, RequestPlay)
-                {
-                    PlaylistId = playlistId,
-                    ItemsReordered = items => _playlists.SetTracks(playlistId, items)
-                };
-                CurrentPage = page;
+                CurrentPage = CreateTrackPage(
+                    nav.Title, _playlists.GetTracks(playlistId), "歌单：" + nav.Title, playlistId: playlistId);
                 break;
             }
 
@@ -248,11 +243,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             {
                 var folder = _library.GetFolderPlaylists()
                     .FirstOrDefault(f => string.Equals(f.FullPath, nav.FolderPath, StringComparison.OrdinalIgnoreCase));
-                CurrentPage = NewTrackList(
+                CurrentPage = CreateTrackPage(
                     nav.Title,
                     folder?.Tracks ?? Array.Empty<TrackRecord>(),
                     "文件夹：" + nav.Title,
-                    keepFilter);
+                    filter: keepFilter);
                 break;
             }
 
@@ -262,10 +257,38 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
-    private TrackListPageViewModel NewTrackList(
-        string title, IEnumerable<TrackRecord> tracks, string sourceName, string filter = "")
+    /// <summary>
+    /// 统一的建页入口。页面用到的每个命令都在这里注入，
+    /// 界面上就不需要再用 {RelativeSource AncestorType=Window} 去够 Shell —— 那种绑定
+    /// 在 DataTemplate 里不可靠、在右键菜单里根本不成立（P1.1 的哑按钮就是这么来的）。
+    /// </summary>
+    private TrackListPageViewModel CreateTrackPage(
+        string title,
+        IEnumerable<TrackRecord> tracks,
+        string sourceName,
+        long? playlistId = null,
+        string? backTitle = null,
+        IRelayCommand? backCommand = null,
+        string filter = "")
     {
-        var page = new TrackListPageViewModel(title, tracks, sourceName, RequestPlay);
+        var page = new TrackListPageViewModel(title, tracks, sourceName, RequestPlay)
+        {
+            PlaylistId = playlistId,
+            BackTitle = backTitle,
+            BackCommand = backCommand,
+            PlaylistTargets = _playlists.Playlists.ToList(),
+            AddToPlaylistRequested = AddTracksToPlaylist,
+            ExportRequested = ExportPage,
+            AddLibraryFolderRequested = () => _ = AddLibraryFolderAsync(),
+            AddFilesRequested = page => _ = AddFilesToPlaylistAsync(page),
+            ItemsReordered = playlistId is null
+                ? null
+                : items => _playlists.SetTracks(playlistId.Value, items),
+            InsertRequested = playlistId is null
+                ? null
+                : (index, incoming) => _playlists.InsertTracks(playlistId.Value, index, incoming)
+        };
+
         if (!string.IsNullOrEmpty(filter)) page.FilterText = filter;
         return page;
     }
@@ -278,11 +301,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         var back = new RelayCommand(() => CurrentPage =
             new AlbumPageViewModel(_library.GetAlbums(), OpenAlbum, PlayAlbum));
 
-        CurrentPage = new TrackListPageViewModel(album.Album, album.Tracks, "专辑：" + album.Album, RequestPlay)
-        {
-            BackTitle = "返回专辑",
-            BackCommand = back
-        };
+        CurrentPage = CreateTrackPage(album.Album, album.Tracks, "专辑：" + album.Album,
+            backTitle: "返回专辑", backCommand: back);
     }
 
     private void PlayAlbum(AlbumGroup album) => Player.PlayTracks(album.Tracks, 0, "专辑：" + album.Album);
@@ -292,11 +312,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         var back = new RelayCommand(() => CurrentPage =
             new ArtistPageViewModel(_library.GetArtists(), OpenArtist, PlayArtist));
 
-        CurrentPage = new TrackListPageViewModel(artist.Name, artist.Tracks, "艺术家：" + artist.Name, RequestPlay)
-        {
-            BackTitle = "返回艺术家",
-            BackCommand = back
-        };
+        CurrentPage = CreateTrackPage(artist.Name, artist.Tracks, "艺术家：" + artist.Name,
+            backTitle: "返回艺术家", backCommand: back);
     }
 
     private void PlayArtist(ArtistGroup artist) => Player.PlayTracks(artist.Tracks, 0, "艺术家：" + artist.Name);
@@ -390,21 +407,164 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         _pendingPlaylistSelection = id;   // 左侧栏是异步重建的，重建完再跳过去
     }
 
-    /// <summary>把当前列表里选中的曲目加进某个手工歌单。</summary>
-    [RelayCommand]
-    private void AddToPlaylist(PlaylistRecord? playlist)
+    /// <summary>把一批曲目加进某个手工歌单（右键菜单、拖到侧边栏歌单都走这里）。</summary>
+    private void AddTracksToPlaylist(PlaylistRecord playlist, IReadOnlyList<TrackRecord> tracks)
     {
-        if (playlist is null) return;
-
-        if (CurrentPage is not TrackListPageViewModel page || page.SelectedTrack is null)
+        if (tracks.Count == 0)
         {
             ScanStatus = "先在列表里选中要添加的歌曲";
             return;
         }
 
-        var track = page.SelectedTrack;
-        _playlists.AddTracks(playlist.Id, new[] { track });
-        ScanStatus = $"已添加到歌单「{playlist.Name}」：{track.DisplayTitle}";
+        _playlists.AddTracks(playlist.Id, tracks);
+        ScanStatus = tracks.Count == 1
+            ? $"已添加到歌单「{playlist.Name}」：{tracks[0].DisplayTitle}"
+            : $"已添加 {tracks.Count} 首到歌单「{playlist.Name}」";
+    }
+
+    /// <summary>空曲库时的「添加音乐文件夹」：直接开目录选择框，不再绕设置页。</summary>
+    public async Task AddLibraryFolderAsync()
+    {
+        var dialog = new OpenFolderDialog { Title = "选择音乐文件夹", Multiselect = false };
+        if (dialog.ShowDialog() != true) return;
+
+        var folder = dialog.FolderName;
+        if (string.IsNullOrWhiteSpace(folder)) return;
+
+        if (!AddRootFolder(folder))
+        {
+            ScanStatus = "这个文件夹已经在媒体库里了";
+            return;
+        }
+
+        await ScanAsync(fullRescan: false);
+    }
+
+    /// <summary>空歌单时的「添加文件」：选中的文件先并入曲库，再加进这个歌单。</summary>
+    public async Task AddFilesToPlaylistAsync(TrackListPageViewModel page)
+    {
+        if (page.PlaylistId is not { } playlistId) return;
+
+        var dialog = new OpenFileDialog
+        {
+            Title = "添加到歌单",
+            Multiselect = true,
+            Filter = AudioFormats.DialogFilter
+        };
+
+        if (dialog.ShowDialog() != true) return;
+
+        var tracks = await _library.ImportFilesAsync(dialog.FileNames);
+        if (tracks.Count == 0)
+        {
+            ScanStatus = "没有可添加的音频文件";
+            return;
+        }
+
+        _playlists.AddTracks(playlistId, tracks);
+        ScanStatus = $"已添加 {tracks.Count} 首到歌单「{page.Title}」";
+    }
+
+    /// <summary>拖到侧边栏某个歌单上：文件/文件夹先并入曲库，曲目行直接加入。</summary>
+    public async Task DropOnPlaylistAsync(
+        long playlistId, IReadOnlyList<string> filePaths, IReadOnlyList<TrackRecord> tracks)
+    {
+        var combined = new List<TrackRecord>(tracks);
+
+        if (filePaths.Count > 0)
+        {
+            ScanStatus = "正在读取拖入的文件…";
+            combined.AddRange(await _library.ImportFilesAsync(filePaths));
+        }
+
+        if (combined.Count == 0)
+        {
+            ScanStatus = "没有找到可添加的音频";
+            return;
+        }
+
+        var playlist = _playlists.Playlists.FirstOrDefault(p => p.Id == playlistId);
+        _playlists.AddTracks(playlistId, combined);
+        ScanStatus = $"已添加 {combined.Count} 首到歌单「{playlist?.Name ?? "歌单"}」";
+    }
+
+    /// <summary>在歌单详情页里按落点插入（页内拖动、从别处拖入、从资源管理器拖入）。</summary>
+    public async Task InsertIntoPlaylistAsync(
+        TrackListPageViewModel page, int index, IReadOnlyList<string> filePaths, IReadOnlyList<TrackRecord> tracks)
+    {
+        if (page.PlaylistId is null) return;
+
+        var combined = new List<TrackRecord>(tracks);
+
+        if (filePaths.Count > 0)
+        {
+            ScanStatus = "正在读取拖入的文件…";
+            combined.AddRange(await _library.ImportFilesAsync(filePaths));
+        }
+
+        if (combined.Count == 0)
+        {
+            ScanStatus = "没有找到可添加的音频";
+            return;
+        }
+
+        page.RequestInsert(index, combined);
+        ScanStatus = $"已插入 {combined.Count} 首到歌单「{page.Title}」";
+    }
+
+    /// <summary>加一个媒体库根目录（已被现有根目录覆盖时返回 false）。</summary>
+    private bool AddRootFolder(string folder)
+    {
+        var config = ConfigService.Current.Library.Folders;
+
+        var normalized = folder.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+
+        var covered = config.Any(root =>
+        {
+            var normalizedRoot = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            return string.Equals(normalizedRoot, normalized, StringComparison.OrdinalIgnoreCase) ||
+                   LibraryScanner.IsUnderAnyRoot(normalized, new[] { normalizedRoot });
+        });
+
+        if (covered) return false;
+
+        config.Add(folder);
+        ConfigService.Save();
+        HasRoots = true;
+        _library.StartWatching();
+        return true;
+    }
+
+    private void ExportPage(TrackListPageViewModel page)
+    {
+        if (page.Items.Count == 0)
+        {
+            ScanStatus = "当前列表是空的，没什么可导出";
+            return;
+        }
+
+        var dialog = new SaveFileDialog
+        {
+            Title = "导出为 m3u8",
+            Filter = "播放列表|*.m3u8",
+            FileName = SanitizeFileName(page.Title) + ".m3u8"
+        };
+
+        if (dialog.ShowDialog() != true) return;
+
+        try
+        {
+            // 导出用户当前看到的顺序（含过滤与列排序），而不是底层原始顺序
+            var visible = page.View.Cast<TrackRecord>().ToList();
+            _playlists.ExportM3u(visible, dialog.FileName);
+            ScanStatus = $"已导出 {visible.Count} 首：" + Path.GetFileName(dialog.FileName);
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "导出 m3u8 失败");
+            System.Windows.MessageBox.Show("导出失败：" + ex.Message, "Player",
+                System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+        }
     }
 
     [RelayCommand]
@@ -457,37 +617,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         }
     }
 
-    [RelayCommand]
-    private void ExportM3u()
-    {
-        if (CurrentPage is not TrackListPageViewModel page || page.Items.Count == 0)
-        {
-            ScanStatus = "当前列表是空的，没什么可导出";
-            return;
-        }
-
-        var dialog = new SaveFileDialog
-        {
-            Title = "导出为 m3u8",
-            Filter = "播放列表|*.m3u8",
-            FileName = SanitizeFileName(page.Title) + ".m3u8"
-        };
-
-        if (dialog.ShowDialog() != true) return;
-
-        try
-        {
-            // 导出用户当前看到的顺序（含过滤与列排序），而不是底层原始顺序
-            var visible = page.View.Cast<TrackRecord>().ToList();
-            _playlists.ExportM3u(visible, dialog.FileName);
-            ScanStatus = $"已导出 {visible.Count} 首：" + Path.GetFileName(dialog.FileName);
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "导出 m3u8 失败");
-            System.Windows.MessageBox.Show("导出失败：" + ex.Message, "Player", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
-        }
-    }
 
     private static string SanitizeFileName(string name)
     {
