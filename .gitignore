@@ -1,0 +1,17 @@
+# ---- 构建产物 ----
+bin/
+obj/
+publish/
+*.user
+*.suo
+*.cache
+.vs/
+
+# ---- 运行时数据：含 config.json（API Key）、库、缓存、日志 ----
+# PLAN 第 6 节 / 第 9 节：data/ 整目录永不入仓库
+data/
+
+# ---- 其它 ----
+*.log
+Thumbs.db
+desktop.ini
