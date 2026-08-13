@@ -197,12 +197,15 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     {
         var version = ++_loadVersion;
 
+        // 立即绑定新曲目并刷新菜单勾选（P3.1-④：否则切歌后菜单还显示上一首的来源偏好）
+        _track = track;
+        NotifyPreferenceChanged();
+
         StatusText = "加载歌词…";
 
         var result = await _lyrics.LoadForTrackAsync(track).ConfigureAwait(true);
         if (version != _loadVersion) return;
 
-        _track = track;
         ApplyResult(result);
     }
 
@@ -249,6 +252,7 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         UpdateOffsetText();
         RefreshSourceText(result);
         UpdateCurrentLine();
+        NotifyPreferenceChanged();
     }
 
     private void RefreshSourceText(LyricsLoadResult result)
@@ -314,6 +318,8 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     {
         Lines.Clear();
 
+        // 无时间轴的纯文本歌词也按行生成列表项（P3.1-④：排版与带时间轴统一，
+        // 不再是一大段 PlainText；高亮跟随只在有时间轴时启用）
         foreach (var line in _document.Lines)
         {
             Lines.Add(new LyricDisplayLine

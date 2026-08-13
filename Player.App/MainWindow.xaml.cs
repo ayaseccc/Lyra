@@ -73,15 +73,19 @@ public partial class MainWindow : FluentWindow
     /// <summary>歌词当前行变化 → 滚到可视区并居中（P3.1-③ 修复：不在可视区才滚）。</summary>
     private void OnLyricsPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
+        if (e.PropertyName == nameof(LyricsViewModel.IsOpen))
+        {
+            // 打开歌词页时把当前行定位回可视区
+            if (Player?.Lyrics?.IsOpen == true) ScrollLyricsToCurrent();
+            return;
+        }
+
         if (e.PropertyName != nameof(LyricsViewModel.CurrentLineIndex)) return;
         if (Player?.Lyrics?.IsOpen != true) return;
         ScrollLyricsToCurrent();
     }
 
-    /// <summary>
-    /// 当前行滚动到可视区中部。**已经完整可见就不动** —— 点击行 seek 后位置不变就不会跳走；
-    /// 集合重建（切换模式/加载新歌）后容器可能还没生成，用 ScrollIntoView 兜底。
-    /// </summary>
+    /// <summary>把当前行滚到可视区（WPF 原生 ScrollIntoView，保证可见且跟随播放）。</summary>
     private void ScrollLyricsToCurrent()
     {
         var index = Player?.Lyrics?.CurrentLineIndex ?? -1;
@@ -90,49 +94,13 @@ public partial class MainWindow : FluentWindow
         var list = LyricList;
         if (list is null || index >= list.Items.Count) return;
 
-        var scroll = FindScrollViewer(list);
-        if (scroll is null) return;
-
-        // 虚拟化下容器可能未生成：先 ScrollIntoView 触发生成，下一轮布局后再精确定位
-        if (list.ItemContainerGenerator.ContainerFromIndex(index) is not System.Windows.FrameworkElement container)
-        {
-            list.ScrollIntoView(list.Items[index]);
-            _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
-            {
-                if (list.ItemContainerGenerator.ContainerFromIndex(index) is System.Windows.FrameworkElement created)
-                    CenterLyricLine(list, created);
-            });
-            return;
-        }
-
-        CenterLyricLine(list, container);
+        list.ScrollIntoView(list.Items[index]);
     }
 
-    private void CenterLyricLine(System.Windows.Controls.ListBox list, System.Windows.FrameworkElement container)
-    {
-        if (FindScrollViewer(list) is not { } scroll) return;
-
-        var position = container.TransformToAncestor(scroll).Transform(new Point(0, 0));
-
-        // 完整可见就不滚动（点击行跳转后不会把列表挪走）
-        if (position.Y >= 0 && position.Y + container.ActualHeight <= scroll.ViewportHeight)
-            return;
-
-        var target = position.Y + container.ActualHeight / 2 - scroll.ViewportHeight / 2;
-        scroll.ScrollToVerticalOffset(Math.Max(0, target));
-    }
-
-    private static System.Windows.Controls.ScrollViewer? FindScrollViewer(DependencyObject root)
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-        {
-            var child = VisualTreeHelper.GetChild(root, i);
-            if (child is System.Windows.Controls.ScrollViewer viewer) return viewer;
-            if (FindScrollViewer(child) is { } found) return found;
-        }
-        return null;
-    }
-
+    /// <summary>
+    /// 当前行滚动到可视区中部。**已经完整可见就不动** —— 点击行 seek 后位置不变就不会跳走；
+    /// 集合重建（切换模式/加载新歌）后容器可能还没生成，用 ScrollIntoView 兜底。
+    /// </summary>
     private ShellViewModel? Shell => DataContext as ShellViewModel;
 
     private PlayerViewModel? Player => Shell?.Player;

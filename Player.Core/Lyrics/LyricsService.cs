@@ -117,11 +117,14 @@ public sealed class LyricsService : IDisposable
 
     // ================= 用户来源偏好（右键菜单「歌词来源」，按曲目持久化） =================
 
-    /// <summary>读取来源偏好；未设置过返回 Auto。直接查库（本地 SQLite 微秒级，无需缓存）。</summary>
+    /// <summary>
+    /// 读取来源偏好；未设置过返回 <see cref="LyricPreference.Online"/>（用户实测结论：
+    /// 网易云歌词排版统一且支持双语/罗马音，默认走网易云；想要本地来源在右键菜单里改）。
+    /// </summary>
     public LyricPreference GetPreference(string path)
     {
         var raw = LyricsCacheStore.GetLyricPreference(path);
-        return Enum.TryParse<LyricPreference>(raw, out var preference) ? preference : LyricPreference.Auto;
+        return Enum.TryParse<LyricPreference>(raw, out var preference) ? preference : LyricPreference.Online;
     }
 
     /// <summary>设置来源偏好并持久化（按曲目）。</summary>

@@ -532,6 +532,9 @@ public static class Program
         // 没有 Key 时在线能力应整体降级
         Check("无 Key → IsOnlineAvailable 为 false", !service.IsOnlineAvailable);
 
+        // P3.1-⑤：未设置偏好的歌默认走网易云（用户实测结论）
+        Check("默认来源偏好 = 网易云", service.GetPreference(@"C:\never-set\a.flac") == LyricPreference.Online);
+
         // .lrc 文件优先级：同目录同名
         var dir = Path.Combine(Path.GetTempPath(), "harness-lrc-" + Guid.NewGuid().ToString("N")[..8]);
         Directory.CreateDirectory(dir);
@@ -549,6 +552,9 @@ public static class Program
                 Artist = "test",
                 DurationMs = 300000
             };
+
+            // 默认偏好是网易云；这里显式切回自动，验证 Auto 链下的 .lrc 行为
+            service.SetPreference(audioPath, LyricPreference.Auto);
 
             var result = await service.LoadForTrackAsync(track);
             Check(".lrc 文件被优先加载", result.Source == LyricSource.LocalFile);
@@ -584,6 +590,9 @@ public static class Program
                     Artist = "test",
                     DurationMs = 300000
                 };
+
+                // 默认偏好是网易云；这里显式切回自动，验证 Auto 链下的内嵌行为
+                service.SetPreference(embeddedPath, LyricPreference.Auto);
 
                 // 无 .lrc 有内嵌 → Embedded，且不碰 API（无 Key 环境下也验证来源标记）
                 var embeddedResult = await service.LoadForTrackAsync(embeddedTrack);
