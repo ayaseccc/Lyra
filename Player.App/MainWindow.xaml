@@ -648,63 +648,91 @@
             </Grid>
         </Border>
 
-        <!-- ============ 歌词覆盖层（P3.1-②）：只覆盖主区+播放条（Row 1-2），
-             标题栏始终可点；退出三通道：页内关闭按钮 / Esc / 点击封面收起 ============ -->
+        <!-- ============ 歌词覆盖层（P3.1-③ 改版）：只覆盖主区+播放条（Row 1-2），
+             标题栏始终可点；退出三通道：页内关闭按钮 / Esc / 点击封面收起。
+             操作全部收敛到歌词列表右键菜单（显示模式 / 偏移 / 重新获取 / 重新匹配） ============ -->
         <Grid Grid.Row="1" Grid.RowSpan="2" Panel.ZIndex="20"
               Visibility="{Binding Player.Lyrics.IsOpen, Converter={StaticResource BoolToVis}}"
-              Background="#F0121418">
+              Background="{StaticResource LyricOverlayBackground}">
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
-                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- 头部：曲目信息 + 操作 -->
+            <!-- 头部：曲目信息 + 来源 + 关闭 -->
             <Border Background="{StaticResource SurfaceStrongBrush}"
-                    BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="0,0,0,1" Padding="18,10">
+                    BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="0,0,0,1" Padding="22,12">
                 <Grid>
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="*" />
                         <ColumnDefinition Width="Auto" />
                     </Grid.ColumnDefinitions>
                     <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Player.Title}" Style="{StaticResource PageTitleStyle}" FontSize="16" />
+                        <TextBlock Text="{Binding Player.Title}" Style="{StaticResource PageTitleStyle}" FontSize="18" />
                         <TextBlock Text="{Binding Player.Artist}" Style="{StaticResource SubTextStyle}"
-                                   Margin="14,3,0,0" VerticalAlignment="Center" FontSize="12" />
-                        <TextBlock Text="{Binding Player.Lyrics.SourceText}" Style="{StaticResource SubTextStyle}"
-                                   Margin="14,3,0,0" VerticalAlignment="Center" FontSize="12" Opacity="0.75" />
+                                   Margin="14,4,0,0" VerticalAlignment="Center" FontSize="12" />
+                        <Border CornerRadius="10" Padding="10,3" Margin="14,0,0,0" VerticalAlignment="Center"
+                                Background="{StaticResource HoverBrush}"
+                                Visibility="{Binding Player.Lyrics.SourceText, Converter={StaticResource NonEmptyToVis}}">
+                            <TextBlock Text="{Binding Player.Lyrics.SourceText}" FontSize="11"
+                                       Foreground="{StaticResource TextSecondaryBrush}" />
+                        </Border>
                     </StackPanel>
-                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <ui:Button Content="重新获取" Icon="{ui:SymbolIcon ArrowSync24}" Appearance="Transparent"
-                                   Command="{Binding Player.Lyrics.RefreshCommand}" />
-                        <ui:Button Content="重新匹配" Icon="{ui:SymbolIcon Search24}" Appearance="Transparent"
-                                   Command="{Binding Player.Lyrics.RematchCommand}" />
-                        <ui:Button Content="关闭" Icon="{ui:SymbolIcon Dismiss24}" Appearance="Transparent"
-                                   Margin="8,0,0,0" Command="{Binding Player.Lyrics.CloseCommand}" />
-                    </StackPanel>
+                    <ui:Button Grid.Column="1" Content="关闭" Icon="{ui:SymbolIcon Dismiss24}" Appearance="Primary"
+                               Margin="12,0,0,0" Command="{Binding Player.Lyrics.CloseCommand}" />
                 </Grid>
             </Border>
 
-            <!-- 主体：大封面 + 歌词 -->
-            <Grid Grid.Row="1" Margin="36,24,36,16">
+            <!-- 主体：大封面 + 歌词（右键菜单承载全部操作） -->
+            <Grid Grid.Row="1" Margin="40,26,40,20">
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="Auto" />
                     <ColumnDefinition Width="*" />
                 </Grid.ColumnDefinitions>
 
-                <Border Width="280" Height="280" CornerRadius="12"
+                <!-- 大封面 -->
+                <Border Width="320" Height="320" CornerRadius="18"
                         Background="{StaticResource HoverBrush}"
                         BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1"
                         HorizontalAlignment="Left" VerticalAlignment="Top">
+                    <Border.Effect>
+                        <DropShadowEffect BlurRadius="28" ShadowDepth="6" Opacity="0.45" Direction="270" />
+                    </Border.Effect>
                     <Grid>
-                        <ui:SymbolIcon Symbol="MusicNote224" FontSize="64" HorizontalAlignment="Center"
+                        <ui:SymbolIcon Symbol="MusicNote224" FontSize="72" HorizontalAlignment="Center"
                                        VerticalAlignment="Center" Foreground="{StaticResource TextTertiaryBrush}" />
                         <Image Source="{Binding Player.CoverImage}" Stretch="UniformToFill" />
                     </Grid>
                 </Border>
 
-                <Grid Grid.Column="1" Margin="28,0,0,0">
-                    <!-- 有时间轴：滚动高亮列表 -->
+                <Grid Grid.Column="1" Margin="32,0,0,0">
+                        <Grid.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="显示模式">
+                                    <MenuItem Header="原文" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsOriginalMode}"
+                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
+                                              CommandParameter="Original" />
+                                    <MenuItem Header="双语（原文 + 翻译）" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsBilingualMode}"
+                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
+                                              CommandParameter="Bilingual" />
+                                    <MenuItem Header="罗马音" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsRomajiMode}"
+                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
+                                              CommandParameter="Romaji" />
+                                </MenuItem>
+                                <Separator />
+                                <MenuItem Header="偏移 -0.1 秒" Command="{Binding Player.Lyrics.OffsetEarlierCommand}" />
+                                <MenuItem Header="偏移 +0.1 秒" Command="{Binding Player.Lyrics.OffsetLaterCommand}" />
+                                <MenuItem Header="{Binding Player.Lyrics.OffsetText}" IsEnabled="False" />
+                                <Separator />
+                                <MenuItem Header="重新获取" Command="{Binding Player.Lyrics.RefreshCommand}" />
+                                <MenuItem Header="重新匹配…" Command="{Binding Player.Lyrics.RematchCommand}" />
+                            </ContextMenu>
+                        </Grid.ContextMenu>
+
+                    <!-- 有时间轴：滚动高亮列表。右键：模式 / 偏移 / 重新获取 / 重新匹配 -->
                     <ListBox x:Name="LyricList"
                              ItemsSource="{Binding Player.Lyrics.Lines}"
                              Background="Transparent" BorderThickness="0"
@@ -717,13 +745,13 @@
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <StackPanel>
-                                    <TextBlock Text="{Binding PrimaryText}" FontSize="15" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding SecondaryText}" FontSize="12" Opacity="0.65"
-                                               TextWrapping="Wrap" Margin="0,3,0,0" />
+                                    <TextBlock Text="{Binding PrimaryText}" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding SecondaryText}" FontSize="13" Opacity="0.65"
+                                               TextWrapping="Wrap" Margin="0,4,0,0" />
                                 </StackPanel>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
-                    </ListBox>
+                                           </ListBox>
 
                     <!-- 无时间轴：整篇静态显示 -->
                     <ScrollViewer VerticalScrollBarVisibility="Auto"
@@ -739,29 +767,11 @@
                                        Foreground="{StaticResource TextTertiaryBrush}" />
                         <TextBlock Text="{Binding Player.Lyrics.StatusText}" Margin="0,12,0,0"
                                    HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" />
-                        <TextBlock Text="可以点右上角「重新匹配」从网易云候选中手动选择" Margin="0,6,0,0"
+                        <TextBlock Text="可以右键歌词区「重新匹配」从网易云候选中手动选择" Margin="0,6,0,0"
                                    HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" Opacity="0.7" />
                     </StackPanel>
                 </Grid>
             </Grid>
-
-            <!-- 底部：显示模式 + 偏移微调 -->
-            <Border Grid.Row="2" Background="{StaticResource SurfaceStrongBrush}"
-                    BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="0,1,0,0" Padding="18,8">
-                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                    <ui:Button Content="{Binding Player.Lyrics.ModeText}" Icon="{ui:SymbolIcon Translate24}"
-                               Appearance="Transparent" Command="{Binding Player.Lyrics.CycleDisplayModeCommand}"
-                               ToolTip="切换 原文 / 双语 / 罗马音" />
-                    <ui:Button Content="偏移 -0.1s" Appearance="Transparent" Margin="6,0,0,0"
-                               Command="{Binding Player.Lyrics.OffsetEarlierCommand}" ToolTip="歌词提前 0.1 秒" />
-                    <ui:Button Content="偏移 +0.1s" Appearance="Transparent" Margin="6,0,0,0"
-                               Command="{Binding Player.Lyrics.OffsetLaterCommand}" ToolTip="歌词延后 0.1 秒" />
-                    <TextBlock Text="{Binding Player.Lyrics.OffsetText}" VerticalAlignment="Center"
-                               Margin="12,0,0,0" Style="{StaticResource SubTextStyle}" />
-                    <TextBlock Text="点击歌词行可跳转进度" VerticalAlignment="Center" Margin="28,0,0,0"
-                               Style="{StaticResource SubTextStyle}" Opacity="0.7" />
-                </StackPanel>
-            </Border>
         </Grid>
     </Grid>
 </ui:FluentWindow>

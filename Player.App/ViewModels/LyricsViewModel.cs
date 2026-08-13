@@ -97,6 +97,9 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(ShowTranslation))]
     [NotifyPropertyChangedFor(nameof(ShowRomaji))]
     [NotifyPropertyChangedFor(nameof(ModeText))]
+    [NotifyPropertyChangedFor(nameof(IsOriginalMode))]
+    [NotifyPropertyChangedFor(nameof(IsBilingualMode))]
+    [NotifyPropertyChangedFor(nameof(IsRomajiMode))]
     private LyricDisplayMode _displayMode = LyricDisplayMode.Bilingual;
 
     [ObservableProperty]
@@ -108,6 +111,13 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     public bool ShowTranslation => DisplayMode == LyricDisplayMode.Bilingual;
 
     public bool ShowRomaji => DisplayMode == LyricDisplayMode.Romaji;
+
+    /// <summary>右键菜单单选标记（P3.1-③ 交互改版）。</summary>
+    public bool IsOriginalMode => DisplayMode == LyricDisplayMode.Original;
+
+    public bool IsBilingualMode => DisplayMode == LyricDisplayMode.Bilingual;
+
+    public bool IsRomajiMode => DisplayMode == LyricDisplayMode.Romaji;
 
     public string ModeText => DisplayMode switch
     {
@@ -224,6 +234,17 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         UpdateCurrentLine();
     }
 
+    /// <summary>右键菜单直接选模式（P3.1-③）。</summary>
+    [RelayCommand]
+    private void SetDisplayMode(LyricDisplayMode mode)
+    {
+        if (DisplayMode == mode) return;
+
+        DisplayMode = mode;
+        RebuildLines();
+        UpdateCurrentLine();
+    }
+
     private void RebuildLines()
     {
         Lines.Clear();
@@ -247,6 +268,10 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
 
         OnPropertyChanged(nameof(HasTimeline));
         OnPropertyChanged(nameof(HasLyrics));
+
+        // 集合整体重建后 ListBox 滚动位置可能被 clamp 到异常处（切换模式/新歌加载）。
+        // CurrentLineIndex 值可能没变，这里强制通知一次，让 UI 把当前行重新滚回可视区。
+        OnPropertyChanged(nameof(CurrentLineIndex));
     }
 
     // ---------------- 当前行跟随播放进度 ----------------
