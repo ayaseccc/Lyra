@@ -134,6 +134,15 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
         SelectFirstPage();
 
+        // 恢复上次播放的曲目：只显示信息与歌词，不自动播放（UI-R1.5 反馈）
+        var lastTrackPath = ConfigService.Current.Ui.LastTrackPath;
+        if (!string.IsNullOrEmpty(lastTrackPath))
+        {
+            var lastTrack = _library.Tracks.FirstOrDefault(t =>
+                string.Equals(t.Path, lastTrackPath, StringComparison.OrdinalIgnoreCase));
+            if (lastTrack is not null) Player.RestoreTrack(lastTrack);
+        }
+
         if (HasRoots)
         {
             _library.StartWatching();
@@ -148,8 +157,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     private void SelectFirstPage()
     {
-        var first = NavItems.FirstOrDefault(n => n.Kind == NavKind.AllTracks);
-        if (first is not null) SelectedNav = first;
+        // 优先恢复上次停留的页面（歌单/文件夹/全部歌曲），找不到再回退全部歌曲（UI-R1.5 反馈）
+        var saved = ConfigService.Current.Ui.LastNav;
+        var target = string.IsNullOrEmpty(saved)
+            ? null
+            : NavItems.FirstOrDefault(n => NavKey(n) == saved);
+        target ??= NavItems.FirstOrDefault(n => n.Kind == NavKind.AllTracks);
+
+        if (target is not null) SelectedNav = target;
     }
 
     // ---------------- 导航 ----------------
@@ -302,6 +317,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     private void Navigate(NavItemViewModel nav, bool isRefresh = false)
     {
+        // 记下当前页面，退出时落盘、启动时恢复（UI-R1.5 反馈）
+        ConfigService.Current.Ui.LastNav = NavKey(nav) ?? string.Empty;
+
         // 只有"扫描完成后刷新当前页"才把过滤词带过去；用户主动切页时不该继承上一页的过滤
         var keepFilter = isRefresh
             ? (CurrentPage as TrackListPageViewModel)?.FilterText ?? string.Empty

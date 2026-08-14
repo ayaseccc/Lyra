@@ -56,8 +56,8 @@
 
     <!-- = 播放条控制键 = -->
     <Style x:Key="TransportButtonStyle" TargetType="Button">
-        <Setter Property="Width" Value="34" />
-        <Setter Property="Height" Value="34" />
+        <Setter Property="Width" Value="36" />
+        <Setter Property="Height" Value="36" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="Cursor" Value="Hand" />
@@ -65,7 +65,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="17">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="18">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -76,6 +76,54 @@
                             <Setter Property="Opacity" Value="0.35" />
                         </Trigger>
                     </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- = 细滚动条（全局隐式，UI-R1.5 反馈）：8px 圆角细条，浅色轨道透明 -->
+    <Style TargetType="ScrollBar">
+        <Setter Property="Width" Value="8" />
+        <Setter Property="MinWidth" Value="8" />
+        <Setter Property="Height" Value="8" />
+        <Setter Property="MinHeight" Value="8" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="ScrollBar">
+                    <Grid Background="Transparent">
+                        <Track x:Name="PART_Track" IsDirectionReversed="True"
+                               Orientation="{TemplateBinding Orientation}">
+                            <Track.DecreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageUpCommand" Opacity="0"
+                                              Focusable="False" IsTabStop="False" />
+                            </Track.DecreaseRepeatButton>
+                            <Track.IncreaseRepeatButton>
+                                <RepeatButton Command="ScrollBar.PageDownCommand" Opacity="0"
+                                              Focusable="False" IsTabStop="False" />
+                            </Track.IncreaseRepeatButton>
+                            <Track.Thumb>
+                                <Thumb>
+                                    <Thumb.Template>
+                                        <ControlTemplate TargetType="Thumb">
+                                            <Border x:Name="ThumbBd" CornerRadius="4" Margin="1,2"
+                                                    Background="{StaticResource TrackEmptyBrush}" />
+                                            <ControlTemplate.Triggers>
+                                                <Trigger Property="IsMouseOver" Value="True">
+                                                    <Setter TargetName="ThumbBd"
+                                                            Property="Background" Value="{StaticResource TextTertiaryBrush}" />
+                                                </Trigger>
+                                                <Trigger Property="IsDragging" Value="True">
+                                                    <Setter TargetName="ThumbBd"
+                                                            Property="Background" Value="{StaticResource TextSecondaryBrush}" />
+                                                </Trigger>
+                                            </ControlTemplate.Triggers>
+                                        </ControlTemplate>
+                                    </Thumb.Template>
+                                </Thumb>
+                            </Track.Thumb>
+                        </Track>
+                    </Grid>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -310,9 +358,9 @@
         </Setter>
     </Style>
 
-    <!-- = 曲目列表（紧凑 28px 行高，PLAN 第 8 节） = -->
+    <!-- = 曲目列表（大行：84px，一首歌约占三行面积，UI-R1.5 反馈） = -->
     <Style x:Key="TrackRowStyle" TargetType="ListViewItem">
-        <Setter Property="Height" Value="28" />
+        <Setter Property="Height" Value="84" />
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -427,8 +475,8 @@
 
     <!-- = 播放模式图标组按钮（UI-R1）：小方钮，选中由 BoolToAccent 给强调色背景 -->
     <Style x:Key="ModeButtonStyle" TargetType="Button">
-        <Setter Property="Width" Value="26" />
-        <Setter Property="Height" Value="24" />
+        <Setter Property="Width" Value="30" />
+        <Setter Property="Height" Value="28" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Background" Value="#1AFFFFFF" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />

@@ -6,6 +6,7 @@ using System.Windows.Input;
 using System.Windows.Media;
 using Player.App.ViewModels;
 using Player.Core.Audio;
+using Player.Core.Infra;
 using Player.Core.Library;
 using Wpf.Ui.Controls;
 
@@ -67,6 +68,33 @@ public partial class MainWindow : FluentWindow
             if (Shell is not null)
                 Shell.TrackLocateRequested += ScrollToCurrentTrack;
         };
+
+        // 恢复上次的窗口尺寸（UI-R1.5 反馈）
+        var ui = ConfigService.Current.Ui;
+        if (ui.WindowWidth >= MinWidth && ui.WindowHeight >= MinHeight)
+        {
+            Width = ui.WindowWidth;
+            Height = ui.WindowHeight;
+        }
+    }
+
+    /// <summary>关窗前记下窗口尺寸，退出时随配置落盘。</summary>
+    protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
+    {
+        var bounds = RestoreBounds;
+        var ui = ConfigService.Current.Ui;
+        if (bounds.Width > 0 && bounds.Height > 0)
+        {
+            ui.WindowWidth = bounds.Width;
+            ui.WindowHeight = bounds.Height;
+        }
+        else
+        {
+            ui.WindowWidth = ActualWidth;
+            ui.WindowHeight = ActualHeight;
+        }
+
+        base.OnClosing(e);
     }
 
     /// <summary>定位正在播放：把当前曲目列表滚动到选中的那一行（UI-R1.5 ⑪）。</summary>

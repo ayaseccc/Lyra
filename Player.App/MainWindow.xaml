@@ -6,7 +6,7 @@
                  xmlns:lyr="clr-namespace:Player.Core.Lyrics;assembly=Player.Core"
                  xmlns:p="clr-namespace:Player.Core.Audio;assembly=Player.Core"
                  xmlns:ctrl="clr-namespace:Player.App.Controls"
-                 Title="Player" Height="740" Width="1480" MinHeight="540" MinWidth="920"
+                 Title="Player" Height="900" Width="1400" MinHeight="540" MinWidth="920"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
                  WindowCornerPreference="Round"
@@ -70,43 +70,36 @@
                                 ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListView.View>
                             <GridView ColumnHeaderContainerStyle="{StaticResource TrackHeaderStyle}">
-                                                                                                <GridViewColumn Header="" Width="52">
+                                                                                                <GridViewColumn Header="" Width="76">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
-                                            <Border Width="26" Height="26" CornerRadius="2" Margin="0,1"
-                                                    Background="{StaticResource HoverBrush}">
-                                                <Grid>
-                                                    <ui:SymbolIcon Symbol="MusicNote224" FontSize="11"
-                                                                   Foreground="{StaticResource TextTertiaryBrush}"
-                                                                   Visibility="{Binding CoverHash, Converter={StaticResource NullToVisible}}" />
-                                                    <Image Source="{Binding CoverHash, Converter={StaticResource CoverToImage}}"
-                                                           Stretch="UniformToFill" />
-                                                </Grid>
-                                            </Border>
+                                            <StackPanel VerticalAlignment="Top" Margin="0,4,0,0">
+                                                <TextBlock Text="{Binding DisplayAlbum}" FontSize="11"
+                                                           Foreground="{StaticResource TextTertiaryBrush}"
+                                                           TextTrimming="CharacterEllipsis" MaxWidth="62" />
+                                                <Border Width="64" Height="64" CornerRadius="2" Margin="0,4,0,0"
+                                                        Background="{StaticResource HoverBrush}">
+                                                    <Grid>
+                                                        <ui:SymbolIcon Symbol="MusicNote224" FontSize="22"
+                                                                       Foreground="{StaticResource TextTertiaryBrush}"
+                                                                       Visibility="{Binding CoverHash, Converter={StaticResource NullToVisible}}" />
+                                                        <Image Source="{Binding CoverHash, Converter={StaticResource CoverToImage}}"
+                                                               Stretch="UniformToFill" />
+                                                    </Grid>
+                                                </Border>
+                                            </StackPanel>
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
-                                <GridViewColumn Header="标题" Width="280">
+                                <GridViewColumn Header="标题" Width="320">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
-                                            <TextBlock Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis"
-                                                       VerticalAlignment="Center" />
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                                <GridViewColumn Header="歌手" Width="160">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis"
-                                                       VerticalAlignment="Center" />
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                                <GridViewColumn Header="专辑" Width="180">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding DisplayAlbum}" TextTrimming="CharacterEllipsis"
-                                                       VerticalAlignment="Center" />
+                                            <StackPanel VerticalAlignment="Top" Margin="12,22,0,0">
+                                                <TextBlock Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis"
+                                                           Style="{StaticResource TitleTextStyle}" />
+                                                <TextBlock Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis"
+                                                           Style="{StaticResource SubTextStyle}" Margin="0,3,0,0" />
+                                            </StackPanel>
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
@@ -514,7 +507,7 @@
             <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8,0,0,0">
                 <DockPanel>
                         <StackPanel DockPanel.Dock="Top" Margin="10,10,10,4">
-                            <ui:TextBox PlaceholderText="过滤 标题 / 歌手 / 专辑" Height="30"
+                            <ui:TextBox PlaceholderText="搜索当前列表" Height="30"
                                        Icon="{ui:SymbolIcon Search24}"
                                        Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
@@ -706,46 +699,20 @@
                     <ColumnDefinition Width="*" MaxWidth="340" />
                 </Grid.ColumnDefinitions>
 
-                <!-- 左：曲目信息 + 设置入口（封面已删除；模式/定位移到音量旁，UI-R1.5 反馈） -->
-                <StackPanel VerticalAlignment="Center">
-                    <TextBlock Text="{Binding Title}" Style="{StaticResource TitleTextStyle}" MaxWidth="260"
-                               TextTrimming="CharacterEllipsis" />
-                    <TextBlock Text="{Binding Artist}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0"
-                               MaxWidth="260" TextTrimming="CharacterEllipsis" />
-                    <StackPanel Orientation="Horizontal" Margin="0,6,0,0">
-                        <Button Style="{StaticResource ModeButtonStyle}" ToolTip="设置"
-                                Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}">
-                            <ui:SymbolIcon Symbol="Settings24" FontSize="14" />
-                        </Button>
-                    </StackPanel>
+                                <!-- 左：设置 + 三个预留功能位（UI-R1.5 反馈：删曲目文字，按钮与右侧一行对齐） -->
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Button Style="{StaticResource ModeButtonStyle}" ToolTip="设置"
+                            Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}">
+                        <ui:SymbolIcon Symbol="Settings24" FontSize="16" />
+                    </Button>
+                    <Button Style="{StaticResource ModeButtonStyle}" Margin="6,0,0,0" Opacity="0.22" ToolTip="预留功能位" />
+                    <Button Style="{StaticResource ModeButtonStyle}" Margin="6,0,0,0" Opacity="0.22" ToolTip="预留功能位" />
+                    <Button Style="{StaticResource ModeButtonStyle}" Margin="6,0,0,0" Opacity="0.22" ToolTip="预留功能位" />
                 </StackPanel>
 
-                <!-- 中：控制键（播放键圆形强调色）+ 进度条 -->
+                <!-- 中：进度条在上，控制键在下（UI-R1.5 反馈） -->
                 <StackPanel Grid.Column="1" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                        <Button Style="{StaticResource TransportButtonStyle}"
-                                Command="{Binding PreviousCommand}" ToolTip="上一首">
-                            <ui:SymbolIcon Symbol="Previous24" FontSize="18" />
-                        </Button>
-                        <Button Style="{StaticResource PrimaryPlayButtonStyle}" Margin="12,0"
-                                Command="{Binding PlayPauseCommand}" ToolTip="播放 / 暂停">
-                            <Grid>
-                                <ui:SymbolIcon Symbol="Play24" FontSize="20"
-                                               Visibility="{Binding IsPlaying, Converter={StaticResource InverseBoolToVisibility}}" />
-                                <ui:SymbolIcon Symbol="Pause24" FontSize="20"
-                                               Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVis}}" />
-                            </Grid>
-                        </Button>
-                        <Button Style="{StaticResource TransportButtonStyle}"
-                                Command="{Binding NextCommand}" ToolTip="下一首">
-                            <ui:SymbolIcon Symbol="Next24" FontSize="18" />
-                        </Button>
-                        <Button Style="{StaticResource TransportButtonStyle}" Margin="12,0,0,0"
-                                Command="{Binding StopCommand}" ToolTip="停止">
-                            <ui:SymbolIcon Symbol="Stop24" FontSize="16" />
-                        </Button>
-                    </StackPanel>
-                    <Grid Margin="0,6,0,0">
+                    <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="*" />
@@ -762,14 +729,37 @@
                         <TextBlock Grid.Column="2" Text="{Binding DurationText}"
                                    Style="{StaticResource SubTextStyle}" Width="42" VerticalAlignment="Center" />
                     </Grid>
+                    <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,6,0,0">
+                        <Button Style="{StaticResource TransportButtonStyle}"
+                                Command="{Binding PreviousCommand}" ToolTip="上一首">
+                            <ui:SymbolIcon Symbol="Previous24" FontSize="20" />
+                        </Button>
+                        <Button Style="{StaticResource PrimaryPlayButtonStyle}" Margin="12,0"
+                                Command="{Binding PlayPauseCommand}" ToolTip="播放 / 暂停">
+                            <Grid>
+                                <ui:SymbolIcon Symbol="Play24" FontSize="22"
+                                               Visibility="{Binding IsPlaying, Converter={StaticResource InverseBoolToVisibility}}" />
+                                <ui:SymbolIcon Symbol="Pause24" FontSize="22"
+                                               Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVis}}" />
+                            </Grid>
+                        </Button>
+                        <Button Style="{StaticResource TransportButtonStyle}"
+                                Command="{Binding NextCommand}" ToolTip="下一首">
+                            <ui:SymbolIcon Symbol="Next24" FontSize="20" />
+                        </Button>
+                        <Button Style="{StaticResource TransportButtonStyle}" Margin="12,0,0,0"
+                                Command="{Binding StopCommand}" ToolTip="停止">
+                            <ui:SymbolIcon Symbol="Stop24" FontSize="18" />
+                        </Button>
+                    </StackPanel>
                 </StackPanel>
 
-                <!-- 右：输出按钮（点击展开全部设备）+ 歌词开关 + 音量 + 播放模式 + 定位（UI-R1.5 反馈） -->
+                <!-- 右：输出、歌词、播放模式、定位 全部在音量条左侧（UI-R1.5 反馈） -->
                 <StackPanel Grid.Column="2" Orientation="Horizontal"
                             HorizontalAlignment="Right" VerticalAlignment="Center">
                     <Button Style="{StaticResource ModeButtonStyle}"
                             x:Name="OutputBadgeButton" ToolTip="{Binding OutputToolTip}">
-                        <ui:SymbolIcon Symbol="Speaker224" FontSize="14" VerticalAlignment="Center"
+                        <ui:SymbolIcon Symbol="Speaker224" FontSize="16" VerticalAlignment="Center"
                                        Foreground="{Binding IsBitPerfect, Converter={StaticResource BoolToTintBrush}}" />
                         <Button.ContextMenu>
                             <ContextMenu ItemsSource="{Binding OutputDevices}"
@@ -789,8 +779,26 @@
                     </Button>
                     <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" ToolTip="歌词面板"
                             Command="{Binding ToggleSidePaneCommand}">
-                        <ui:SymbolIcon Symbol="DocumentText24" FontSize="14"
+                        <ui:SymbolIcon Symbol="DocumentText24" FontSize="16"
                                        Foreground="{Binding IsSidePaneVisible, Converter={StaticResource BoolToTintBrush}}" />
+                    </Button>
+                    <!-- 播放模式：单键循环切换（顺序 → 列表循环 → 单曲循环 → 随机），图标即当前模式 -->
+                    <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" ToolTip="{Binding PlayModeText}"
+                            Command="{Binding CyclePlayModeCommand}">
+                        <Grid>
+                            <ui:SymbolIcon Symbol="ArrowRight24" FontSize="16" Foreground="{StaticResource AccentBrush}"
+                                           Visibility="{Binding IsSequentialMode, Converter={StaticResource BoolToVis}}" />
+                            <ui:SymbolIcon Symbol="ArrowRepeatAll24" FontSize="16" Foreground="{StaticResource AccentBrush}"
+                                           Visibility="{Binding IsRepeatAllMode, Converter={StaticResource BoolToVis}}" />
+                            <ui:SymbolIcon Symbol="ArrowRepeat124" FontSize="16" Foreground="{StaticResource AccentBrush}"
+                                           Visibility="{Binding IsRepeatOneMode, Converter={StaticResource BoolToVis}}" />
+                            <ui:SymbolIcon Symbol="ArrowShuffle24" FontSize="16" Foreground="{StaticResource AccentBrush}"
+                                           Visibility="{Binding IsShuffleMode, Converter={StaticResource BoolToVis}}" />
+                        </Grid>
+                    </Button>
+                    <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" ToolTip="定位正在播放"
+                            Command="{Binding LocateCurrentTrackCommand}">
+                        <ui:SymbolIcon Symbol="Target24" FontSize="16" />
                     </Button>
                     <ui:SymbolIcon Symbol="Speaker224" FontSize="15" Margin="14,0,0,0"
                                    VerticalAlignment="Center"
@@ -800,25 +808,9 @@
                             Style="{StaticResource VolumeSliderStyle}" VerticalAlignment="Center" />
                     <TextBlock Text="{Binding VolumePercentText}" Style="{StaticResource SubTextStyle}"
                                Width="34" VerticalAlignment="Center" />
-                    <!-- 播放模式：单键循环切换（顺序 → 列表循环 → 单曲循环 → 随机），图标即当前模式 -->
-                    <Button Style="{StaticResource ModeButtonStyle}" Margin="10,0,0,0" ToolTip="{Binding PlayModeText}"
-                            Command="{Binding CyclePlayModeCommand}">
-                        <Grid>
-                            <ui:SymbolIcon Symbol="ArrowRight24" FontSize="14" Foreground="{StaticResource AccentBrush}"
-                                           Visibility="{Binding IsSequentialMode, Converter={StaticResource BoolToVis}}" />
-                            <ui:SymbolIcon Symbol="ArrowRepeatAll24" FontSize="14" Foreground="{StaticResource AccentBrush}"
-                                           Visibility="{Binding IsRepeatAllMode, Converter={StaticResource BoolToVis}}" />
-                            <ui:SymbolIcon Symbol="ArrowRepeat124" FontSize="14" Foreground="{StaticResource AccentBrush}"
-                                           Visibility="{Binding IsRepeatOneMode, Converter={StaticResource BoolToVis}}" />
-                            <ui:SymbolIcon Symbol="ArrowShuffle24" FontSize="14" Foreground="{StaticResource AccentBrush}"
-                                           Visibility="{Binding IsShuffleMode, Converter={StaticResource BoolToVis}}" />
-                        </Grid>
-                    </Button>
-                    <Button Style="{StaticResource ModeButtonStyle}" Margin="2,0,0,0" ToolTip="定位正在播放"
-                            Command="{Binding LocateCurrentTrackCommand}">
-                        <ui:SymbolIcon Symbol="Target24" FontSize="14" />
-                    </Button>
                 </StackPanel>
+
+
             </Grid>
         </Border>
 

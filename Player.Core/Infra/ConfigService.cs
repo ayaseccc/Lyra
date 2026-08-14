@@ -101,6 +101,17 @@ public sealed class UiConfig
 
     /// <summary>Sequential / RepeatAll / RepeatOne / Shuffle</summary>
     public string PlayMode { get; set; } = "RepeatAll";
+
+    /// <summary>上次停留的导航目标（"{Kind}|{PlaylistId}|{FolderPath}"），启动时恢复（UI-R1.5 反馈）。</summary>
+    public string LastNav { get; set; } = string.Empty;
+
+    /// <summary>上次播放的曲目路径，启动时静默恢复信息与歌词。</summary>
+    public string LastTrackPath { get; set; } = string.Empty;
+
+    /// <summary>窗口尺寸记忆（UI-R1.5 反馈）。0 表示未记录。</summary>
+    public double WindowWidth { get; set; }
+
+    public double WindowHeight { get; set; }
 }
 
 /// <summary>

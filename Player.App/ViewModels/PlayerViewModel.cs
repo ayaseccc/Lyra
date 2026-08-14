@@ -523,8 +523,29 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         CoverImage = CoverImageCache.Get(track.CoverHash);
         RefreshWindowTitle();
 
+        // 记住上次播放的曲目（退出时随配置落盘，下次启动恢复，UI-R1.5 反馈）
+        ConfigService.Current.Ui.LastTrackPath = track.Path;
+
         // P3：切歌即异步加载歌词（.lrc > 缓存 > 在线匹配），失败不影响播放
         _ = Lyrics.LoadForTrackAsync(track);
+    }
+
+    /// <summary>启动时静默恢复上次播放的曲目：只加载信息与歌词，不发声（UI-R1.5 反馈）。</summary>
+    public void RestoreTrack(TrackRecord track)
+    {
+        try
+        {
+            if (!_engine.Open(track.Path)) return;
+
+            _list.Replace(new[] { track }, "上次播放", 0);
+            ApplyTrackDisplay(track);
+            OnPropertyChanged(nameof(CurrentTrack));
+            StatusText = "已恢复上次播放的曲目";
+        }
+        catch (Exception ex)
+        {
+            Log.Warning(ex, "恢复上次曲目失败：{Path}", track.Path);
+        }
     }
 
     /// <summary>码率格式化（UI-R1.5）：小于 1000 显示 "3072 kbps"，更大显示 "3.0 Mbps"。</summary>
