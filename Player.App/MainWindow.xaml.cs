@@ -4,6 +4,7 @@ using System.Windows.Media.Animation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
+using System.Windows.Interop;
 using System.Windows.Media;
 using Player.App.Controls;
 using Player.App.ViewModels;
@@ -28,6 +29,8 @@ public partial class MainWindow : FluentWindow
     private TrackRecord? _draggingTrack;
     private TrackRecord[] _dragPayload = Array.Empty<TrackRecord>();
     private bool _volumeDragging;
+
+    private Player.App.SystemMedia.SmtcService? _smtcService;
 
     public MainWindow()
     {
@@ -57,6 +60,7 @@ public partial class MainWindow : FluentWindow
                 Shell.TrackLocateRequested += ScrollToCurrentTrack;
                 HookDesktopLyricsUpdates();
                 HookSettingsLyricsUpdates();
+                InitSmtc();
                 // 恢复桌面歌词（L1 第三步：开关持久化）
                 if (ConfigService.Current.Ui.DesktopLyricsEnabled && _desktopLyrics is null)
                 {
@@ -74,6 +78,9 @@ public partial class MainWindow : FluentWindow
             new MouseEventHandler(OnVolumeMouseMove), handledEventsToo: true);
         VolumeSquares.AddHandler(PreviewMouseLeftButtonUpEvent,
             new MouseButtonEventHandler(OnVolumeMouseUp), handledEventsToo: true);
+
+        // L2 SMTC：窗口句柄就绪后初始化（媒体键/锁屏控制）
+        SourceInitialized += (_, _) => InitSmtc();
 
         // 恢复上次的窗口尺寸（UI-R1.5 反馈）
         var ui = ConfigService.Current.Ui;
@@ -116,9 +123,25 @@ public partial class MainWindow : FluentWindow
         Player.SetVolumeFromDrag(Math.Clamp(p.X / VolumeSquares.ActualWidth, 0, 1));
     }
 
+    /// <summary>L2 SMTC：窗口句柄与 Player 都就绪后创建服务（任一方晚到都会在另一方就绪时补建）。</summary>
+    private void InitSmtc()
+    {
+        if (_smtcService is not null || Player is null) return;
+        try
+        {
+            _smtcService = new Player.App.SystemMedia.SmtcService(new WindowInteropHelper(this).Handle, Player);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "SMTC 服务创建失败");
+        }
+    }
+
     /// <summary>关窗前记下窗口尺寸，退出时随配置落盘。</summary>
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        _smtcService?.Dispose();
+        _smtcService = null;
         var bounds = RestoreBounds;
         var ui = ConfigService.Current.Ui;
         if (bounds.Width > 0 && bounds.Height > 0)
