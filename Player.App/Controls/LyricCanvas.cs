@@ -38,19 +38,22 @@ public sealed class LyricCanvas : FrameworkElement
     /// <summary>FrameworkElement 没有 FontFamily 属性，这里自持字体。</summary>
     private static readonly FontFamily UiFont = new("Microsoft YaHei UI, Segoe UI");
 
+    /// <summary>缓存条目：绘制用 FormattedText + 无约束自然宽度（窄栏判断用，约束会截断 Width）。</summary>
+    private sealed record TextEntry(FormattedText Text, double NaturalWidth);
+
     /// <summary>
     /// 主/副文本的 FormattedText 缓存（按行号）。FormattedText 构造开销大，
     /// 滚动时只有当前行（粗体）每帧重建，其余行命中缓存——解决滚动卡顿。
     /// 数据变化或尺寸变化时整体失效。
     /// </summary>
-    private readonly Dictionary<int, FormattedText> _primaryCache = new();
-    private readonly Dictionary<int, FormattedText> _secondaryCache = new();
+    private readonly Dictionary<int, TextEntry> _primaryCache = new();
+    private readonly Dictionary<int, TextEntry> _secondaryCache = new();
 
     /// <summary>缓存失效标志：Lines 或宽度变化时置 true，下一帧重建。</summary>
     private bool _cacheDirty = true;
 
     /// <summary>当前行（粗体+强调色）缓存：key 为行号，播放推进时每行只重建一次。</summary>
-    private readonly Dictionary<int, FormattedText> _currentCache = new();
+    private readonly Dictionary<int, TextEntry> _currentCache = new();
 
     /// <summary>
     /// 预生成的淡出画刷（按距离 0..4 对应 LineFade 五档，主文本与副文本各一套）。
@@ -272,38 +275,51 @@ public sealed class LyricCanvas : FrameworkElement
             // ---- 主文本 ----
             if (isCurrent)
             {
-                // 当前行：粗体+强调色，完整文本不省略（窄栏时宁可减少句数也要整句完整）
+                // 当前行：粗体+强调色，完整文本不省略（窄栏时宁可减少句数也要整句完整；
+                // 超宽时自适应缩小字号，保证整句都看得见）
                 if (!_currentCache.TryGetValue(i, out var current))
                 {
-                    current = new FormattedText(
+                    var ft = new FormattedText(
                         line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                         CurrentTypeface, LyricLayout.PrimaryFontSize, accent, pixelsPerDip);
-                    current.MaxLineCount = 1;
+                    var natural = ft.Width;
+                    if (natural > maxWidth && maxWidth > 60)
+                    {
+                        var fitSize = Math.Max(11, LyricLayout.PrimaryFontSize * maxWidth / natural);
+                        ft = new FormattedText(
+                            line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                            CurrentTypeface, fitSize, accent, pixelsPerDip);
+                    }
+                    ft.MaxLineCount = 1;
+                    current = new TextEntry(ft, natural);
                     _currentCache[i] = current;
                 }
 
-                dc.DrawText(current, new Point(8, textY));
+                dc.DrawText(current.Text, new Point(8, textY));
             }
             else
             {
                 if (!_primaryCache.TryGetValue(i, out var primary))
                 {
-                    primary = new FormattedText(
+                    // 先建无约束文本测自然宽度，再设单行约束（约束会让 Width 截断，判断会失真）
+                    var ft = new FormattedText(
                         line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                         PrimaryTypeface, LyricLayout.PrimaryFontSize, baseText, pixelsPerDip);
-                    primary.MaxTextWidth = maxWidth;
-                    primary.MaxLineCount = 1;
+                    var natural = ft.Width;
+                    ft.MaxTextWidth = maxWidth;
+                    ft.MaxLineCount = 1;
+                    primary = new TextEntry(ft, natural);
                     _primaryCache[i] = primary;
                 }
 
                 // 窄栏放不下整句 → 这一句不显示（减少句数，代替省略号截断）
-                if (primary.Width > maxWidth + 0.5) continue;
+                if (primary.NaturalWidth > maxWidth + 0.5) continue;
 
                 // 淡出画刷预生成（无离屏渲染、无分配）
                 var distance = Math.Min(4, Math.Abs(i - CurrentIndex));
                 if (_primaryFadeBrushes.Length == 5)
-                    primary.SetForegroundBrush(_primaryFadeBrushes[distance]);
-                dc.DrawText(primary, new Point(8, textY));
+                    primary.Text.SetForegroundBrush(_primaryFadeBrushes[distance]);
+                dc.DrawText(primary.Text, new Point(8, textY));
             }
 
             // ---- 副文本（走缓存；放不下整句则不显示） ----
@@ -311,20 +327,22 @@ public sealed class LyricCanvas : FrameworkElement
             {
                 if (!_secondaryCache.TryGetValue(i, out var secondary))
                 {
-                    secondary = new FormattedText(
+                    var ft = new FormattedText(
                         line.Secondary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                         PrimaryTypeface, LyricLayout.SecondaryFontSize, subText, pixelsPerDip);
-                    secondary.MaxTextWidth = maxWidth;
-                    secondary.MaxLineCount = 1;
+                    var natural = ft.Width;
+                    ft.MaxTextWidth = maxWidth;
+                    ft.MaxLineCount = 1;
+                    secondary = new TextEntry(ft, natural);
                     _secondaryCache[i] = secondary;
                 }
 
-                if (secondary.Width > maxWidth + 0.5) continue;
+                if (secondary.NaturalWidth > maxWidth + 0.5) continue;
 
                 var distance = Math.Min(4, Math.Abs(i - CurrentIndex));
                 if (_secondaryFadeBrushes.Length == 5)
-                    secondary.SetForegroundBrush(_secondaryFadeBrushes[distance]);
-                dc.DrawText(secondary, new Point(8, textY + LyricLayout.PrimaryFontSize + LyricLayout.PrimaryToSecondaryGap + 1));
+                    secondary.Text.SetForegroundBrush(_secondaryFadeBrushes[distance]);
+                dc.DrawText(secondary.Text, new Point(8, textY + LyricLayout.PrimaryFontSize + LyricLayout.PrimaryToSecondaryGap + 1));
             }
         }
     }
