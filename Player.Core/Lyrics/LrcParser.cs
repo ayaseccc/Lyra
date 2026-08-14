@@ -25,6 +25,9 @@ public sealed class LyricDocument
 
     public IReadOnlyList<LyricLine> Lines { get; init; } = Array.Empty<LyricLine>();
 
+    /// <summary>头部元数据（[ti:]/[ar:]/[词:]/[曲:]/[编曲:] 等，键小写）。</summary>
+    public IReadOnlyDictionary<string, string> Header { get; init; } = new Dictionary<string, string>();
+
     /// <summary>来自 [offset:] 标签的整体偏移（正数表示歌词提前）。</summary>
     public TimeSpan TagOffset { get; init; }
 
@@ -81,6 +84,7 @@ public static partial class LrcParser
         var lines = new List<LyricLine>();
         var plain = new List<string>();
         var offset = TimeSpan.Zero;
+        var header = new Dictionary<string, string>(StringComparer.OrdinalIgnoreCase);
 
         foreach (var raw in content.Replace("\r\n", "\n").Replace('\r', '\n').Split('\n'))
         {
@@ -96,8 +100,14 @@ public static partial class LrcParser
                 continue;
             }
 
-            // 元数据标签（ti/ar/al/by/re/ve 等）直接跳过
-            if (MetadataTag().IsMatch(line)) continue;
+            // 元数据标签（ti/ar/al/by/词/曲/编曲 等）记录进 Header 并跳过
+            var metaLine = MetadataLine().Match(line);
+            if (metaLine.Success)
+            {
+                foreach (Match m in MetadataPair().Matches(metaLine.Groups[1].Value))
+                    header[m.Groups[1].Value.Trim().ToLowerInvariant()] = m.Groups[2].Value.Trim();
+                continue;
+            }
 
             var timeMatches = TimeTag().Matches(line);
             if (timeMatches.Count == 0)
@@ -121,6 +131,7 @@ public static partial class LrcParser
             return new LyricDocument
             {
                 Lines = lines.OrderBy(l => l.Time).ToList(),
+                Header = header,
                 TagOffset = offset,
                 HasTimeline = true
             };
@@ -132,6 +143,7 @@ public static partial class LrcParser
         return new LyricDocument
         {
             Lines = plain.Select(t => new LyricLine { Time = TimeSpan.Zero, Text = t }).ToList(),
+            Header = header,
             TagOffset = offset,
             HasTimeline = false
         };
@@ -210,6 +222,9 @@ public static partial class LrcParser
     [GeneratedRegex(@"^\s*\[offset:\s*([+-]?\d+)\s*\]", RegexOptions.IgnoreCase)]
     private static partial Regex OffsetTag();
 
-    [GeneratedRegex(@"^\s*\[(ti|ar|al|by|re|ve|au|length|kana):", RegexOptions.IgnoreCase)]
-    private static partial Regex MetadataTag();
+    [GeneratedRegex(@"^((?:\[[a-zA-Z\u4e00-\u9fff]+\s*:\s*[^\]]*\]\s*)+)")]
+    private static partial Regex MetadataLine();
+
+    [GeneratedRegex(@"\[([a-zA-Z\u4e00-\u9fff]+)\s*:\s*([^\]]*)\]", RegexOptions.IgnoreCase)]
+    private static partial Regex MetadataPair();
 }

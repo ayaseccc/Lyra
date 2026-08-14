@@ -46,6 +46,16 @@ public sealed class NonEmptyToVisibilityConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>字符串为空时 Visible（UI-R4：标签没有制作信息时显示 LRC 头部补位）。</summary>
+public sealed class EmptyToVisibilityConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is not string s || s.Length == 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 
 /// <summary>bool → 强调色/半透明画刷（播放模式按钮、歌词开关的选中高亮，UI-R1）。</summary>
 public sealed class BoolToAccentConverter : IValueConverter

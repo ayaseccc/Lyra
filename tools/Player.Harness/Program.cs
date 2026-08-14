@@ -273,6 +273,15 @@ public static class Program
         Check("元数据标签被跳过、offset 标签被解析", doc.TagOffset == TimeSpan.FromMilliseconds(500));
         Check("正常解析出行", doc.Lines.Count == 3 && doc.HasTimeline);
         Check("时间轴按时间排序", doc.Lines[0].Time == TimeSpan.FromSeconds(1) && doc.Lines[2].Time == TimeSpan.FromSeconds(5));
+        Check("头部元数据捕获（ti/ar）", doc.Header.TryGetValue("ti", out var ti) && ti == "测试"
+            && doc.Header.TryGetValue("ar", out var ar) && ar == "某歌手");
+
+        var credit = LrcParser.Parse("[ti:歌][作词:林夕][曲:陈辉阳][编曲:王双骏]\n[00:01.00]词曲示例");
+        Check("制作信息头部捕获（作词/曲/编曲）",
+            credit.Header.TryGetValue("作词", out var lyr) && lyr == "林夕"
+            && credit.Header.TryGetValue("曲", out var comp) && comp == "陈辉阳"
+            && credit.Header.TryGetValue("编曲", out var arr) && arr == "王双骏");
+        Check("带制作信息头部的歌词仍正常解析", credit.Lines.Count == 1 && credit.HasTimeline);
 
         var multi = LrcParser.Parse("[00:01.00][00:03.50]同一句重复");
         Check("一行多时间标签展开成多行", multi.Lines.Count == 2);

@@ -201,6 +201,7 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(RenderLines));
         OnPropertyChanged(nameof(IsStatic));
         OnPropertyChanged(nameof(HasLyrics));
+        OnPropertyChanged(nameof(HeaderCreditsText));
     }
 
     private void ApplyResult(LyricsLoadResult result)
@@ -212,6 +213,33 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         RefreshSourceText(result);
         UpdateCurrentIndex();
         NotifyPreferenceChanged();
+        OnPropertyChanged(nameof(HeaderCreditsText));
+    }
+
+    /// <summary>
+    /// LRC 头部元数据的制作信息（UI-R4：词/曲/编曲，有才显示；标签里没有时才值得看这里）。
+    /// </summary>
+    public string HeaderCreditsText
+    {
+        get
+        {
+            var parts = new List<string>(3);
+            var lyricist = FirstHeader("作词", "词", "lyricist");
+            var composer = FirstHeader("作曲", "曲", "composer");
+            var arranger = FirstHeader("编曲", "编", "arranger");
+            if (!string.IsNullOrWhiteSpace(lyricist)) parts.Add("作词 " + lyricist);
+            if (!string.IsNullOrWhiteSpace(composer)) parts.Add("作曲 " + composer);
+            if (!string.IsNullOrWhiteSpace(arranger)) parts.Add("编曲 " + arranger);
+            return string.Join(" · ", parts);
+        }
+    }
+
+    private string FirstHeader(params string[] keys)
+    {
+        foreach (var key in keys)
+            if (_document.Header.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
+                return v;
+        return string.Empty;
     }
 
     private void RefreshSourceText(LyricsLoadResult result)

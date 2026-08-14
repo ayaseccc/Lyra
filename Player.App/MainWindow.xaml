@@ -805,7 +805,20 @@
                     </Border>
                     <StackPanel Grid.Row="1">
                         <TextBlock Text="{Binding Player.Title}" Style="{StaticResource TitleTextStyle}" FontSize="14" />
-                        <TextBlock Text="{Binding Player.Artist}" Style="{StaticResource SubTextStyle}" Margin="0,3,0,0" />
+                        <TextBlock Text="{Binding Player.ArtistAndAlbum}" Style="{StaticResource SubTextStyle}" Margin="0,3,0,0" />
+                        <!-- UI-R4 制作信息区块：标签优先，LRC 头部补位，有才显示 -->
+                        <StackPanel Orientation="Horizontal" Margin="0,7,0,0"
+                                    Visibility="{Binding Player.Credits, Converter={StaticResource NonEmptyToVis}}">
+                            <ui:SymbolIcon Symbol="Edit24" FontSize="12" VerticalAlignment="Center"
+                                           Foreground="{DynamicResource TextTertiaryBrush}" />
+                            <TextBlock Text="{Binding Player.Credits}" Margin="6,0,0,0" VerticalAlignment="Center"
+                                       FontSize="10.5" Foreground="{DynamicResource TextTertiaryBrush}"
+                                       TextWrapping="Wrap" />
+                        </StackPanel>
+                        <TextBlock Text="{Binding Player.Lyrics.HeaderCreditsText}" Margin="0,4,0,0"
+                                   FontSize="10.5" Foreground="{DynamicResource TextTertiaryBrush}"
+                                   TextWrapping="Wrap"
+                                   Visibility="{Binding Player.Credits, Converter={StaticResource EmptyToVis}}" />
                         <!-- 来源信息已移入歌词右键菜单（UI-R1.5 ⑥） -->
                     </StackPanel>
                     <Grid Grid.Row="2" Margin="0,14,0,0">

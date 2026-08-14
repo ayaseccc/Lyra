@@ -124,6 +124,9 @@ public sealed class UiConfig
 
     /// <summary>是否随封面染色（UI-R3 反馈）：true = 染色（默认），false = 不染色。</summary>
     public bool ThemeTint { get; set; } = true;
+
+    /// <summary>右侧信息栏折叠状态（UI-R4）：true = 展开（默认）。</summary>
+    public bool SidePaneOpen { get; set; } = true;
 }
 
 /// <summary>

@@ -50,6 +50,9 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         Volume = Math.Clamp(ConfigService.Current.Ui.Volume, 0, 1);
         _engine.Volume = Volume;
 
+        // UI-R4：侧栏折叠状态持久化
+        IsSidePaneVisible = ConfigService.Current.Ui.SidePaneOpen;
+
         PlayMode = Enum.TryParse<PlayMode>(ConfigService.Current.Ui.PlayMode, out var mode)
             ? mode
             : PlayMode.RepeatAll;
@@ -87,7 +90,13 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     private bool _isSidePaneVisible = true;
 
     [RelayCommand]
-    private void ToggleSidePane() => IsSidePaneVisible = !IsSidePaneVisible;
+    private void ToggleSidePane()
+    {
+        IsSidePaneVisible = !IsSidePaneVisible;
+        // UI-R4：折叠状态持久化
+        ConfigService.Current.Ui.SidePaneOpen = IsSidePaneVisible;
+        ConfigService.Save();
+    }
 
     /// <summary>右侧栏列宽：折叠时归零（UI-R1）。</summary>
     public System.Windows.GridLength SidePaneWidth =>
@@ -95,6 +104,18 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     /// <summary>当前播放的曲目，供列表页高亮用。</summary>
     public TrackRecord? CurrentTrack => _list.Current;
+
+    /// <summary>专辑名（UI-R4：右侧信息栏 艺术家 | 专辑）。</summary>
+    [ObservableProperty]
+    private string _album = string.Empty;
+
+    /// <summary>艺术家 | 专辑（UI-R4）。</summary>
+    public string ArtistAndAlbum =>
+        string.IsNullOrWhiteSpace(Album) ? Artist : $"{Artist} | {Album}";
+
+    /// <summary>制作信息一行（作词 · 作曲 · 编曲，UI-R4；空 = 标签里没有）。</summary>
+    [ObservableProperty]
+    private string _credits = string.Empty;
 
     [ObservableProperty]
     private string _title = "未在播放";
@@ -579,7 +600,10 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     {
         Title = track.DisplayTitle;
         Artist = track.DisplayArtist;
-        CoverImage = CoverImageCache.Get(track.CoverHash);
+        Album = string.IsNullOrWhiteSpace(track.DisplayAlbum) ? string.Empty : track.DisplayAlbum;
+        OnPropertyChanged(nameof(ArtistAndAlbum));
+        CoverImage = CoverImageCache.GetLarge(track.CoverHash);   // UI-R4：大封面高清解码（列表行内用小图）
+        Credits = Player.Core.Library.CreditReader.Read(track.Path).ToLine();   // UI-R4：制作信息
         ThemeService.OnTrackChanged(track.CoverHash);   // UI-R3：封面取色整体染色
         RefreshWindowTitle();
 
