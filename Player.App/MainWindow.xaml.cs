@@ -41,6 +41,13 @@ public partial class MainWindow : FluentWindow
     /// <summary>托盘菜单「退出」置位：放行后续真实的关闭（配合"关闭到托盘"拦截）。</summary>
     private bool _exitingFromTray;
 
+    /// <summary>系统会话结束（关机/重启/注销）：放行关闭，避免"关闭到托盘"拦截阻塞系统关机（审查修复）。</summary>
+    private bool _sessionEnding;
+
+    /// <summary>SMTC 初始化失败后的有界重试（审查修复：仅靠 Loaded 重试不可靠）。</summary>
+    private int _smtcRetryCount;
+    private System.Windows.Threading.DispatcherTimer? _smtcRetryTimer;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -90,13 +97,17 @@ public partial class MainWindow : FluentWindow
             new MouseButtonEventHandler(OnVolumeMouseUp), handledEventsToo: true);
 
         // L2 SMTC：窗口**显示后**初始化（GetForWindow 在窗口可见前调用会失败）；
-        // 失败保持 _smtcService = null，下次事件（隐藏后再显示等）自动重试
+        // 失败保持 _smtcService = null，由有界重试定时器兜底（审查修复）
         Loaded += (_, _) =>
         {
+            _smtcRetryCount = 0; // 重新显示窗口 = 新的初始化机会
             InitSmtc();
             // L2 全局热键：配置里开启过就恢复注册（失败会逐条提示）
             if (ConfigService.Current.Ui.GlobalHotkeysEnabled) ApplyGlobalHotkeys();
         };
+
+        // L2 托盘兼容：系统关机/重启/注销时放行退出，不能被"关闭到托盘"的拦截卡住（审查修复）
+        System.Windows.Application.Current!.SessionEnding += (_, _) => _sessionEnding = true;
 
         // 恢复上次的窗口尺寸（UI-R1.5 反馈）
         var ui = ConfigService.Current.Ui;
@@ -139,18 +150,38 @@ public partial class MainWindow : FluentWindow
         Player.SetVolumeFromDrag(Math.Clamp(p.X / VolumeSquares.ActualWidth, 0, 1));
     }
 
-    /// <summary>L2 SMTC：Player 就绪且窗口已显示后创建服务（GetForWindow 要求窗口可见）。</summary>
+    /// <summary>L2 SMTC：Player 就绪且窗口已显示后创建服务（GetForWindow 要求窗口可见）。
+    /// 失败保持 null 并安排有界重试（最多 3 次、间隔 8s，审查修复）。</summary>
     private void InitSmtc()
     {
         if (_smtcService is not null || Player is null) return;
         try
         {
             _smtcService = new Player.App.SystemMedia.SmtcService(new WindowInteropHelper(this).Handle, Player);
+            _smtcRetryTimer?.Stop();
+            _smtcRetryTimer = null;
             Serilog.Log.Information("SMTC 已就绪（媒体键/锁屏控制可用）");
         }
         catch (Exception ex)
         {
             Serilog.Log.Warning(ex, "SMTC 初始化失败（媒体键/锁屏控制不可用，HRESULT 0x{HR:X8}）", ex.HResult);
+            _smtcRetryCount++;
+            if (_smtcRetryCount <= 3)
+            {
+                _smtcRetryTimer ??= new System.Windows.Threading.DispatcherTimer
+                {
+                    Interval = TimeSpan.FromSeconds(8)
+                };
+                if (!_smtcRetryTimer.IsEnabled)
+                {
+                    _smtcRetryTimer.Tick += (_, _) =>
+                    {
+                        _smtcRetryTimer!.Stop();
+                        InitSmtc();
+                    };
+                    _smtcRetryTimer.Start();
+                }
+            }
         }
     }
 
@@ -231,13 +262,16 @@ public partial class MainWindow : FluentWindow
     {
         // L2 托盘（B4 ShutdownMode 语义）：开启"关闭到托盘"时关主窗 = 隐藏而非退出，
         // 进程与托盘继续存活（SMTC 媒体键也不断）；退出只能走托盘菜单。
-        if (ConfigService.Current.Ui.CloseToTray && !_exitingFromTray)
+        // 会话结束（关机/重启/注销）与托盘「退出」都放行真实关闭（审查修复）。
+        if (ConfigService.Current.Ui.CloseToTray && !_exitingFromTray && !_sessionEnding)
         {
             e.Cancel = true;
             Hide();
             return;
         }
 
+        _smtcRetryTimer?.Stop();
+        _smtcRetryTimer = null;
         _tray?.Dispose();
         _tray = null;
         _globalHotkeys?.Dispose();

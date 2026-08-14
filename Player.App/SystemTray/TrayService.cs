@@ -22,6 +22,9 @@ public sealed class TrayService : IDisposable
     private readonly ToolStripMenuItem _playPauseItem;
     private readonly ToolStripMenuItem _desktopLyricsItem;
     private readonly System.Drawing.Icon _iconResource;
+
+    /// <summary>图标是否为自建资源：系统共享图标（SystemIcons.Application）不能被 Dispose（审查修复）。</summary>
+    private readonly bool _ownsIcon;
     private bool _disposed;
 
     public TrayService(PlayerViewModel player, Action toggleDesktopLyrics, Action showWindow, Action exit)
@@ -48,7 +51,8 @@ public sealed class TrayService : IDisposable
             showItem, exitItem
         });
 
-        _iconResource = LoadIcon();
+        _iconResource = LoadIcon(out var owns);
+        _ownsIcon = owns;
         _icon = new NotifyIcon
         {
             Text = "Player",
@@ -74,18 +78,23 @@ public sealed class TrayService : IDisposable
         RefreshDesktopLyricsCheck();
     }
 
-    private static System.Drawing.Icon LoadIcon()
+    private static System.Drawing.Icon LoadIcon(out bool owns)
     {
         try
         {
             using var stream = System.Windows.Application.GetResourceStream(
                 new Uri("pack://application:,,,/Assets/app.ico"))?.Stream;
-            if (stream is not null) return new System.Drawing.Icon(stream);
+            if (stream is not null)
+            {
+                owns = true;
+                return new System.Drawing.Icon(stream);
+            }
         }
         catch (Exception ex)
         {
             Serilog.Log.Warning(ex, "托盘图标资源加载失败，退回系统图标");
         }
+        owns = false;
         return System.Drawing.SystemIcons.Application;
     }
 
@@ -124,6 +133,6 @@ public sealed class TrayService : IDisposable
         _player.PropertyChanged -= OnPlayerPropertyChanged;
         _icon.Visible = false;
         _icon.Dispose();
-        _iconResource.Dispose();
+        if (_ownsIcon) _iconResource.Dispose();
     }
 }

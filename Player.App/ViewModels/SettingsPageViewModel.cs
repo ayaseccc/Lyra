@@ -652,14 +652,12 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         OnPropertyChanged(nameof(IsKeyReadOnly));
     }
 
-    /// <summary>输入框内容：隐藏态 = 圆点 + 尾 4 位；显示态 = 完整 Key（可编辑）。</summary>
+    /// <summary>输入框内容：隐藏态 = 圆点 + 尾 4 位（短 Key 只显圆点）；显示态 = 完整 Key（可编辑）。</summary>
     public string ApiKeyDisplay
     {
         get => IsKeyRevealed
             ? ApiKey
-            : string.IsNullOrEmpty(ApiKey)
-                ? string.Empty
-                : "••••" + (ApiKey.Length >= 4 ? ApiKey[^4..] : ApiKey);
+            : MaskTail4(ApiKey);
         set
         {
             if (IsKeyRevealed && ApiKey != value) ApiKey = value;
@@ -669,10 +667,12 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     /// <summary>隐藏态只读（避免把掩码前缀当 Key 编辑）。</summary>
     public bool IsKeyReadOnly => !IsKeyRevealed;
 
-    /// <summary>掩码回显只保留尾 4 位（状态行等处共用）。</summary>
-    public string KeyMasked => string.IsNullOrEmpty(ApiKey)
+    /// <summary>掩码回显只保留尾 4 位（状态行等处共用；短 Key 一律只显圆点，审查修复）。</summary>
+    public string KeyMasked => MaskTail4(ApiKey);
+
+    private static string MaskTail4(string key) => string.IsNullOrEmpty(key)
         ? string.Empty
-        : "••••" + (ApiKey.Length >= 4 ? ApiKey[^4..] : ApiKey);
+        : "••••" + (key.Length >= 4 ? key[^4..] : string.Empty);
 
     /// <summary>额度展示（P3.1-④ 从播放条迁到设置页）：免费/付费余量 + UTC+8 重置时间。</summary>
     public string QuotaDisplay

@@ -147,6 +147,13 @@ public sealed class SmtcService : IDisposable
         if (_smtc is null) return;
         try
         {
+            // 停止时清掉陈旧元数据，避免浮窗残留上一首（审查修复）
+            var updater = _smtc.DisplayUpdater;
+            updater.Type = MediaPlaybackType.Music;
+            updater.MusicProperties.Title = string.Empty;
+            updater.MusicProperties.Artist = string.Empty;
+            updater.MusicProperties.AlbumTitle = string.Empty;
+            updater.Update();
             _smtc.PlaybackStatus = MediaPlaybackStatus.Stopped;
         }
         catch { }
@@ -158,9 +165,19 @@ public sealed class SmtcService : IDisposable
         var dispatcher = Application.Current?.Dispatcher;
         switch (args.Button)
         {
+            // 语义区分（审查修复）：Play 只在暂停时起播，Pause 只在播放中暂停，
+            // 避免播放中再按 Play 被当成切换
             case SystemMediaTransportControlsButton.Play:
+                dispatcher?.BeginInvoke(() =>
+                {
+                    if (!_player.IsPlaying) _player.PlayPauseCommand.Execute(null);
+                });
+                break;
             case SystemMediaTransportControlsButton.Pause:
-                dispatcher?.BeginInvoke(() => _player.PlayPauseCommand.Execute(null));
+                dispatcher?.BeginInvoke(() =>
+                {
+                    if (_player.IsPlaying) _player.PlayPauseCommand.Execute(null);
+                });
                 break;
             case SystemMediaTransportControlsButton.Next:
                 dispatcher?.BeginInvoke(() => _player.NextCommand.Execute(null));

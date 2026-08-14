@@ -441,8 +441,9 @@ public static class Program
     {
         Console.WriteLine("=== ChkszClient 脱敏与错误映射 ===");
 
-        var redacted = ChkszClient.Redact("https://api.chksz.com/api/163_search?apikey=chksz_secret123&keyword=x");
-        Check("URL 脱敏 apikey", redacted.Contains("apikey=***") && !redacted.Contains("secret123"));
+        // 脱敏夹具用假 Key（铁律：代码里不出现 chksz_ 字样，审查修复）
+        var redacted = ChkszClient.Redact("https://api.chksz.com/api/163_search?apikey=sk-test-redact-fake&keyword=x");
+        Check("URL 脱敏 apikey", redacted.Contains("apikey=***") && !redacted.Contains("redact-fake"));
 
         Check("400 → 参数错误", ChkszClient.MapError<int>(400, null).Error.Contains("参数"));
         Check("401 → Key 无效", ChkszClient.MapError<int>(401, null).AuthFailed);
