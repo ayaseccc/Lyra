@@ -460,11 +460,14 @@ public partial class MainWindow : FluentWindow
             BigLyricsOverlay.Visibility = Visibility.Visible;
             // 目验五修复：覆盖层取得键盘焦点（空格/方向键等只在大页内生效；FocusVisualStyle 已置空无焦点框）
             BigLyricsOverlay.Focus();
+            // 目验七修复：大页期间窗口 Tab 导航整体关闭（任何焦点位置按 Tab 都不动，选框无法出现）
+            KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.None);
             BigLyricsOverlay.BeginAnimation(OpacityProperty,
                 new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
         }
         else
         {
+            KeyboardNavigation.SetTabNavigation(this, KeyboardNavigationMode.Continue);
             var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200));
             // 复查修复：重入守卫——关闭淡出期间若已重新打开，旧回调不得把覆盖层拉回 Collapsed
             fade.Completed += (_, _) =>

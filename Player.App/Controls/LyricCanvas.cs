@@ -38,6 +38,7 @@ public sealed class LyricCanvas : FrameworkElement
     private bool _animating;
     private bool _freeBrowse;          // 大页滚轮自由浏览中
     private DateTime _freeBrowseUntil;   // 自由浏览超时点（到点自动回跟随）
+    private double _freeBrowseTarget;    // 自由浏览的目标偏移（帧循环滑行到位）
 
     private static readonly FontFamily UiFont = new("Microsoft YaHei UI, Segoe UI");
 
@@ -224,11 +225,14 @@ public sealed class LyricCanvas : FrameworkElement
             return;
         }
 
-        // 目验六修复：大页滚轮自由浏览——超时（2 秒无操作）才回跟随；浏览期间完全由滚轮操控
+        // 目验六/七修复：大页滚轮自由浏览——超时（2 秒无操作）才回跟随；浏览期间向目标偏移滑动（滚动感）
         if (_freeBrowse && DateTime.UtcNow >= _freeBrowseUntil)
             _freeBrowse = false;
         if (_freeBrowse)
         {
+            var diff = _freeBrowseTarget - _offset;
+            if (Math.Abs(diff) < 0.5) _offset = _freeBrowseTarget;
+            else _offset += diff * Math.Min(1.0, dt * 22.0);   // 快速滑行（≈100ms 到位）
             InvalidateVisual();
             return;
         }
@@ -270,11 +274,17 @@ public sealed class LyricCanvas : FrameworkElement
 
         var maxOffset = Math.Max(0, LyricLayout.TotalHeight(heights) - ActualHeight);
         var step = WheelBrowsing && !IsStatic ? LyricLayout.PrimaryLineHeight * 4 : LyricLayout.WheelStep(e.Delta);
-        _offset = Math.Clamp(_offset + (e.Delta > 0 ? -step : step), 0, maxOffset);
         if (WheelBrowsing && !IsStatic)
         {
+            // 目验七修复：目标偏移累加 + 帧循环滑行到位（滚动感），连续滚轮自然累积
             _freeBrowse = true;
+            _freeBrowseTarget = Math.Clamp((_freeBrowseTarget == 0 ? _offset : _freeBrowseTarget)
+                                           + (e.Delta > 0 ? -step : step), 0, maxOffset);
             _freeBrowseUntil = DateTime.UtcNow.AddSeconds(2);   // 2 秒无操作自动回跟随
+        }
+        else
+        {
+            _offset = Math.Clamp(_offset + (e.Delta > 0 ? -step : step), 0, maxOffset);
         }
         InvalidateVisual();
         StartAnimation();
@@ -297,13 +307,26 @@ public sealed class LyricCanvas : FrameworkElement
         }
 
         var index = LyricLayout.HitTestUnit(pos.Y, _offset, heights);
-        if (index >= 0)
+        // 目验七修复：命中收窄到文字横向范围——行 Y 上但 x 远离文字的点击算空白（左/右半区导航）
+        if (index >= 0 && IsOverUnitText(index, pos.X))
         {
             LineClicked?.Invoke(index);
             return;
         }
         if (ClickMode == LyricClickMode.SeekOrNavigate)
             BlankClicked?.Invoke(pos.X);
+    }
+
+    /// <summary>判断 x 是否落在某单元的文本横向范围（居中文本 ±24px 容差）；无缓存数据时视为命中。</summary>
+    private bool IsOverUnitText(int index, double x)
+    {
+        if (!_unitCache.TryGetValue(index, out var data)) return true;
+        var maxWidth = 0.0;
+        foreach (var ft in data.Primary) maxWidth = Math.Max(maxWidth, ft.Width);
+        foreach (var ft in data.Secondary) maxWidth = Math.Max(maxWidth, ft.Width);
+        if (maxWidth <= 0) return true;
+        var center = ActualWidth / 2;
+        return Math.Abs(x - center) <= maxWidth / 2 + 24;
     }
 
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
