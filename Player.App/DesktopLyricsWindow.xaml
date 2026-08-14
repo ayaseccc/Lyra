@@ -9,32 +9,33 @@
         WindowStartupLocation="Manual" Top="860" Left="680"
         Loaded="OnLoaded" MouseLeftButtonDown="OnWindowMouseDown">
     <Grid MouseEnter="OnRootMouseEnter" MouseLeave="OnRootMouseLeave" Background="Transparent">
-        <!-- 圆角半透明背景条（L1.1-③：可隐藏/调透明，纯文字模式靠描边阴影保可读） -->
+        <!-- 圆角半透明背景条（L1.1-③：可隐藏/调透明；目验修复①：文字层与背景分离，隐藏背景不丢文字） -->
         <Border x:Name="Backdrop" CornerRadius="14" Opacity="0.82"
                 Background="{DynamicResource SurfaceStrongBrush}"
                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1"
-                Margin="4" Padding="18,10">
-            <Grid>
-                <Grid.RowDefinitions>
-                    <RowDefinition Height="Auto" />
-                    <RowDefinition Height="Auto" />
-                </Grid.RowDefinitions>
-                <TextBlock x:Name="PrimaryText" FontSize="20" FontWeight="SemiBold"
-                           Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Center"
-                           TextTrimming="CharacterEllipsis">
-                    <TextBlock.Effect>
-                        <DropShadowEffect x:Name="PrimaryShadow" BlurRadius="6" ShadowDepth="1" Opacity="0.9" Color="Black" />
-                    </TextBlock.Effect>
-                </TextBlock>
-                <TextBlock x:Name="SecondaryText" Grid.Row="1" FontSize="14" Margin="0,4,0,0"
-                           Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Center"
-                           TextTrimming="CharacterEllipsis">
-                    <TextBlock.Effect>
-                        <DropShadowEffect x:Name="SecondaryShadow" BlurRadius="6" ShadowDepth="1" Opacity="0.9" Color="Black" />
-                    </TextBlock.Effect>
-                </TextBlock>
-            </Grid>
-        </Border>
+                Margin="4" />
+
+        <!-- 文字层：独立于背景卡片，始终显示（目验修复③：垂直居中，不再顶对齐） -->
+        <Grid Margin="4" VerticalAlignment="Center">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+            <TextBlock x:Name="PrimaryText" FontSize="20" FontWeight="SemiBold"
+                       Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Center"
+                       TextTrimming="CharacterEllipsis" Padding="18,0">
+                <TextBlock.Effect>
+                    <DropShadowEffect x:Name="PrimaryShadow" BlurRadius="6" ShadowDepth="1" Opacity="0.9" Color="Black" />
+                </TextBlock.Effect>
+            </TextBlock>
+            <TextBlock x:Name="SecondaryText" Grid.Row="1" FontSize="14" Margin="18,4,18,0"
+                       Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Center"
+                       TextTrimming="CharacterEllipsis">
+                <TextBlock.Effect>
+                    <DropShadowEffect x:Name="SecondaryShadow" BlurRadius="6" ShadowDepth="1" Opacity="0.9" Color="Black" />
+                </TextBlock.Effect>
+            </TextBlock>
+        </Grid>
 
         <!-- 悬停迷你工具条（L1.1-③：解锁态悬停左上角显示，含锁定按钮——解锁后唯一再锁定入口） -->
         <StackPanel x:Name="HoverToolbar" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top"

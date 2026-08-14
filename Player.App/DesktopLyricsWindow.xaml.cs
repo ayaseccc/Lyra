@@ -20,8 +20,13 @@ namespace Player.App;
 /// </summary>
 public partial class DesktopLyricsWindow : Window
 {
-    private const int WsExTransparent = 0x00000020;
-    private const int GwlExStyle = -20;
+    // B5（目验发现）：锁定=鼠标穿透改走 WM_NCHITTEST 逐点判定——
+    // 只有小柄区域返回 HTCLIENT（可点），其余返回 HTTRANSPARENT（穿透）。
+    // 不再使用 WS_EX_TRANSPARENT（它让整窗包括小柄都收不到鼠标，锁定后永远无法解锁）。
+    private const int WmNcHitTest = 0x0084;
+    private const int HtTransparent = -1;
+    private const int HtClient = 1;
+    private const double HandleHitSize = 26;
 
     private bool _locked = true;
     private bool _dragging;
@@ -58,13 +63,8 @@ public partial class DesktopLyricsWindow : Window
         PrimaryText.FontWeight = weight;
         SecondaryText.FontWeight = weight;
 
-        // L1.1-③ 背景卡片：隐藏或调透明；隐藏时描边/阴影加强保可读
-        Backdrop.Visibility = ui.DesktopLyricsShowBackground ? Visibility.Visible : Visibility.Collapsed;
-        Backdrop.Opacity = ui.DesktopLyricsShowBackground ? ui.DesktopLyricsBgOpacity : 1.0;
-        var shadowStrength = ui.DesktopLyricsShowBackground ? 0.9 : 1.0;
-        var shadowBlur = ui.DesktopLyricsShowBackground ? 6.0 : 12.0;
-        if (PrimaryText.Effect is DropShadowEffect ps) { ps.Opacity = shadowStrength; ps.BlurRadius = shadowBlur; }
-        if (SecondaryText.Effect is DropShadowEffect ss) { ss.Opacity = shadowStrength; ss.BlurRadius = shadowBlur; }
+        // L1.1-③ 背景卡片：隐藏或调透明；隐藏时描边/阴影加强保可读（锁定态恒为纯文字，见 ApplyBackdropVisibility）
+        ApplyBackdropVisibility();
     }
 
     /// <summary>文字颜色：跟随主题（清本地值回退 DynamicResource）/ 自定义纯色（副文本 75% 透明）。</summary>
@@ -101,6 +101,32 @@ public partial class DesktopLyricsWindow : Window
         }
     }
 
+    protected override void OnSourceInitialized(EventArgs e)
+    {
+        base.OnSourceInitialized(e);
+        if (PresentationSource.FromVisual(this) is HwndSource source)
+            source.AddHook(WndProc);
+    }
+
+    /// <summary>
+    /// B5：锁定态逐点鼠标穿透。WM_NCHITTEST 里把除小柄外的区域返回 HTTRANSPARENT，
+    /// 鼠标事件直接落到下层窗口；小柄区域返回 HTCLIENT 保持可点（解锁入口）。
+    /// 解锁态不拦截（返回默认）。
+    /// </summary>
+    private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
+    {
+        if (msg != WmNcHitTest || !_locked) return IntPtr.Zero;
+
+        var x = (short)((long)lParam & 0xFFFF);
+        var y = (short)(((long)lParam >> 16) & 0xFFFF);
+        var inHandle = x >= Left + ActualWidth - HandleHitSize
+                       && x < Left + ActualWidth
+                       && y >= Top
+                       && y < Top + HandleHitSize;
+        handled = true;
+        return new IntPtr(inHandle ? HtClient : HtTransparent);
+    }
+
     private void OnLoaded(object sender, RoutedEventArgs e) => ApplyLockedStyle();
 
     private void ApplyLockedStyle()
@@ -112,26 +138,27 @@ public partial class DesktopLyricsWindow : Window
             UnlockHandle.Visibility = Visibility.Visible;
             ResizeHandle.Visibility = Visibility.Collapsed;
             HoverToolbar.Visibility = Visibility.Collapsed;
-            SetWindowExTransparent(true);
         }
         else
         {
             UnlockHandle.Visibility = Visibility.Collapsed;
             ResizeHandle.Visibility = Visibility.Visible;
-            SetWindowExTransparent(false);
         }
+        // 目验修复②：锁定（鼠标穿透）= 纯文字模式（背景透明，靠描边阴影保可读）；
+        // 解锁态才按设置显示背景卡片
+        ApplyBackdropVisibility();
     }
 
-    private void SetWindowExTransparent(bool transparent)
+    /// <summary>背景卡片可见性：锁定=隐藏（纯文字）；解锁=按设置。</summary>
+    private void ApplyBackdropVisibility()
     {
-        var hwnd = new WindowInteropHelper(this).Handle;
-        if (hwnd == IntPtr.Zero) return;
-        var style = GetWindowLong(hwnd, GwlExStyle);
-        // B2：只切换 WS_EX_TRANSPARENT。WS_EX_LAYERED 是 WPF AllowsTransparency 的基石，
-        // 清除它会让窗口失去逐像素透明（黑底实心块），绝不能动。
-        if (transparent) style |= WsExTransparent;
-        else style &= ~WsExTransparent;
-        SetWindowLong(hwnd, GwlExStyle, style);
+        var show = !_locked && ConfigService.Current.Ui.DesktopLyricsShowBackground;
+        Backdrop.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
+        Backdrop.Opacity = show ? ConfigService.Current.Ui.DesktopLyricsBgOpacity : 1.0;
+        var shadowStrength = show ? 0.9 : 1.0;
+        var shadowBlur = show ? 6.0 : 12.0;
+        if (PrimaryText.Effect is DropShadowEffect ps) { ps.Opacity = shadowStrength; ps.BlurRadius = shadowBlur; }
+        if (SecondaryText.Effect is DropShadowEffect ss) { ss.Opacity = shadowStrength; ss.BlurRadius = shadowBlur; }
     }
 
     private void SetLocked(bool locked)
@@ -357,10 +384,4 @@ public partial class DesktopLyricsWindow : Window
             ? Visibility.Visible
             : Visibility.Collapsed;
     }
-
-    [DllImport("user32.dll")]
-    private static extern int GetWindowLong(IntPtr hWnd, int nIndex);
-
-    [DllImport("user32.dll")]
-    private static extern int SetWindowLong(IntPtr hWnd, int nIndex, int dwNewLong);
 }

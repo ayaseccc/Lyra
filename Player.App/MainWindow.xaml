@@ -1003,16 +1003,18 @@
                                 Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}">
                             <ui:SymbolIcon Symbol="Settings24" FontSize="16" />
                         </Button>
-                        <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnBigLyricsButtonClick"
-                                ToolTip="大歌词页">
+                        <Button x:Name="BigLyricsButton" Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnBigLyricsButtonClick">
+                            <Button.ToolTip>
+                                <ToolTip x:Name="BigLyricsButtonTip" Content="大歌词页" />
+                            </Button.ToolTip>
                             <ui:SymbolIcon Symbol="ReadingList24" FontSize="16" />
                         </Button>
-                        <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnDesktopLyricsButtonClick"
-                                ToolTip="桌面歌词">
+                        <Button x:Name="DesktopLyricsButton" Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnDesktopLyricsButtonClick">
+                            <Button.ToolTip>
+                                <ToolTip x:Name="DesktopLyricsButtonTip" Content="桌面歌词" />
+                            </Button.ToolTip>
                             <ui:SymbolIcon Symbol="ClosedCaption24" FontSize="16" />
                         </Button>
-                        <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Opacity="0.22"
-                                Background="{DynamicResource HoverBrush}" ToolTip="预留功能位" />
                     </StackPanel>
 
                     <StackPanel Grid.ColumnSpan="5" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
@@ -1179,8 +1181,8 @@
                     </Border.Background>
                 </Border>
 
-                <!-- 右上角关闭按钮（L1.1-④：第三种退出方式，Esc 与点击空白同样可用） -->
-                <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,18,0"
+                <!-- 右上角关闭按钮（L1.1-④：第三种退出方式；目验修复⑤：下移到标题栏之下，避免与窗口关闭钮重叠） -->
+                <Button x:Name="BigLyricsCloseButton" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,62,18,0"
                         Width="34" Height="34" Style="{StaticResource ModeButtonStyle}"
                         ToolTip="关闭大歌词页（Esc）" Click="OnBigLyricsCloseClick">
                     <ui:SymbolIcon Symbol="Dismiss24" FontSize="16" />
@@ -1211,49 +1213,47 @@
                     </Border>
                 </Border>
 
-                <!-- 完整控制条：默认隐藏（Opacity=0），鼠标活动淡入、3 秒无操作淡出（L1.1-④） -->
-                <Border x:Name="BigLyricsControlBar" VerticalAlignment="Bottom" Opacity="0"
-                        Background="{DynamicResource SurfaceStrongBrush}"
-                        BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="0,1,0,0">
-                    <Grid Margin="24,10" DataContext="{Binding Player}">
+                <!-- 完整控制条（目验修复⑥：为大歌词页重设——无底色、细滑条+圆钮、幽灵按钮，与页面融合） -->
+                <Border x:Name="BigLyricsControlBar" VerticalAlignment="Bottom" Opacity="0">
+                    <Grid Margin="0,0,0,16" DataContext="{Binding Player}">
                         <Grid.RowDefinitions>
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <Grid>
+                        <Grid Margin="70,0,70,0">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="Auto" />
                                 <ColumnDefinition Width="*" />
                                 <ColumnDefinition Width="Auto" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="{Binding PositionText}" Style="{StaticResource SubTextStyle}" Width="46"
-                                       VerticalAlignment="Center" />
-                            <Slider x:Name="BigLyricsSeekSlider" Grid.Column="1" Margin="2,0" VerticalAlignment="Center"
+                                       Opacity="0.85" VerticalAlignment="Center" />
+                            <Slider x:Name="BigLyricsSeekSlider" Grid.Column="1" Margin="8,0" VerticalAlignment="Center"
                                     ctrl:SeekSliderBehavior.Enable="True"
-                                    Style="{StaticResource SeekSliderStyle}"
+                                    Style="{StaticResource BigLyricsSeekStyle}"
                                     Maximum="{Binding DurationSeconds}"
                                     Value="{Binding PositionSeconds, Mode=TwoWay}"
                                     IsEnabled="{Binding HasTrack}" LargeChange="5" SmallChange="1" />
                             <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource SubTextStyle}"
-                                       Width="46" TextAlignment="Right" VerticalAlignment="Center" />
+                                       Width="46" Opacity="0.85" TextAlignment="Right" VerticalAlignment="Center" />
                         </Grid>
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
-                            <Button Style="{StaticResource TransportButtonStyle}" ToolTip="上一首"
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
+                            <Button Style="{StaticResource BigLyricsGhostButtonStyle}" ToolTip="上一首"
                                     Command="{Binding PreviousCommand}">
-                                <ui:SymbolIcon Symbol="Previous24" FontSize="18" />
+                                <ui:SymbolIcon Symbol="Previous24" FontSize="20" />
                             </Button>
-                            <Button Style="{StaticResource PrimaryPlayButtonStyle}" Margin="10,0"
+                            <Button Style="{StaticResource PrimaryPlayButtonStyle}" Width="46" Height="46" Margin="14,0"
                                     Command="{Binding PlayPauseCommand}" ToolTip="播放 / 暂停">
                                 <Grid>
-                                    <ui:SymbolIcon Symbol="Play24" FontSize="20"
+                                    <ui:SymbolIcon Symbol="Play24" FontSize="22"
                                                    Visibility="{Binding IsPlaying, Converter={StaticResource InverseBoolToVisibility}}" />
-                                    <ui:SymbolIcon Symbol="Pause24" FontSize="20"
+                                    <ui:SymbolIcon Symbol="Pause24" FontSize="22"
                                                    Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVis}}" />
                                 </Grid>
                             </Button>
-                            <Button Style="{StaticResource TransportButtonStyle}" ToolTip="下一首"
+                            <Button Style="{StaticResource BigLyricsGhostButtonStyle}" ToolTip="下一首"
                                     Command="{Binding NextCommand}">
-                                <ui:SymbolIcon Symbol="Next24" FontSize="18" />
+                                <ui:SymbolIcon Symbol="Next24" FontSize="20" />
                             </Button>
                         </StackPanel>
                     </Grid>

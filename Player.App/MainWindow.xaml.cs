@@ -69,7 +69,11 @@ public partial class MainWindow : FluentWindow
         // 大歌词页：鼠标活动淡入控制条，3 秒无操作淡出（L1.1-④）
         BigLyricsOverlay.MouseMove += OnBigLyricsMouseMove;
         _bigLyricsIdle.Tick += (_, _) =>
+        {
+            // 目验修复：淡出同时关闭命中——隐形控制条不再拦截底部点击/误触隐藏滑条
+            BigLyricsControlBar.IsHitTestVisible = false;
             BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200)));
+        };
 
         // 音量方块：点击/拖动设置音量（UI-R1.5 反馈）
         VolumeSquares.AddHandler(PreviewMouseLeftButtonDownEvent,
@@ -302,6 +306,8 @@ public partial class MainWindow : FluentWindow
 
     private void ToggleDesktopLyrics()
     {
+        // 目验修复④：打开桌面歌词前关闭按钮 ToolTip（避免弹出层悬浮在歌词条上）
+        DesktopLyricsButtonTip.IsOpen = false;
         if (_desktopLyrics is null)
         {
             _desktopLyrics = CreateDesktopLyricsWindow();
@@ -327,8 +333,8 @@ public partial class MainWindow : FluentWindow
         var lyrics = Player?.Lyrics;
         if (lyrics is null) return;
 
-        // 无歌词 / 无时间轴 → 显示曲名（W1：完全无歌词时也显示曲名，避免空条）
-        if (!lyrics.HasLyrics || lyrics.IsStatic)
+        // 无歌词 / 无时间轴 / 未开始播放 → 显示曲名（W1：完全无歌词或未播放时避免空条）
+        if (!lyrics.HasLyrics || lyrics.IsStatic || lyrics.CurrentIndex < 0)
         {
             _desktopLyrics.UpdateLyrics(Player?.Title ?? string.Empty, Player?.Artist ?? string.Empty, hasTimeline: false);
         }
@@ -422,7 +428,10 @@ public partial class MainWindow : FluentWindow
     {
         if (!_bigLyricsVisible) return;
         if (BigLyricsControlBar.Opacity < 0.99)
+        {
+            BigLyricsControlBar.IsHitTestVisible = true;
             BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
+        }
         _bigLyricsIdle.Stop();
         _bigLyricsIdle.Start();
     }
@@ -432,10 +441,13 @@ public partial class MainWindow : FluentWindow
         _bigLyricsVisible = !_bigLyricsVisible;
         if (_bigLyricsVisible)
         {
+            // 目验修复④：覆盖层打开前关闭按钮 ToolTip（其弹出层是独立置顶窗口，否则会悬浮在覆盖层上）
+            BigLyricsButtonTip.IsOpen = false;
             BigLyricsOverlay.Visibility = Visibility.Visible;
             BigLyricsOverlay.BeginAnimation(OpacityProperty,
                 new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
             // 进场先显示完整控制，3 秒无操作后自动收敛为细进度线
+            BigLyricsControlBar.IsHitTestVisible = true;
             BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
             _bigLyricsIdle.Stop();
             _bigLyricsIdle.Start();
@@ -443,6 +455,7 @@ public partial class MainWindow : FluentWindow
         else
         {
             _bigLyricsIdle.Stop();
+            BigLyricsControlBar.IsHitTestVisible = false;
             BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(150)));
             var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200));
             fade.Completed += (_, _) => BigLyricsOverlay.Visibility = Visibility.Collapsed;
