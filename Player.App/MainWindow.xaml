@@ -127,18 +127,23 @@
                                         <!-- 标准双列模板（内容+滚动条各占位）：绕开 WPF-UI 的悬浮式 ScrollViewer 隐式样式 -->
                                         <ControlTemplate TargetType="ScrollViewer">
                                             <Grid Background="{TemplateBinding Background}">
+                                                <Grid.RowDefinitions>
+                                                    <RowDefinition Height="*" />
+                                                </Grid.RowDefinitions>
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <ScrollContentPresenter x:Name="PART_ScrollContentPresenter"
+                                                                        Grid.Row="0"
                                                                         CanContentScroll="{TemplateBinding CanContentScroll}"
                                                                         Content="{TemplateBinding Content}"
                                                                         ContentTemplate="{TemplateBinding ContentTemplate}"
                                                                         Margin="{TemplateBinding Padding}" />
-                                                <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Column="1"
+                                                <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Row="0" Grid.Column="1"
                                                            Orientation="Vertical"
-                                                           ViewportSize="{TemplateBinding ViewportHeight}"
+                                                           VerticalAlignment="Stretch"
+                                                           ViewportSize="NaN"
                                                            Maximum="{TemplateBinding ScrollableHeight}"
                                                            Value="{TemplateBinding VerticalOffset}"
                                                            Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"

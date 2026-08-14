@@ -20,8 +20,6 @@
     <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
     <!-- = 调色板 = -->
-    <!-- 滚动条滑块最小长度（WPF Track 按 buttonHeight×0.5 取值；默认 18→滑块最小 9px 太小难抓，给 60→最小 30px） -->
-    <sys:Double x:Key="{x:Static SystemParameters.VerticalScrollBarButtonHeightKey}">60</sys:Double>
     <SolidColorBrush x:Key="TextPrimaryBrush" Color="#FFFFFFFF" />
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#FFB6B6B6" />
     <SolidColorBrush x:Key="TextTertiaryBrush" Color="#FF8B8B8B" />
@@ -93,8 +91,6 @@
     <Style TargetType="ScrollBar">
         <Setter Property="Width" Value="8" />
         <Setter Property="MinWidth" Value="8" />
-        <Setter Property="Height" Value="8" />
-        <Setter Property="MinHeight" Value="8" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Template">
             <Setter.Value>
