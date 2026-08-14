@@ -66,7 +66,7 @@ public sealed class BoolToAccentConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
-/// <summary>音量方块（UI-R1.5 反馈）：已到达的方块用深灰/近黑，未到达的用浅灰（容量槽样式）。</summary>
+/// <summary>音量方块（UI-R1.5 反馈）：已到达的方块用浅灰，未到达的用深灰/近黑（容量槽样式）。</summary>
 public sealed class VolumeSquareConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
@@ -75,11 +75,11 @@ public sealed class VolumeSquareConverter : IValueConverter
         var index = parameter is string s && int.TryParse(s, out var n) ? n : 0;
         if (level > index)
         {
-            return System.Windows.Application.Current?.TryFindResource("VolumeReachedBrush") as SolidColorBrush
-                   ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x3A, 0x3A, 0x3A));
+            return System.Windows.Application.Current?.TryFindResource("VolumeSlotBrush") as SolidColorBrush
+                   ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x8B, 0x8B, 0x8B));
         }
-        return System.Windows.Application.Current?.TryFindResource("VolumeSlotBrush") as SolidColorBrush
-               ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x8B, 0x8B, 0x8B));
+        return System.Windows.Application.Current?.TryFindResource("VolumeReachedBrush") as SolidColorBrush
+               ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x3A, 0x3A, 0x3A));
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)

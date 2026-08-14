@@ -135,6 +135,10 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PlayModeIcon))]
     [NotifyPropertyChangedFor(nameof(PlayModeText))]
+    [NotifyPropertyChangedFor(nameof(IsSequentialMode))]
+    [NotifyPropertyChangedFor(nameof(IsRepeatAllMode))]
+    [NotifyPropertyChangedFor(nameof(IsRepeatOneMode))]
+    [NotifyPropertyChangedFor(nameof(IsShuffleMode))]
     private PlayMode _playMode = PlayMode.RepeatAll;
 
     public string PositionText => FormatTime(HasTrack ? PositionSeconds : 0);
@@ -367,6 +371,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     {
         // UI-R1.5 反馈：模式切换不再在状态栏刷文字，界面只看按钮图标变化
         PlayMode = mode;
+        // 重复点击当前项时 PlayMode 不会变化，强制通知一次，让菜单勾选与按钮图标重新同步
+        OnPropertyChanged(nameof(PlayMode));
     }
 
     /// <summary>音量是 UI → 引擎的单向写入，定时器不回写（P0.1）。</summary>
