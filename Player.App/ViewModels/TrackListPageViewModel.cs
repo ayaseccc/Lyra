@@ -17,8 +17,11 @@ public sealed class TrackRowItem
 {
     public required TrackRecord Track { get; init; }
 
-    /// <summary>分组模式：该行是组内第一行，左侧显示整组封面。</summary>
+    /// <summary>分组模式：该行是组内第一行（封面不降透明、专辑行显示年份）。</summary>
     public bool ShowCover { get; init; }
+
+    /// <summary>组年份（仅组首行有值，显示在专辑行右端）。</summary>
+    public string YearText { get; init; } = string.Empty;
 
     public bool IsGroupHeader => false;
 }
@@ -121,14 +124,15 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         {
             foreach (var group in TrackGrouper.Group(View.Cast<TrackRecord>()))
             {
-                DisplayItems.Add(new GroupHeaderItem
-                {
-                    AlbumText = group.Album,
-                    ArtistText = group.Artist,
-                    YearText = group.Year
-                });
                 for (var i = 0; i < group.Tracks.Count; i++)
-                    DisplayItems.Add(new TrackRowItem { Track = group.Tracks[i], ShowCover = i == 0 });
+                {
+                    DisplayItems.Add(new TrackRowItem
+                    {
+                        Track = group.Tracks[i],
+                        ShowCover = i == 0,
+                        YearText = i == 0 ? group.Year : string.Empty
+                    });
+                }
             }
         }
         else
