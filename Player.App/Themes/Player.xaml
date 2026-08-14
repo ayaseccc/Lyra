@@ -15,7 +15,6 @@
     <conv:BoolToAccentConverter x:Key="BoolToAccent" />
     <conv:BoolToTintBrushConverter x:Key="BoolToTintBrush" />
     <conv:VolumeSquareConverter x:Key="VolumeSquare" />
-    <conv:ThinProgressWidthConverter x:Key="ThinProgressWidth" />
     <conv:BoolToGroupCoverWidthConverter x:Key="BoolToGroupCoverWidth" />
     <conv:TrackIsCurrentConverter x:Key="TrackIsCurrent" />
     <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />

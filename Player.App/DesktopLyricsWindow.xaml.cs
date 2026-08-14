@@ -33,6 +33,13 @@ public partial class DesktopLyricsWindow : Window
     private Point _dragStart;
     private HwndSource? _source;
     private bool _hookAdded;
+    private bool _handleHot;
+
+    /// <summary>锁定态光标轮询（目验四修复：小锁默认隐藏，悬停歌词区域才显示——鼠标穿透态收不到悬停事件，只能轮询光标）。</summary>
+    private readonly System.Windows.Threading.DispatcherTimer _hoverTimer = new()
+    {
+        Interval = TimeSpan.FromMilliseconds(250)
+    };
 
     /// <summary>右键菜单"字体设置…" → 主窗打开设置页歌词组。</summary>
     public event Action? OpenFontSettingsRequested;
@@ -44,6 +51,30 @@ public partial class DesktopLyricsWindow : Window
         _locked = ConfigService.Current.Ui.DesktopLyricsLocked;
         ApplySettings();
         ApplyTextColor();
+        _hoverTimer.Tick += OnHoverTick;
+        _hoverTimer.Start();
+    }
+
+    private void OnHoverTick(object? sender, EventArgs e)
+    {
+        if (!_locked)
+        {
+            if (_handleHot) { _handleHot = false; UnlockHandle.Opacity = 0; }
+            return;
+        }
+        var rect = new Rect(Left, Top, ActualWidth, ActualHeight);
+        var pos = Mouse.GetPosition(null);   // 相对屏幕（WPF，DPI 感知）
+        var inside = rect.Contains(pos);
+        if (inside && !_handleHot)
+        {
+            _handleHot = true;
+            UnlockHandle.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(120)));
+        }
+        else if (!inside && _handleHot)
+        {
+            _handleHot = false;
+            UnlockHandle.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(120)));
+        }
     }
 
     /// <summary>设置页「歌词」组 / 右键菜单改动后即时应用（字体/字号/单双行/宽度/背景/文字颜色）。</summary>

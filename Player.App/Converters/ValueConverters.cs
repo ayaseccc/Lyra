@@ -96,22 +96,6 @@ public sealed class VolumeSquareConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
-/// <summary>大歌词页细进度线（L1.1-④）：宽度 = 视口宽 × 位置/时长。</summary>
-public sealed class ThinProgressWidthConverter : IMultiValueConverter
-{
-    public object Convert(object?[] values, Type targetType, object? parameter, CultureInfo culture)
-    {
-        var viewport = values.Length > 0 && values[0] is double v ? v : 0.0;
-        var position = values.Length > 1 && values[1] is double p ? p : 0.0;
-        var duration = values.Length > 2 && values[2] is double d ? d : 0.0;
-        if (viewport <= 0 || duration <= 0) return 0.0;
-        return Math.Clamp(viewport * position / duration, 0, viewport);
-    }
-
-    public object?[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
-        => throw new NotSupportedException();
-}
-
 /// <summary>bool → 列表首列宽度（UI-R2 修订）：分组模式 84px 封面列，平铺模式 0（无封面列）。</summary>
 public sealed class BoolToGroupCoverWidthConverter : IValueConverter
 {
