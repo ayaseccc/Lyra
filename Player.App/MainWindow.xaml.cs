@@ -109,19 +109,34 @@ public partial class MainWindow : FluentWindow
         CenterLyricLine(list, container);
     }
 
-    /// <summary>把当前行滚到可视区中部（正常音乐软件的歌词跟随行为）。偏离中心超过一行高才滚，避免抖动。</summary>
+    /// <summary>
+    /// 把当前行滚到可视区中部（正常音乐软件的歌词跟随行为）。
+    /// 用增量算法：新偏移 = 当前偏移 + (行中心在视口中的位置 - 视口中心)。
+    /// 之前把"视口内坐标"直接当"内容偏移"用，行在底部时目标值恒定，导致乱跳。
+    /// 偏离中心超过一行高才滚，避免抖动。
+    /// </summary>
     private void CenterLyricLine(System.Windows.Controls.ListBox list, System.Windows.FrameworkElement container)
     {
         if (FindScrollViewer(list) is not { } scroll) return;
+        if (scroll.ViewportHeight <= 0) return;
 
-        var position = container.TransformToAncestor(scroll).Transform(new Point(0, 0));
-        var lineCenter = position.Y + container.ActualHeight / 2;
-        var viewportCenter = scroll.ViewportHeight / 2;
+        try
+        {
+            var position = container.TransformToAncestor(scroll).Transform(new Point(0, 0));
 
-        // 已在中部附近就不动（点击行跳转后不会把列表挪走）
-        if (Math.Abs(lineCenter - viewportCenter) <= container.ActualHeight) return;
+            var lineCenter = position.Y + container.ActualHeight / 2;
+            var viewportCenter = scroll.ViewportHeight / 2;
+            var delta = lineCenter - viewportCenter;
 
-        scroll.ScrollToVerticalOffset(Math.Max(0, position.Y + container.ActualHeight / 2 - viewportCenter));
+            // 已在中部附近（容差一行高）就不动（点击行跳转后不会把列表挪走）
+            if (Math.Abs(delta) <= container.ActualHeight) return;
+
+            scroll.ScrollToVerticalOffset(Math.Max(0, scroll.VerticalOffset + delta));
+        }
+        catch (InvalidOperationException)
+        {
+            // 虚拟化容器与可视树断开时 TransformToAncestor 会抛异常，忽略即可
+        }
     }
 
     private static System.Windows.Controls.ScrollViewer? FindScrollViewer(DependencyObject root)
