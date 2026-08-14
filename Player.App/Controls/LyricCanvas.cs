@@ -51,6 +51,18 @@ public sealed class LyricCanvas : FrameworkElement
     /// <summary>缓存失效标志：Lines 或宽度变化时置 true，下一帧重建。</summary>
     private bool _cacheDirty = true;
 
+    /// <summary>当前行（粗体+强调色）缓存：key 为行号，播放推进时每行只重建一次。</summary>
+    private readonly Dictionary<int, FormattedText> _currentCache = new();
+
+    /// <summary>
+    /// 预生成的淡出画刷（按距离 0..4 对应 LineFade 五档，主文本与副文本各一套）。
+    /// 替代 PushOpacity——后者每帧做离屏渲染切换，是滚动卡顿的根源。
+    /// </summary>
+    private SolidColorBrush[] _primaryFadeBrushes = Array.Empty<SolidColorBrush>();
+    private SolidColorBrush[] _secondaryFadeBrushes = Array.Empty<SolidColorBrush>();
+    private Color _fadeBrushBase = Colors.Transparent;
+    private Color _fadeBrushSubBase = Colors.Transparent;
+
     /// <summary>点击某行（参数为行号）。</summary>
     public event Action<int>? LineClicked;
 
@@ -238,6 +250,7 @@ public sealed class LyricCanvas : FrameworkElement
         {
             _primaryCache.Clear();
             _secondaryCache.Clear();
+            _currentCache.Clear();
             _cacheDirty = false;
         }
 
@@ -248,6 +261,8 @@ public sealed class LyricCanvas : FrameworkElement
         var baseText = TextBrush ?? Brushes.White;
         var subText = SubTextBrush ?? Brushes.White;
         var maxWidth = Math.Max(0, ActualWidth - 16);
+
+        EnsureFadeBrushes(baseText, subText);
 
         var (first, last) = LyricLayout.VisibleRange(_offset, ActualHeight, lines.Count);
         if (first < 0) return;
@@ -261,21 +276,26 @@ public sealed class LyricCanvas : FrameworkElement
 
             var textY = y + 9;
 
-            // ---- 主文本（单行省略；当前行每帧重建粗体+强调色，其余行走缓存） ----
-            FormattedText primary;
+            // ---- 主文本（单行省略） ----
             if (isCurrent)
             {
-                primary = new FormattedText(
-                    line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                    CurrentTypeface, LyricLayout.PrimaryFontSize, accent, pixelsPerDip);
-                primary.MaxTextWidth = maxWidth;
-                primary.MaxLineCount = 1;
-                primary.Trimming = TextTrimming.CharacterEllipsis;
-                dc.DrawText(primary, new Point(8, textY));
+                // 当前行：粗体+强调色，按行号缓存（播放推进时每行只重建一次）
+                if (!_currentCache.TryGetValue(i, out var current))
+                {
+                    current = new FormattedText(
+                        line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                        CurrentTypeface, LyricLayout.PrimaryFontSize, accent, pixelsPerDip);
+                    current.MaxTextWidth = maxWidth;
+                    current.MaxLineCount = 1;
+                    current.Trimming = TextTrimming.CharacterEllipsis;
+                    _currentCache[i] = current;
+                }
+
+                dc.DrawText(current, new Point(8, textY));
             }
             else
             {
-                if (!_primaryCache.TryGetValue(i, out primary!))
+                if (!_primaryCache.TryGetValue(i, out var primary))
                 {
                     primary = new FormattedText(
                         line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
@@ -286,13 +306,14 @@ public sealed class LyricCanvas : FrameworkElement
                     _primaryCache[i] = primary;
                 }
 
-                // 淡出用 PushOpacity 作用在绘制上（缓存文本本身不带透明度）
-                dc.PushOpacity(Math.Clamp(fade, 0, 1));
+                // 淡出画刷预生成（无离屏渲染、无分配）
+                var distance = Math.Min(4, Math.Abs(i - CurrentIndex));
+                if (_primaryFadeBrushes.Length == 5)
+                    primary.SetForegroundBrush(_primaryFadeBrushes[distance]);
                 dc.DrawText(primary, new Point(8, textY));
-                dc.Pop();
             }
 
-            // ---- 副文本（单行省略，走缓存；随主行淡出） ----
+            // ---- 副文本（单行省略，走缓存；当前行不淡出） ----
             if (!string.IsNullOrWhiteSpace(line.Secondary))
             {
                 if (!_secondaryCache.TryGetValue(i, out var secondary))
@@ -306,16 +327,10 @@ public sealed class LyricCanvas : FrameworkElement
                     _secondaryCache[i] = secondary;
                 }
 
-                if (isCurrent)
-                {
-                    dc.DrawText(secondary, new Point(8, textY + LyricLayout.PrimaryFontSize + LyricLayout.PrimaryToSecondaryGap + 1));
-                }
-                else
-                {
-                    dc.PushOpacity(Math.Clamp(fade * 0.8, 0, 1));
-                    dc.DrawText(secondary, new Point(8, textY + LyricLayout.PrimaryFontSize + LyricLayout.PrimaryToSecondaryGap + 1));
-                    dc.Pop();
-                }
+                var distance = Math.Min(4, Math.Abs(i - CurrentIndex));
+                if (_secondaryFadeBrushes.Length == 5)
+                    secondary.SetForegroundBrush(_secondaryFadeBrushes[distance]);
+                dc.DrawText(secondary, new Point(8, textY + LyricLayout.PrimaryFontSize + LyricLayout.PrimaryToSecondaryGap + 1));
             }
         }
     }
@@ -325,6 +340,41 @@ public sealed class LyricCanvas : FrameworkElement
 
     private static readonly Typeface CurrentTypeface =
         new(UiFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+
+    /// <summary>
+    /// 按距离 0..4 预生成主/副文本的淡出画刷（LineFade 五档）。
+    /// 绘制时用 FormattedText.SetForegroundBrush 覆盖颜色——没有离屏渲染、没有每帧分配。
+    /// </summary>
+    private void EnsureFadeBrushes(Brush baseText, Brush subText)
+    {
+        if (baseText is not SolidColorBrush primarySolid || subText is not SolidColorBrush subSolid)
+            return;
+        if (_primaryFadeBrushes.Length == 5 && _fadeBrushBase == primarySolid.Color)
+            return;
+
+        _fadeBrushBase = primarySolid.Color;
+        _fadeBrushSubBase = subSolid.Color;
+
+        _primaryFadeBrushes = new SolidColorBrush[5];
+        _secondaryFadeBrushes = new SolidColorBrush[5];
+
+        for (var d = 0; d < 5; d++)
+        {
+            var fade = LyricLayout.LineFade(d);
+
+            var primary = new SolidColorBrush(Color.FromArgb(
+                (byte)(primarySolid.Color.A * fade),
+                primarySolid.Color.R, primarySolid.Color.G, primarySolid.Color.B));
+            primary.Freeze();
+            _primaryFadeBrushes[d] = primary;
+
+            var secondary = new SolidColorBrush(Color.FromArgb(
+                (byte)(subSolid.Color.A * fade * 0.8),
+                subSolid.Color.R, subSolid.Color.G, subSolid.Color.B));
+            secondary.Freeze();
+            _secondaryFadeBrushes[d] = secondary;
+        }
+    }
 
     private static Brush WithOpacity(Brush source, double opacity)
     {
