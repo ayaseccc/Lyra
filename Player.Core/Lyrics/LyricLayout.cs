@@ -6,8 +6,11 @@ namespace Player.Core.Lyrics;
 /// </summary>
 public static class LyricLayout
 {
-    /// <summary>每行固定高度（px）。主文本 24px + 副文本 16px + 上下留白 12px。</summary>
-    public const double LineHeight = 52;
+    /// <summary>
+    /// 每行固定高度（px）：上留白 9 + 主文本约 24 + 间隙 3 + 副文本约 18 + 下留白 10。
+    /// 文本一律单行省略，任何列宽下都不会溢出重叠。
+    /// </summary>
+    public const double LineHeight = 64;
 
     /// <summary>主文本字号。</summary>
     public const double PrimaryFontSize = 17;

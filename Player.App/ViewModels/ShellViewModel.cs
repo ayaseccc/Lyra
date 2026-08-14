@@ -73,6 +73,19 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _hasRoots;
 
+    /// <summary>
+    /// 左侧栏顶部搜索框（UI-R0：搜索从主区移到侧栏）。中转给当前曲目列表页；
+    /// 页面切换时把新页面的过滤词带回来。
+    /// </summary>
+    [ObservableProperty]
+    private string _filterText = string.Empty;
+
+    partial void OnFilterTextChanged(string value)
+    {
+        if (CurrentPage is TrackListPageViewModel page)
+            page.FilterText = value;
+    }
+
     // ---------------- 启动 ----------------
 
     public async Task InitializeAsync()
@@ -174,7 +187,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                 Icon = SymbolRegular.AppsList24,
                 PlaylistId = id,
                 RenameCommand = new RelayCommand(() => RenamePlaylist(id, name)),
-                DeleteCommand = new RelayCommand(() => DeletePlaylist(id, name))
+                DeleteCommand = new RelayCommand(() => DeletePlaylist(id, name)),
+                ExportCommand = new RelayCommand(() => ExportPlaylist(id, name))
             });
         }
 
@@ -190,7 +204,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                     Title = folder.Name,
                     Icon = SymbolRegular.Folder24,
                     FolderPath = folder.FullPath,
-                    CountText = folder.TrackCount.ToString()
+                    CountText = folder.TrackCount.ToString(),
+                    ExportCommand = new RelayCommand(() => ExportFolder(folder.FullPath, folder.Name))
                 });
             }
         }
@@ -243,6 +258,10 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         var keepFilter = isRefresh
             ? (CurrentPage as TrackListPageViewModel)?.FilterText ?? string.Empty
             : string.Empty;
+
+        // 搜索框与当前页过滤词保持同步（页面切换时带回）
+        if (CurrentPage is TrackListPageViewModel previousPage)
+            FilterText = previousPage.FilterText;
 
         switch (nav.Kind)
         {
@@ -424,27 +443,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client);
     }
 
-    /// <summary>全页歌词视图（UI-R0 位置二）：封面点击进入，返回按钮/Esc 退出。</summary>
-    public void OpenLyricsPage()
-    {
-        // 记住返回目标：离开主区前把当前页存下来（BackCommand 恢复它）
-        _lyricsBackPage = CurrentPage;
-        SelectedNav = null;
-        CurrentPage = new LyricsPageViewModel(Player, new RelayCommand(CloseLyricsPage));
-    }
-
-    private object? _lyricsBackPage;
-
-    public void CloseLyricsPage()
-    {
-        CurrentPage = _lyricsBackPage;
-        _lyricsBackPage = null;
-        SelectedNav = null;
-    }
-
-    /// <summary>当前是否在全页歌词视图（Esc 退出判断用）。</summary>
-    public bool IsLyricsPageOpen => CurrentPage is LyricsPageViewModel;
-
     [RelayCommand]
     private void CreatePlaylist()
     {
@@ -591,21 +589,52 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
+        // 导出用户当前看到的顺序（含过滤与列排序），而不是底层原始顺序
+        ExportTracks(page.View.Cast<TrackRecord>().ToList(), page.Title);
+    }
+
+    /// <summary>歌单右键菜单导出（UI-R0：导出从主区按钮收进右键）。</summary>
+    private void ExportPlaylist(long playlistId, string name)
+    {
+        var tracks = _playlists.GetTracks(playlistId);
+        if (tracks.Count == 0)
+        {
+            ScanStatus = "这个歌单是空的，没什么可导出";
+            return;
+        }
+
+        ExportTracks(tracks, name);
+    }
+
+    /// <summary>文件夹右键菜单导出（UI-R0）。</summary>
+    private void ExportFolder(string folderPath, string name)
+    {
+        var folder = _library.GetFolderPlaylists()
+            .FirstOrDefault(f => string.Equals(f.FullPath, folderPath, StringComparison.OrdinalIgnoreCase));
+        if (folder is null || folder.Tracks.Count == 0)
+        {
+            ScanStatus = "这个文件夹里没有可导出的歌曲";
+            return;
+        }
+
+        ExportTracks(folder.Tracks, name);
+    }
+
+    private void ExportTracks(IReadOnlyList<TrackRecord> tracks, string defaultName)
+    {
         var dialog = new SaveFileDialog
         {
             Title = "导出为 m3u8",
             Filter = "播放列表|*.m3u8",
-            FileName = SanitizeFileName(page.Title) + ".m3u8"
+            FileName = SanitizeFileName(defaultName) + ".m3u8"
         };
 
         if (dialog.ShowDialog() != true) return;
 
         try
         {
-            // 导出用户当前看到的顺序（含过滤与列排序），而不是底层原始顺序
-            var visible = page.View.Cast<TrackRecord>().ToList();
-            _playlists.ExportM3u(visible, dialog.FileName);
-            ScanStatus = $"已导出 {visible.Count} 首：" + Path.GetFileName(dialog.FileName);
+            _playlists.ExportM3u(tracks, dialog.FileName);
+            ScanStatus = $"已导出 {tracks.Count} 首：" + Path.GetFileName(dialog.FileName);
         }
         catch (Exception ex)
         {

@@ -40,6 +40,17 @@ public sealed class LyricCanvas : FrameworkElement
     /// <summary>FrameworkElement 没有 FontFamily 属性，这里自持字体。</summary>
     private static readonly FontFamily UiFont = new("Microsoft YaHei UI, Segoe UI");
 
+    /// <summary>
+    /// 主/副文本的 FormattedText 缓存（按行号）。FormattedText 构造开销大，
+    /// 滚动时只有当前行（粗体）每帧重建，其余行命中缓存——解决滚动卡顿。
+    /// 数据变化或尺寸变化时整体失效。
+    /// </summary>
+    private readonly Dictionary<int, FormattedText> _primaryCache = new();
+    private readonly Dictionary<int, FormattedText> _secondaryCache = new();
+
+    /// <summary>缓存失效标志：Lines 或宽度变化时置 true，下一帧重建。</summary>
+    private bool _cacheDirty = true;
+
     /// <summary>点击某行（参数为行号）。</summary>
     public event Action<int>? LineClicked;
 
@@ -116,6 +127,9 @@ public sealed class LyricCanvas : FrameworkElement
     private static void OnVisualPropertyChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
     {
         if (d is not LyricCanvas canvas) return;
+
+        // 行数据变化 → 文本缓存失效
+        if (e.Property == LinesProperty) canvas._cacheDirty = true;
 
         // 数据或目标变化：重绘并让滚动向目标缓动
         canvas.InvalidateVisual();
@@ -206,6 +220,9 @@ public sealed class LyricCanvas : FrameworkElement
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
     {
         base.OnRenderSizeChanged(sizeInfo);
+
+        // 宽度变化会影响 MaxTextWidth → 文本缓存失效
+        _cacheDirty = true;
         StartAnimation();
     }
 
@@ -216,18 +233,24 @@ public sealed class LyricCanvas : FrameworkElement
         var lines = Lines;
         if (lines is null || lines.Count == 0) return;
 
+        // 数据或宽度变了 → 缓存整体失效
+        if (_cacheDirty)
+        {
+            _primaryCache.Clear();
+            _secondaryCache.Clear();
+            _cacheDirty = false;
+        }
+
         var dpi = VisualTreeHelper.GetDpi(this);
         var pixelsPerDip = dpi.PixelsPerDip;
 
         var accent = AccentBrush ?? Brushes.White;
         var baseText = TextBrush ?? Brushes.White;
         var subText = SubTextBrush ?? Brushes.White;
+        var maxWidth = Math.Max(0, ActualWidth - 16);
 
         var (first, last) = LyricLayout.VisibleRange(_offset, ActualHeight, lines.Count);
         if (first < 0) return;
-
-        var primaryTypeface = new Typeface(UiFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-        var currentTypeface = new Typeface(UiFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
         for (var i = first; i <= last; i++)
         {
@@ -236,33 +259,72 @@ public sealed class LyricCanvas : FrameworkElement
             var isCurrent = !IsStatic && i == CurrentIndex;
             var fade = IsStatic ? 1.0 : LyricLayout.LineFade(i - CurrentIndex);
 
-            var primaryBrush = isCurrent ? accent : WithOpacity(baseText, fade);
             var textY = y + 9;
 
-            var primary = new FormattedText(
-                line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                isCurrent ? currentTypeface : primaryTypeface,
-                LyricLayout.PrimaryFontSize, primaryBrush, pixelsPerDip);
+            // ---- 主文本（单行省略；当前行每帧重建粗体+强调色，其余行走缓存） ----
+            FormattedText primary;
+            if (isCurrent)
+            {
+                primary = new FormattedText(
+                    line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                    CurrentTypeface, LyricLayout.PrimaryFontSize, accent, pixelsPerDip);
+                primary.MaxTextWidth = maxWidth;
+                primary.MaxLineCount = 1;
+                primary.Trimming = TextTrimming.CharacterEllipsis;
+                dc.DrawText(primary, new Point(8, textY));
+            }
+            else
+            {
+                if (!_primaryCache.TryGetValue(i, out primary!))
+                {
+                    primary = new FormattedText(
+                        line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                        PrimaryTypeface, LyricLayout.PrimaryFontSize, baseText, pixelsPerDip);
+                    primary.MaxTextWidth = maxWidth;
+                    primary.MaxLineCount = 1;
+                    primary.Trimming = TextTrimming.CharacterEllipsis;
+                    _primaryCache[i] = primary;
+                }
 
-            // 水平：跟随模式当前行略放大强调；统一左对齐 + 右边缘修剪
-            primary.MaxTextWidth = Math.Max(0, ActualWidth - 16);
-            primary.MaxLineCount = 2;
-            primary.Trimming = TextTrimming.CharacterEllipsis;
-            dc.DrawText(primary, new Point(8, textY));
+                // 淡出用 PushOpacity 作用在绘制上（缓存文本本身不带透明度）
+                dc.PushOpacity(Math.Clamp(fade, 0, 1));
+                dc.DrawText(primary, new Point(8, textY));
+                dc.Pop();
+            }
 
+            // ---- 副文本（单行省略，走缓存；随主行淡出） ----
             if (!string.IsNullOrWhiteSpace(line.Secondary))
             {
-                var secondary = new FormattedText(
-                    line.Secondary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                    primaryTypeface, LyricLayout.SecondaryFontSize,
-                    WithOpacity(subText, fade * 0.8), pixelsPerDip);
-                secondary.MaxTextWidth = Math.Max(0, ActualWidth - 16);
-                secondary.MaxLineCount = 2;
-                secondary.Trimming = TextTrimming.CharacterEllipsis;
-                dc.DrawText(secondary, new Point(8, textY + LyricLayout.PrimaryFontSize + LyricLayout.PrimaryToSecondaryGap + 1));
+                if (!_secondaryCache.TryGetValue(i, out var secondary))
+                {
+                    secondary = new FormattedText(
+                        line.Secondary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+                        PrimaryTypeface, LyricLayout.SecondaryFontSize, subText, pixelsPerDip);
+                    secondary.MaxTextWidth = maxWidth;
+                    secondary.MaxLineCount = 1;
+                    secondary.Trimming = TextTrimming.CharacterEllipsis;
+                    _secondaryCache[i] = secondary;
+                }
+
+                if (isCurrent)
+                {
+                    dc.DrawText(secondary, new Point(8, textY + LyricLayout.PrimaryFontSize + LyricLayout.PrimaryToSecondaryGap + 1));
+                }
+                else
+                {
+                    dc.PushOpacity(Math.Clamp(fade * 0.8, 0, 1));
+                    dc.DrawText(secondary, new Point(8, textY + LyricLayout.PrimaryFontSize + LyricLayout.PrimaryToSecondaryGap + 1));
+                    dc.Pop();
+                }
             }
         }
     }
+
+    private static readonly Typeface PrimaryTypeface =
+        new(UiFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+
+    private static readonly Typeface CurrentTypeface =
+        new(UiFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
     private static Brush WithOpacity(Brush source, double opacity)
     {

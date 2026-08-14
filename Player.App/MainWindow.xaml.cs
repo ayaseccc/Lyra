@@ -54,19 +54,9 @@ public partial class MainWindow : FluentWindow
         SeekSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(OnSeekDragCompleted));
 
 
-        PreviewKeyDown += OnWindowPreviewKeyDown;
     }
 
-    /// <summary>Esc：全页歌词视图退出（UI-R0）。</summary>
-    private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
-    {
-        if (e.Key != Key.Escape) return;
-        if (Shell?.IsLyricsPageOpen == true)
-        {
-            Shell.CloseLyricsPage();
-            e.Handled = true;
-        }
-    }
+
 
     private ShellViewModel? Shell => DataContext as ShellViewModel;
 
@@ -286,14 +276,8 @@ public partial class MainWindow : FluentWindow
 
     // ================= 歌词覆盖层（P3） =================
 
-    /// <summary>点击底部封面：打开全页歌词视图（UI-R0 位置二）。</summary>
-    private void OnCoverClick(object sender, MouseButtonEventArgs e) => Shell?.OpenLyricsPage();
-
-    /// <summary>右侧栏歌词：点击某行跳转。</summary>
+    /// <summary>右侧栏歌词：点击某行跳转（UI-R0）。</summary>
     private void OnSideLyricClicked(int index) => Player?.Lyrics.SeekToLine(index);
-
-    /// <summary>全页歌词：点击某行跳转。</summary>
-    private void OnFullLyricClicked(int index) => Player?.Lyrics.SeekToLine(index);
 
     private void OnSeekPressed(object sender, MouseButtonEventArgs e)
     {

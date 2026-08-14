@@ -42,6 +42,9 @@ public sealed partial class NavItemViewModel : ObservableObject
 
     public IRelayCommand? DeleteCommand { get; init; }
 
+    /// <summary>导出 m3u8（歌单/文件夹右键菜单，UI-R0）。</summary>
+    public IRelayCommand? ExportCommand { get; init; }
+
     [ObservableProperty]
     private string _countText = string.Empty;
 }

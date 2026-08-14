@@ -441,16 +441,17 @@ public static class Program
 
         // 目标偏移：当前行居中
         Check("第 0 行目标 = 0", LyricLayout.TargetOffsetFor(0, 100, 500) == 0);
-        Check("第 5 行目标居中", LyricLayout.TargetOffsetFor(5, 100, 500) == 5 * 52 + 26 - 250);
-        Check("末行钳制到最大偏移", LyricLayout.TargetOffsetFor(99, 100, 500) == 100 * 52 - 500);
+        Check("第 5 行目标居中", LyricLayout.TargetOffsetFor(5, 100, 500) == 5 * LyricLayout.LineHeight + LyricLayout.LineHeight / 2 - 250);
+        Check("末行钳制到最大偏移", LyricLayout.TargetOffsetFor(99, 100, 500) == 100 * LyricLayout.LineHeight - 500);
         Check("负索引 = 0", LyricLayout.TargetOffsetFor(-1, 100, 500) == 0);
         Check("空列表 = 0", LyricLayout.TargetOffsetFor(3, 0, 500) == 0);
 
-        // 可见范围
+        // 可见范围（视口 500px 内的行数随行高变化，用常量推导）
         var (first, last) = LyricLayout.VisibleRange(0, 500, 100);
-        Check("offset=0 可见 0..9", first == 0 && last == 9);
-        var (f2, l2) = LyricLayout.VisibleRange(520, 500, 100);
-        Check("offset=520 可见 10..19", f2 == 10 && l2 == 19);
+        var rowsPerViewport = (int)Math.Ceiling(500 / LyricLayout.LineHeight);
+        Check("offset=0 可见首段", first == 0 && last == rowsPerViewport - 1);
+        var (f2, l2) = LyricLayout.VisibleRange(LyricLayout.LineHeight * 10, 500, 100);
+        Check("offset=10行 可见下一段", f2 == 10 && l2 == 10 + rowsPerViewport - 1);
         var (f3, l3) = LyricLayout.VisibleRange(0, 500, 0);
         Check("空列表 (-1,-1)", f3 == -1 && l3 == -1);
 
@@ -466,8 +467,8 @@ public static class Program
         Check("到位判定（<0.5px）", o2 == 0.2 && s2);
 
         // 命中测试
-        Check("y=26 命中第 0 行", LyricLayout.HitTest(26, 0, 10) == 0);
-        Check("offset 后命中正确行", LyricLayout.HitTest(26, 520, 20) == 10);
+        Check("行中心命中第 0 行", LyricLayout.HitTest(LyricLayout.LineHeight / 2, 0, 10) == 0);
+        Check("offset 后命中正确行", LyricLayout.HitTest(LyricLayout.LineHeight / 2, LyricLayout.LineHeight * 10, 20) == 10);
         Check("越界返回 -1", LyricLayout.HitTest(9999, 0, 10) == -1);
 
         // 滚轮步进方向
