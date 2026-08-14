@@ -367,47 +367,8 @@
     </Style>
 
 
-    <!-- = 歌词行（P3.1-③ 美化）：阅读向 —— 大字号、宽松行距、当前行强调色 + 轻微背景 -->
-    <Style x:Key="LyricRowStyle" TargetType="ListBoxItem">
-        <Setter Property="Margin" Value="0,2" />
-        <Setter Property="Padding" Value="14,9" />
-        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
-        <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
-        <Setter Property="FontSize" Value="16" />
-        <Setter Property="Cursor" Value="Hand" />
-        <Setter Property="Template">
-            <Setter.Value>
-                <ControlTemplate TargetType="ListBoxItem">
-                    <Border x:Name="Bd" Background="Transparent" CornerRadius="8" Padding="{TemplateBinding Padding}">
-                        <ContentPresenter Content="{TemplateBinding Content}"
-                                          ContentTemplate="{TemplateBinding ContentTemplate}" />
-                    </Border>
-                    <ControlTemplate.Triggers>
-                        <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
-                        </Trigger>
-                        <DataTrigger Binding="{Binding IsCurrent}" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="#26FFFFFF" />
-                        </DataTrigger>
-                    </ControlTemplate.Triggers>
-                </ControlTemplate>
-            </Setter.Value>
-        </Setter>
-        <Style.Triggers>
-            <DataTrigger Binding="{Binding IsCurrent}" Value="True">
-                <Setter Property="Foreground" Value="{StaticResource AccentBrush}" />
-                <Setter Property="FontSize" Value="17.5" />
-                <Setter Property="FontWeight" Value="SemiBold" />
-            </DataTrigger>
-        </Style.Triggers>
-    </Style>
 
-    <!-- 歌词覆盖层背景：深色渐变，比纯黑更有层次（P3.1-③） -->
-    <LinearGradientBrush x:Key="LyricOverlayBackground" StartPoint="0,0" EndPoint="0.85,1">
-        <GradientStop Color="#F21E2530" Offset="0" />
-        <GradientStop Color="#F014171C" Offset="0.55" />
-        <GradientStop Color="#FA0E1013" Offset="1" />
-    </LinearGradientBrush>
+
+
 
 </ResourceDictionary>

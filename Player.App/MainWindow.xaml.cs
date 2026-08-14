@@ -53,102 +53,21 @@ public partial class MainWindow : FluentWindow
         SeekSlider.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler(OnSeekDragStarted));
         SeekSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(OnSeekDragCompleted));
 
-        // 歌词覆盖层：当前行变化时把列表滚到那一行（P3）
-        DataContextChanged += (_, _) =>
-        {
-            if (Player is null) return;
-            Player.Lyrics.PropertyChanged += OnLyricsPropertyChanged;
-        };
+
         PreviewKeyDown += OnWindowPreviewKeyDown;
     }
 
-    /// <summary>Esc 关闭歌词覆盖层。</summary>
+    /// <summary>Esc：全页歌词视图退出（UI-R0）。</summary>
     private void OnWindowPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (e.Key != Key.Escape || Player?.Lyrics is not { IsOpen: true }) return;
-        Player.Lyrics.CloseCommand.Execute(null);
-        e.Handled = true;
-    }
-
-    /// <summary>歌词当前行变化 → 滚到可视区并居中（P3.1-③ 修复：不在可视区才滚）。</summary>
-    private void OnLyricsPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
-    {
-        if (e.PropertyName == nameof(LyricsViewModel.IsOpen))
+        if (e.Key != Key.Escape) return;
+        if (Shell?.IsLyricsPageOpen == true)
         {
-            // 打开歌词页时把当前行定位回可视区
-            if (Player?.Lyrics?.IsOpen == true) ScrollLyricsToCurrent();
-            return;
-        }
-
-        if (e.PropertyName != nameof(LyricsViewModel.CurrentLineIndex)) return;
-        if (Player?.Lyrics?.IsOpen != true) return;
-        ScrollLyricsToCurrent();
-    }
-
-    /// <summary>把当前行滚到可视区（WPF 原生 ScrollIntoView，保证可见且跟随播放）。</summary>
-    private void ScrollLyricsToCurrent()
-    {
-        var index = Player?.Lyrics?.CurrentLineIndex ?? -1;
-        if (index < 0) return;
-
-        var list = LyricList;
-        if (list is null || index >= list.Items.Count) return;
-
-        // 虚拟化下容器可能未生成：先 ScrollIntoView 触发生成，再居中
-        if (list.ItemContainerGenerator.ContainerFromIndex(index) is not System.Windows.FrameworkElement container)
-        {
-            list.ScrollIntoView(list.Items[index]);
-            _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
-            {
-                if (list.ItemContainerGenerator.ContainerFromIndex(index) is System.Windows.FrameworkElement created)
-                    CenterLyricLine(list, created);
-            });
-            return;
-        }
-
-        CenterLyricLine(list, container);
-    }
-
-    /// <summary>
-    /// 把当前行滚到可视区中部（正常音乐软件的歌词跟随行为）。
-    /// 用增量算法：新偏移 = 当前偏移 + (行中心在视口中的位置 - 视口中心)。
-    /// 之前把"视口内坐标"直接当"内容偏移"用，行在底部时目标值恒定，导致乱跳。
-    /// 偏离中心超过一行高才滚，避免抖动。
-    /// </summary>
-    private void CenterLyricLine(System.Windows.Controls.ListBox list, System.Windows.FrameworkElement container)
-    {
-        if (FindScrollViewer(list) is not { } scroll) return;
-        if (scroll.ViewportHeight <= 0) return;
-
-        try
-        {
-            var position = container.TransformToAncestor(scroll).Transform(new Point(0, 0));
-
-            var lineCenter = position.Y + container.ActualHeight / 2;
-            var viewportCenter = scroll.ViewportHeight / 2;
-            var delta = lineCenter - viewportCenter;
-
-            // 已在中部附近（容差一行高）就不动（点击行跳转后不会把列表挪走）
-            if (Math.Abs(delta) <= container.ActualHeight) return;
-
-            scroll.ScrollToVerticalOffset(Math.Max(0, scroll.VerticalOffset + delta));
-        }
-        catch (InvalidOperationException)
-        {
-            // 虚拟化容器与可视树断开时 TransformToAncestor 会抛异常，忽略即可
+            Shell.CloseLyricsPage();
+            e.Handled = true;
         }
     }
 
-    private static System.Windows.Controls.ScrollViewer? FindScrollViewer(DependencyObject root)
-    {
-        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
-        {
-            var child = VisualTreeHelper.GetChild(root, i);
-            if (child is System.Windows.Controls.ScrollViewer viewer) return viewer;
-            if (FindScrollViewer(child) is { } found) return found;
-        }
-        return null;
-    }
     private ShellViewModel? Shell => DataContext as ShellViewModel;
 
     private PlayerViewModel? Player => Shell?.Player;
@@ -367,28 +286,15 @@ public partial class MainWindow : FluentWindow
 
     // ================= 歌词覆盖层（P3） =================
 
-    /// <summary>点击底部封面：已打开则收起，否则展开（P3.1-② 三种退出之一）。</summary>
-    private void OnCoverClick(object sender, MouseButtonEventArgs e)
-    {
-        var lyrics = Player?.Lyrics;
-        if (lyrics is null) return;
-        if (lyrics.IsOpen) lyrics.CloseCommand.Execute(null);
-        else lyrics.ToggleOpenCommand.Execute(null);
-    }
+    /// <summary>点击底部封面：打开全页歌词视图（UI-R0 位置二）。</summary>
+    private void OnCoverClick(object sender, MouseButtonEventArgs e) => Shell?.OpenLyricsPage();
 
-    /// <summary>点击歌词行：跳到对应时间点。</summary>
-    private void OnLyricListClick(object sender, MouseButtonEventArgs e)
-    {
-        var line = FindDataContext<LyricDisplayLine>(e.OriginalSource as DependencyObject);
-        if (line is null) return;
+    /// <summary>右侧栏歌词：点击某行跳转。</summary>
+    private void OnSideLyricClicked(int index) => Player?.Lyrics.SeekToLine(index);
 
-        var index = Player?.Lyrics?.Lines.IndexOf(line) ?? -1;
-        if (index >= 0) Player?.Lyrics?.SeekToLine(index);
-    }
+    /// <summary>全页歌词：点击某行跳转。</summary>
+    private void OnFullLyricClicked(int index) => Player?.Lyrics.SeekToLine(index);
 
-    // ================= 进度条（P0.1 时序 + P1.1-② 点击路径修复） =================
-
-    /// <summary>鼠标一按下就接管滑条：从这一刻起定时器不再回写，拖动不会"不跟手"。</summary>
     private void OnSeekPressed(object sender, MouseButtonEventArgs e)
     {
         _seekPressedOnSlider = true;

@@ -424,6 +424,27 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client);
     }
 
+    /// <summary>全页歌词视图（UI-R0 位置二）：封面点击进入，返回按钮/Esc 退出。</summary>
+    public void OpenLyricsPage()
+    {
+        // 记住返回目标：离开主区前把当前页存下来（BackCommand 恢复它）
+        _lyricsBackPage = CurrentPage;
+        SelectedNav = null;
+        CurrentPage = new LyricsPageViewModel(Player, new RelayCommand(CloseLyricsPage));
+    }
+
+    private object? _lyricsBackPage;
+
+    public void CloseLyricsPage()
+    {
+        CurrentPage = _lyricsBackPage;
+        _lyricsBackPage = null;
+        SelectedNav = null;
+    }
+
+    /// <summary>当前是否在全页歌词视图（Esc 退出判断用）。</summary>
+    public bool IsLyricsPageOpen => CurrentPage is LyricsPageViewModel;
+
     [RelayCommand]
     private void CreatePlaylist()
     {

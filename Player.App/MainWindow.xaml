@@ -4,6 +4,7 @@
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
                  xmlns:vm="clr-namespace:Player.App.ViewModels"
                  xmlns:lyr="clr-namespace:Player.Core.Lyrics;assembly=Player.Core"
+                 xmlns:ctrl="clr-namespace:Player.App.Controls"
                  Title="Player" Height="740" Width="1200" MinHeight="540" MinWidth="920"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
@@ -264,6 +265,91 @@
 
         </DataTemplate>
 
+        <!-- ============ 歌词全页视图（UI-R0 位置二：主区导航进入，返回/Esc 退出） ============ -->
+        <DataTemplate DataType="{x:Type vm:LyricsPageViewModel}">
+            <Grid Margin="18,8,18,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+                <ui:Button Grid.Row="0" Margin="0,0,0,6" Appearance="Transparent"
+                           Icon="{ui:SymbolIcon ArrowLeft24}" Content="返回"
+                           Command="{Binding BackCommand}" />
+                <StackPanel Grid.Row="1" Margin="0,0,0,10">
+                    <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleStyle}" />
+                    <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
+                    <TextBlock Text="{Binding Player.Lyrics.SourceText}" Style="{StaticResource SubTextStyle}"
+                               Margin="0,2,0,0" Opacity="0.75" />
+                </StackPanel>
+                <Grid Grid.Row="2">
+                    <ctrl:LyricCanvas x:Name="FullLyricCanvas"
+                                      Lines="{Binding Player.Lyrics.RenderLines}"
+                                      CurrentIndex="{Binding Player.Lyrics.CurrentIndex}"
+                                      IsStatic="{Binding Player.Lyrics.IsStatic}"
+                                      AccentBrush="{StaticResource AccentBrush}"
+                                      TextBrush="{StaticResource TextPrimaryBrush}"
+                                      SubTextBrush="{StaticResource TextSecondaryBrush}"
+                                      LineClicked="OnFullLyricClicked">
+                        <ctrl:LyricCanvas.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="显示模式" IsEnabled="{Binding Player.Lyrics.HasTimeline}">
+                                    <MenuItem Header="原文" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsOriginalMode, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
+                                              CommandParameter="{x:Static vm:LyricDisplayMode.Original}" />
+                                    <MenuItem Header="双语（原文 + 翻译）" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsBilingualMode, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
+                                              CommandParameter="{x:Static vm:LyricDisplayMode.Bilingual}" />
+                                    <MenuItem Header="罗马音" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsRomajiMode, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
+                                              CommandParameter="{x:Static vm:LyricDisplayMode.Romaji}" />
+                                </MenuItem>
+                                <Separator />
+<MenuItem Header="偏移 -0.1 秒" Command="{Binding Player.Lyrics.OffsetEarlierCommand}" />
+                                <MenuItem Header="歌词来源">
+                                    <MenuItem Header="自动（.lrc > 内嵌 > 缓存 > 网易云）" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefAuto, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.Auto}" />
+                                    <MenuItem Header="本地 .lrc 文件" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefLrcFile, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.LrcFile}" />
+                                    <MenuItem Header="内嵌标签" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefEmbedded, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.Embedded}" />
+                                    <MenuItem Header="网易云" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefOnline, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.Online}" />
+                                    <Separator />
+                                    <MenuItem Header="{Binding Player.Lyrics.SourceText}" IsEnabled="False" />
+                                </MenuItem>
+
+                                <Separator />
+                                <MenuItem Header="偏移 +0.1 秒" Command="{Binding Player.Lyrics.OffsetLaterCommand}" />
+                                <MenuItem Header="{Binding Player.Lyrics.OffsetText}" IsEnabled="False" />
+                                <Separator />
+                                <MenuItem Header="重新获取" Command="{Binding Player.Lyrics.RefreshCommand}" />
+                                <MenuItem Header="重新匹配…" Command="{Binding Player.Lyrics.RematchCommand}" />
+                            </ContextMenu>
+                        </ctrl:LyricCanvas.ContextMenu>
+                    </ctrl:LyricCanvas>
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Visibility="{Binding Player.Lyrics.HasLyrics, Converter={StaticResource InverseBoolToVisibility}}">
+                        <TextBlock Text="{Binding Player.Lyrics.StatusText}" Style="{StaticResource SubTextStyle}"
+                                   TextWrapping="Wrap" TextAlignment="Center" />
+                        <TextBlock Text="右键歌词区可切换 来源 / 模式 / 偏移" Style="{StaticResource SubTextStyle}"
+                                   Margin="0,6,0,0" Opacity="0.7" TextAlignment="Center" />
+                    </StackPanel>
+                </Grid>
+            </Grid>
+        </DataTemplate>
+
     </ui:FluentWindow.Resources>
 
     <Grid>
@@ -281,6 +367,8 @@
                 <ColumnDefinition Width="236" MinWidth="190" MaxWidth="380" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+                <ColumnDefinition Width="300" MinWidth="200" MaxWidth="460" />
             </Grid.ColumnDefinitions>
 
             <Border Background="{StaticResource SurfaceBrush}" CornerRadius="8,0,0,0">
@@ -360,6 +448,92 @@
                           Background="Transparent" />
 
             <ContentControl Grid.Column="2" Content="{Binding CurrentPage}" />
+            <GridSplitter Grid.Column="3" Width="3" HorizontalAlignment="Stretch"
+                          Background="Transparent" />
+
+            <!-- ============ 右侧歌词栏（UI-R0 位置一：信息栏内嵌雏形） ============ -->
+            <Border Grid.Column="4" Background="{StaticResource SurfaceBrush}"
+                    BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1,0,0,0">
+                <Grid Margin="12,10,12,10">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+                    <StackPanel>
+                        <TextBlock Text="{Binding Player.Title}" Style="{StaticResource TitleTextStyle}" FontSize="14" />
+                        <TextBlock Text="{Binding Player.Artist}" Style="{StaticResource SubTextStyle}" Margin="0,3,0,0" />
+                        <TextBlock Text="{Binding Player.Lyrics.SourceText}" Style="{StaticResource SubTextStyle}"
+                                   Margin="0,2,0,0" Opacity="0.75" />
+                    </StackPanel>
+                    <Grid Grid.Row="1" Margin="0,10,0,0">
+                        <ctrl:LyricCanvas x:Name="SideLyricCanvas"
+                                          Lines="{Binding Player.Lyrics.RenderLines}"
+                                          CurrentIndex="{Binding Player.Lyrics.CurrentIndex}"
+                                          IsStatic="{Binding Player.Lyrics.IsStatic}"
+                                          AccentBrush="{StaticResource AccentBrush}"
+                                          TextBrush="{StaticResource TextPrimaryBrush}"
+                                          SubTextBrush="{StaticResource TextSecondaryBrush}"
+                                          LineClicked="OnSideLyricClicked">
+                        <ctrl:LyricCanvas.ContextMenu>
+                            <ContextMenu>
+                                <MenuItem Header="显示模式" IsEnabled="{Binding Player.Lyrics.HasTimeline}">
+                                    <MenuItem Header="原文" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsOriginalMode, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
+                                              CommandParameter="{x:Static vm:LyricDisplayMode.Original}" />
+                                    <MenuItem Header="双语（原文 + 翻译）" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsBilingualMode, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
+                                              CommandParameter="{x:Static vm:LyricDisplayMode.Bilingual}" />
+                                    <MenuItem Header="罗马音" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsRomajiMode, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
+                                              CommandParameter="{x:Static vm:LyricDisplayMode.Romaji}" />
+                                </MenuItem>
+                                <Separator />
+<MenuItem Header="偏移 -0.1 秒" Command="{Binding Player.Lyrics.OffsetEarlierCommand}" />
+                                <MenuItem Header="歌词来源">
+                                    <MenuItem Header="自动（.lrc > 内嵌 > 缓存 > 网易云）" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefAuto, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.Auto}" />
+                                    <MenuItem Header="本地 .lrc 文件" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefLrcFile, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.LrcFile}" />
+                                    <MenuItem Header="内嵌标签" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefEmbedded, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.Embedded}" />
+                                    <MenuItem Header="网易云" IsCheckable="True"
+                                              IsChecked="{Binding Player.Lyrics.IsPrefOnline, Mode=OneWay}"
+                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
+                                              CommandParameter="{x:Static lyr:LyricPreference.Online}" />
+                                    <Separator />
+                                    <MenuItem Header="{Binding Player.Lyrics.SourceText}" IsEnabled="False" />
+                                </MenuItem>
+
+                                <Separator />
+                                <MenuItem Header="偏移 +0.1 秒" Command="{Binding Player.Lyrics.OffsetLaterCommand}" />
+                                <MenuItem Header="{Binding Player.Lyrics.OffsetText}" IsEnabled="False" />
+                                <Separator />
+                                <MenuItem Header="重新获取" Command="{Binding Player.Lyrics.RefreshCommand}" />
+                                <MenuItem Header="重新匹配…" Command="{Binding Player.Lyrics.RematchCommand}" />
+                            </ContextMenu>
+                        </ctrl:LyricCanvas.ContextMenu>
+                    </ctrl:LyricCanvas>
+                        <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                    Visibility="{Binding Player.Lyrics.HasLyrics, Converter={StaticResource InverseBoolToVisibility}}">
+                            <TextBlock Text="{Binding Player.Lyrics.StatusText}" Style="{StaticResource SubTextStyle}"
+                                       TextWrapping="Wrap" TextAlignment="Center" />
+                            <TextBlock Text="右键歌词区可切换 来源 / 模式 / 偏移" Style="{StaticResource SubTextStyle}"
+                                       Margin="0,6,0,0" Opacity="0.7" TextAlignment="Center" />
+                        </StackPanel>
+                    </Grid>
+                </Grid>
+            </Border>
+
+
         </Grid>
 
         <!-- ============ 底部播放条 ============ -->
@@ -463,143 +637,5 @@
             </Grid>
         </Border>
 
-        <!-- ============ 歌词覆盖层（P3.1-③ 改版）：只覆盖主区+播放条（Row 1-2），
-             标题栏始终可点；退出三通道：页内关闭按钮 / Esc / 点击封面收起。
-             操作全部收敛到歌词列表右键菜单（显示模式 / 偏移 / 重新获取 / 重新匹配） ============ -->
-        <Grid Grid.Row="1" Panel.ZIndex="20"
-              Visibility="{Binding Player.Lyrics.IsOpen, Converter={StaticResource BoolToVis}}"
-              Background="{StaticResource LyricOverlayBackground}">
-            <Grid.RowDefinitions>
-                <RowDefinition Height="Auto" />
-                <RowDefinition Height="*" />
-            </Grid.RowDefinitions>
-
-            <!-- 头部：曲目信息 + 来源 + 关闭 -->
-            <Border Background="{StaticResource SurfaceStrongBrush}"
-                    BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="0,0,0,1" Padding="22,12">
-                <Grid>
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                        <TextBlock Text="{Binding Player.Title}" Style="{StaticResource PageTitleStyle}" FontSize="18" />
-                        <TextBlock Text="{Binding Player.Artist}" Style="{StaticResource SubTextStyle}"
-                                   Margin="14,4,0,0" VerticalAlignment="Center" FontSize="12" />
-
-                    </StackPanel>
-                    
-                </Grid>
-            </Border>
-
-            <!-- 主体：大封面 + 歌词（右键菜单承载全部操作） -->
-            <Grid Grid.Row="1" Margin="40,26,40,20">
-                <Grid.ColumnDefinitions>
-                    <ColumnDefinition Width="Auto" />
-                    <ColumnDefinition Width="*" />
-                </Grid.ColumnDefinitions>
-
-                <!-- 大封面 -->
-                <Border Width="320" Height="320" CornerRadius="18"
-                        Background="{StaticResource HoverBrush}"
-                        BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1"
-                        HorizontalAlignment="Left" VerticalAlignment="Top">
-                    <Border.Effect>
-                        <DropShadowEffect BlurRadius="28" ShadowDepth="6" Opacity="0.45" Direction="270" />
-                    </Border.Effect>
-                    <Grid>
-                        <ui:SymbolIcon Symbol="MusicNote224" FontSize="72" HorizontalAlignment="Center"
-                                       VerticalAlignment="Center" Foreground="{StaticResource TextTertiaryBrush}" />
-                        <Image Source="{Binding Player.CoverImage}" Stretch="UniformToFill" />
-                    </Grid>
-                </Border>
-
-                <Grid Grid.Column="1" Margin="32,0,0,0">
-                        <Grid.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="显示模式" IsEnabled="{Binding Player.Lyrics.HasTimeline}">
-                                    <MenuItem Header="原文" IsCheckable="True"
-                                              IsChecked="{Binding Player.Lyrics.IsOriginalMode, Mode=OneWay}"
-                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
-                                              CommandParameter="{x:Static vm:LyricDisplayMode.Original}" />
-                                    <MenuItem Header="双语（原文 + 翻译）" IsCheckable="True"
-                                              IsChecked="{Binding Player.Lyrics.IsBilingualMode, Mode=OneWay}"
-                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
-                                              CommandParameter="{x:Static vm:LyricDisplayMode.Bilingual}" />
-                                    <MenuItem Header="罗马音" IsCheckable="True"
-                                              IsChecked="{Binding Player.Lyrics.IsRomajiMode, Mode=OneWay}"
-                                              Command="{Binding Player.Lyrics.SetDisplayModeCommand}"
-                                              CommandParameter="{x:Static vm:LyricDisplayMode.Romaji}" />
-                                </MenuItem>
-                                <Separator />
-<MenuItem Header="偏移 -0.1 秒" Command="{Binding Player.Lyrics.OffsetEarlierCommand}" />
-                                <MenuItem Header="歌词来源">
-                                    <MenuItem Header="自动（.lrc > 内嵌 > 缓存 > 网易云）" IsCheckable="True"
-                                              IsChecked="{Binding Player.Lyrics.IsPrefAuto, Mode=OneWay}"
-                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
-                                              CommandParameter="{x:Static lyr:LyricPreference.Auto}" />
-                                    <MenuItem Header="本地 .lrc 文件" IsCheckable="True"
-                                              IsChecked="{Binding Player.Lyrics.IsPrefLrcFile, Mode=OneWay}"
-                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
-                                              CommandParameter="{x:Static lyr:LyricPreference.LrcFile}" />
-                                    <MenuItem Header="内嵌标签" IsCheckable="True"
-                                              IsChecked="{Binding Player.Lyrics.IsPrefEmbedded, Mode=OneWay}"
-                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
-                                              CommandParameter="{x:Static lyr:LyricPreference.Embedded}" />
-                                    <MenuItem Header="网易云" IsCheckable="True"
-                                              IsChecked="{Binding Player.Lyrics.IsPrefOnline, Mode=OneWay}"
-                                              Command="{Binding Player.Lyrics.SetSourcePreferenceCommand}"
-                                              CommandParameter="{x:Static lyr:LyricPreference.Online}" />
-                                    <Separator />
-                                    <MenuItem Header="{Binding Player.Lyrics.SourceText}" IsEnabled="False" />
-                                </MenuItem>
-
-                                <Separator />
-                                <MenuItem Header="偏移 +0.1 秒" Command="{Binding Player.Lyrics.OffsetLaterCommand}" />
-                                <MenuItem Header="{Binding Player.Lyrics.OffsetText}" IsEnabled="False" />
-                                <Separator />
-                                <MenuItem Header="重新获取" Command="{Binding Player.Lyrics.RefreshCommand}" />
-                                <MenuItem Header="重新匹配…" Command="{Binding Player.Lyrics.RematchCommand}" />
-                            </ContextMenu>
-                        </Grid.ContextMenu>
-
-                    <!-- 有时间轴：滚动高亮列表。右键：模式 / 偏移 / 重新获取 / 重新匹配 -->
-                    <ListBox x:Name="LyricList"
-                             ItemsSource="{Binding Player.Lyrics.Lines}"
-                             Background="Transparent" BorderThickness="0"
-                             ItemContainerStyle="{StaticResource LyricRowStyle}"
-                             ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             MouseLeftButtonUp="OnLyricListClick">
-                        <ListBox.ItemTemplate>
-                            <DataTemplate>
-                                <StackPanel>
-                                    <TextBlock Text="{Binding PrimaryText}" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding SecondaryText}" FontSize="13" Opacity="0.65"
-                                               TextWrapping="Wrap" Margin="0,4,0,0" />
-                                </StackPanel>
-                            </DataTemplate>
-                        </ListBox.ItemTemplate>
-                                           </ListBox>
-
-                    <!-- 无时间轴：整篇静态显示 -->
-                    <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                  Visibility="{Binding Player.Lyrics.HasTimeline, Converter={StaticResource InverseBoolToVisibility}}">
-                        <TextBlock Text="{Binding Player.Lyrics.PlainText}" FontSize="15" TextWrapping="Wrap"
-                                   Foreground="{StaticResource TextPrimaryBrush}" Margin="4,10" />
-                    </ScrollViewer>
-
-                    <!-- 空状态 / 加载中 -->
-                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
-                                Visibility="{Binding Player.Lyrics.HasLyrics, Converter={StaticResource InverseBoolToVisibility}}">
-                        <ui:SymbolIcon Symbol="DocumentText24" FontSize="40" HorizontalAlignment="Center"
-                                       Foreground="{StaticResource TextTertiaryBrush}" />
-                        <TextBlock Text="{Binding Player.Lyrics.StatusText}" Margin="0,12,0,0"
-                                   HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" />
-                        <TextBlock Text="可以右键歌词区「重新匹配」从网易云候选中手动选择" Margin="0,6,0,0"
-                                   HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" Opacity="0.7" />
-                    </StackPanel>
-                </Grid>
             </Grid>
-        </Grid>
-    </Grid>
 </ui:FluentWindow>

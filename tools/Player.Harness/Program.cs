@@ -226,6 +226,7 @@ public static class Program
         RunQuotaHeaderChecks();
         RunMatcherChecks();
         RunClientPureFunctionChecks();
+        RunLyricLayoutChecks();
 
         // 存储层需要临时库
         // 内嵌歌词（P3.1-③）：用 format-test 的 FLAC 样本 + TagLibSharp 写入后读回
@@ -431,6 +432,50 @@ public static class Program
         Console.WriteLine();
     }
 
+
+    // ---------------- 自绘歌词布局（UI-R0 纯函数） ----------------
+
+    private static void RunLyricLayoutChecks()
+    {
+        Console.WriteLine("=== 自绘歌词布局（UI-R0） ===");
+
+        // 目标偏移：当前行居中
+        Check("第 0 行目标 = 0", LyricLayout.TargetOffsetFor(0, 100, 500) == 0);
+        Check("第 5 行目标居中", LyricLayout.TargetOffsetFor(5, 100, 500) == 5 * 52 + 26 - 250);
+        Check("末行钳制到最大偏移", LyricLayout.TargetOffsetFor(99, 100, 500) == 100 * 52 - 500);
+        Check("负索引 = 0", LyricLayout.TargetOffsetFor(-1, 100, 500) == 0);
+        Check("空列表 = 0", LyricLayout.TargetOffsetFor(3, 0, 500) == 0);
+
+        // 可见范围
+        var (first, last) = LyricLayout.VisibleRange(0, 500, 100);
+        Check("offset=0 可见 0..9", first == 0 && last == 9);
+        var (f2, l2) = LyricLayout.VisibleRange(520, 500, 100);
+        Check("offset=520 可见 10..19", f2 == 10 && l2 == 19);
+        var (f3, l3) = LyricLayout.VisibleRange(0, 500, 0);
+        Check("空列表 (-1,-1)", f3 == -1 && l3 == -1);
+
+        // 淡出
+        Check("当前行不透明", LyricLayout.LineFade(0) == 1.0);
+        Check("相邻行渐淡", LyricLayout.LineFade(1) > LyricLayout.LineFade(3));
+        Check("远处收敛", Math.Abs(LyricLayout.LineFade(6) - LyricLayout.LineFade(9)) < 0.001);
+
+        // 缓动
+        var (o1, s1) = LyricLayout.EaseTowards(0, 100, 0.1);
+        Check("缓动朝目标收敛", o1 > 0 && o1 < 100 && !s1);
+        var (o2, s2) = LyricLayout.EaseTowards(0, 0.2, 0.1);
+        Check("到位判定（<0.5px）", o2 == 0.2 && s2);
+
+        // 命中测试
+        Check("y=26 命中第 0 行", LyricLayout.HitTest(26, 0, 10) == 0);
+        Check("offset 后命中正确行", LyricLayout.HitTest(26, 520, 20) == 10);
+        Check("越界返回 -1", LyricLayout.HitTest(9999, 0, 10) == -1);
+
+        // 滚轮步进方向
+        Check("滚轮向上=内容上移", LyricLayout.WheelStep(120) < 0);
+        Check("滚轮向下=内容下移", LyricLayout.WheelStep(-120) > 0);
+
+        Console.WriteLine();
+    }
 
     // ---------------- 内嵌标签歌词（P3.1-③） ----------------
 
