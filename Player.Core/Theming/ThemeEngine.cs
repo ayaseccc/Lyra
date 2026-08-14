@@ -199,13 +199,14 @@ public static class ThemeDeriver
 
     private static ThemePalette DeriveLightCore(RgbColor main)
     {
-        // 背景：主色向白混合 82%，保证足够浅（对比度保底的前提）
-        var background = Mix(main, White, 0.82);
+        // 背景：主色向白混合 78%，保证足够浅（对比度保底的前提）
+        var background = Mix(main, White, 0.78);
         while (RelativeLuminance(background) < MinBackgroundLuminance)
             background = Mix(background, White, 0.5);
 
-        var surface = Mix(main, White, 0.90);
-        var surfaceStrong = Mix(main, White, 0.95);
+        // 顶栏/底栏(SurfaceStrong)与面板(Surface)同档，避免出现"顶底比其余区域浅"的观感
+        var surface = Mix(main, White, 0.86);
+        var surfaceStrong = Mix(main, White, 0.83);
 
         // 强调色：主色同色相、最大饱和度，再向黑混合直到 vs 背景 ≥ 3.0
         var accent = Saturate(main);
