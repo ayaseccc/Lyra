@@ -179,8 +179,8 @@
                                                    VerticalAlignment="Center" Margin="0,0,8,0" />
                                     </Grid>
 
-                                    <!-- 曲目行（UI-R2 修订）：每行一个 48px 方形封面（不再一张 84 溢出留白） -->
-                                    <Grid Height="56" VerticalAlignment="Top"
+                                    <!-- 曲目行（UI-R2 反馈三）：专辑文字 + 64px 封面（与 R1.5 同比例），组内非首行封面降透明（方案 B） -->
+                                    <Grid Height="84" VerticalAlignment="Top"
                                           Visibility="{Binding IsGroupHeader, Converter={StaticResource InverseBoolToVisibility}}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToGroupCoverWidth}}" />
@@ -191,18 +191,32 @@
                                             <ColumnDefinition Width="60" />
                                         </Grid.ColumnDefinitions>
 
-                                        <Border Grid.Column="0" Width="72" Height="72" CornerRadius="2"
-                                                VerticalAlignment="Center"
-                                                Background="{StaticResource HoverBrush}"
-                                                Visibility="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVis}}">
-                                            <Grid>
-                                                <ui:SymbolIcon Symbol="MusicNote224" FontSize="16"
-                                                               Foreground="{StaticResource TextTertiaryBrush}"
-                                                               Visibility="{Binding Track.CoverHash, Converter={StaticResource NullToVisible}}" />
-                                                <Image Source="{Binding Track.CoverHash, Converter={StaticResource CoverToImage}}"
-                                                       Stretch="UniformToFill" />
-                                            </Grid>
-                                        </Border>
+                                        <StackPanel Grid.Column="0" VerticalAlignment="Top" Margin="0,2,0,0"
+                                                    Visibility="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock Text="{Binding Track.DisplayAlbum}" FontSize="11"
+                                                       Foreground="{StaticResource TextSecondaryBrush}"
+                                                       TextTrimming="CharacterEllipsis" MaxWidth="64" />
+                                            <Border Width="64" Height="64" CornerRadius="2" Margin="0,3,0,0"
+                                                    Background="{StaticResource HoverBrush}">
+                                                <Border.Style>
+                                                    <Style TargetType="Border">
+                                                        <Setter Property="Opacity" Value="0.35" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding ShowCover}" Value="True">
+                                                                <Setter Property="Opacity" Value="1" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Grid>
+                                                    <ui:SymbolIcon Symbol="MusicNote224" FontSize="22"
+                                                                   Foreground="{StaticResource TextTertiaryBrush}"
+                                                                   Visibility="{Binding Track.CoverHash, Converter={StaticResource NullToVisible}}" />
+                                                    <Image Source="{Binding Track.CoverHash, Converter={StaticResource CoverToImage}}"
+                                                           Stretch="UniformToFill" />
+                                                </Grid>
+                                            </Border>
+                                        </StackPanel>
 
                                         <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                             <ui:SymbolIcon Symbol="Play24" FontSize="11" Foreground="{StaticResource AccentBrush}"

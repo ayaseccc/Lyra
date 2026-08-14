@@ -572,6 +572,19 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             ? Random.Shared.Next(folder.Tracks.Count)
             : 0;
         Player.PlayTracks(folder.Tracks, startIndex, "文件夹：" + nav.Title);
+
+        if (startIndex > 0 && Player.CurrentTrack is not null)
+        {
+            // 列表页切到该文件夹后，定位并居中随机起播的那一首（UI-R2 反馈四）
+            _dispatcher.BeginInvoke(() =>
+            {
+                if (CurrentPage is TrackListPageViewModel page && Player.CurrentTrack is { } track)
+                {
+                    page.LocateTrack(track);
+                    TrackLocateRequested?.Invoke();
+                }
+            });
+        }
     }
 
     [RelayCommand]

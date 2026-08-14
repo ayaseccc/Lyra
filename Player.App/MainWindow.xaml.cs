@@ -132,7 +132,7 @@ public partial class MainWindow : FluentWindow
         base.OnClosing(e);
     }
 
-    /// <summary>定位正在播放：找到对应行（分组模式是 TrackRowItem）选中并滚动（UI-R1.5 ⑪ / R2）。</summary>
+    /// <summary>定位正在播放：找到对应行（分组模式是 TrackRowItem）选中、滚动并**居中**（UI-R1.5 ⑪ / R2 反馈四）。</summary>
     private void ScrollToCurrentTrack()
     {
         _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
@@ -147,6 +147,13 @@ public partial class MainWindow : FluentWindow
 
             list.SelectedItem = item;
             list.ScrollIntoView(item);
+
+            // 居中：CanContentScroll 下 ScrollViewer 偏移单位是"行"，滚到 行号 - 可见行数/2
+            var scroll = FindVisualChild<System.Windows.Controls.ScrollViewer>(list, _ => true);
+            if (scroll is null) return;
+            var index = page.DisplayItems.IndexOf(item);
+            if (scroll.ViewportHeight > 1)
+                scroll.ScrollToVerticalOffset(Math.Max(0, index - scroll.ViewportHeight / 2));
         });
     }
 
