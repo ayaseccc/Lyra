@@ -256,9 +256,15 @@ public partial class MainWindow : FluentWindow
         Shell?.PlayFolderPlaylist(nav);
     }
 
-    /// <summary>Esc：先退大歌词页，再退设置页（UI-R2 bug 修复）。</summary>
+    /// <summary>Esc：先退大歌词页，再退设置页（UI-R2 bug 修复）。
+    /// 目验六修复：大歌词页打开时 Tab/方向键一律吞掉（窗口级，任何焦点位置都生效，无焦点框）。</summary>
     private void Window_OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
+        if (_bigLyricsVisible && (e.Key == Key.Tab || e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down))
+        {
+            e.Handled = true;
+            return;
+        }
         if (e.Key != Key.Escape) return;
         if (_bigLyricsVisible)
         {
@@ -417,6 +423,31 @@ public partial class MainWindow : FluentWindow
             Player?.PlayPauseCommand.Execute(null);
             e.Handled = true;
         }
+    }
+
+    /// <summary>目验六修复：覆盖层兜底——点击落在歌词画布之外（左右 60px 边距等）时按左/右半区切曲，双击退出。</summary>
+    private void OnBigLyricsOverlayMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        // 画布自身已处理其区域内的点击（透明背景使空白也可命中，行点击=跳转、空白=切曲、双击=退出）
+        var source = e.OriginalSource as DependencyObject;
+        while (source is not null)
+        {
+            if (source is LyricCanvas) return;
+            source = source is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
+        }
+        if (e.ClickCount >= 2)
+        {
+            ToggleBigLyrics();
+            e.Handled = true;
+            return;
+        }
+        if (Player is null || sender is not FrameworkElement fe) return;
+        var x = e.GetPosition(fe).X;
+        if (x >= fe.ActualWidth / 2) Player.NextCommand.Execute(null);
+        else Player.PreviousCommand.Execute(null);
+        e.Handled = true;
     }
 
     private void ToggleBigLyrics()

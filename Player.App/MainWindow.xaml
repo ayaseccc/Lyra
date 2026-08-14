@@ -1161,7 +1161,9 @@
             <Grid x:Name="BigLyricsOverlay" Grid.RowSpan="3" Visibility="Collapsed" Opacity="0"
                   Background="{DynamicResource SurfaceStrongBrush}" ClipToBounds="True"
                   Focusable="True" FocusVisualStyle="{x:Null}"
-                  PreviewKeyDown="OnBigLyricsPreviewKeyDown">
+                  KeyboardNavigation.TabNavigation="None"
+                  PreviewKeyDown="OnBigLyricsPreviewKeyDown"
+                  PreviewMouseLeftButtonDown="OnBigLyricsOverlayMouseDown">
                 <!-- 背景：放大模糊封面 + 遮罩保证可读 -->
                 <Image x:Name="BigLyricsBgImage" Source="{Binding Player.CoverImage}"
                        Stretch="UniformToFill" RenderTransformOrigin="0.5,0.5">

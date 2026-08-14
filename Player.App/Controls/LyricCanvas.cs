@@ -37,7 +37,7 @@ public sealed class LyricCanvas : FrameworkElement
     private double _offset;
     private bool _animating;
     private bool _freeBrowse;          // 大页滚轮自由浏览中
-    private int _browseFrozenIndex = -1;
+    private DateTime _freeBrowseUntil;   // 自由浏览超时点（到点自动回跟随）
 
     private static readonly FontFamily UiFont = new("Microsoft YaHei UI, Segoe UI");
 
@@ -115,6 +115,11 @@ public sealed class LyricCanvas : FrameworkElement
         // 目验五修复：不再自设 Focusable（Tab 焦点框问题），需要键盘时由宿主统一管理
         Cursor = Cursors.Hand;
     }
+
+    /// <summary>目验六修复：自定义元素全区域可命中（无 Background 的 FrameworkElement 默认只在渲染内容上命中，
+    /// 导致点击空白/双击/滚轮在空白区域全部落空）。</summary>
+    protected override HitTestResult HitTestCore(PointHitTestParameters hitTestParameters) =>
+        new PointHitTestResult(this, hitTestParameters.HitPoint);
 
     // ---------------- 依赖属性（供 XAML 绑定） ----------------
 
@@ -219,8 +224,8 @@ public sealed class LyricCanvas : FrameworkElement
             return;
         }
 
-        // 目验五修复：大页滚轮自由浏览——播放推进到新行时自动回到跟随
-        if (_freeBrowse && CurrentIndex != _browseFrozenIndex)
+        // 目验六修复：大页滚轮自由浏览——超时（2 秒无操作）才回跟随；浏览期间完全由滚轮操控
+        if (_freeBrowse && DateTime.UtcNow >= _freeBrowseUntil)
             _freeBrowse = false;
         if (_freeBrowse)
         {
@@ -256,21 +261,23 @@ public sealed class LyricCanvas : FrameworkElement
         base.OnMouseWheel(e);
 
         // 静态模式（无时间轴长歌词）：滚轮是唯一的浏览方式，保留。
-        // 大歌词页（WheelBrowsing）：滚轮临时自由浏览，播放推进到新行自动回跟随（目验五修复）。
+        // 大歌词页（WheelBrowsing 目验六修复）：滚轮完全接管（高灵敏度 4 行/格），
+        // 停止操作 2 秒后自动回跳当前歌词。
         if (!IsStatic && !WheelBrowsing) return;
 
         var heights = ComputeHeights();
         if (heights.Length == 0) return;
 
         var maxOffset = Math.Max(0, LyricLayout.TotalHeight(heights) - ActualHeight);
-        _offset = Math.Clamp(_offset + LyricLayout.WheelStep(e.Delta), 0, maxOffset);
+        var step = WheelBrowsing && !IsStatic ? LyricLayout.PrimaryLineHeight * 4 : LyricLayout.WheelStep(e.Delta);
+        _offset = Math.Clamp(_offset + (e.Delta > 0 ? -step : step), 0, maxOffset);
         if (WheelBrowsing && !IsStatic)
         {
             _freeBrowse = true;
-            _browseFrozenIndex = CurrentIndex;
+            _freeBrowseUntil = DateTime.UtcNow.AddSeconds(2);   // 2 秒无操作自动回跟随
         }
         InvalidateVisual();
-        StartAnimation();   // 保持渲染循环（自由浏览期间也要重绘）
+        StartAnimation();
         e.Handled = true;
     }
 
