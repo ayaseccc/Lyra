@@ -1181,11 +1181,12 @@
                     </Border.Background>
                 </Border>
 
-                <!-- 右上角关闭按钮（L1.1-④：第三种退出方式；目验修复⑤：下移到标题栏之下，避免与窗口关闭钮重叠） -->
-                <Button x:Name="BigLyricsCloseButton" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,62,18,0"
-                        Width="34" Height="34" Style="{StaticResource ModeButtonStyle}"
-                        ToolTip="关闭大歌词页（Esc）" Click="OnBigLyricsCloseClick">
-                    <ui:SymbolIcon Symbol="Dismiss24" FontSize="16" />
+                <!-- 右上角关闭按钮（L1.1-④：第三种退出方式；目验修复⑤：下移到标题栏之下避免误关软件；
+                     目验三修复：幽灵样式+去掉 ToolTip，避免悬浮气泡「小框」，位置与页面融合） -->
+                <Button x:Name="BigLyricsCloseButton" HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,60,26,0"
+                        Width="36" Height="36" Style="{StaticResource BigLyricsGhostButtonStyle}"
+                        Click="OnBigLyricsCloseClick">
+                    <ui:SymbolIcon Symbol="Dismiss24" FontSize="16" Foreground="{DynamicResource TextPrimaryBrush}" />
                 </Button>
 
                 <!-- 中央大字号歌词（复用 R5 引擎，1.8 倍） -->

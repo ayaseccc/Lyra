@@ -8,7 +8,62 @@
         Background="Transparent" Topmost="True" ShowInTaskbar="False"
         WindowStartupLocation="Manual" Top="860" Left="680"
         Loaded="OnLoaded" MouseLeftButtonDown="OnWindowMouseDown">
-    <Grid MouseEnter="OnRootMouseEnter" MouseLeave="OnRootMouseLeave" Background="Transparent">
+    <Window.Resources>
+        <!-- 悬浮设置面板的行样式（目验三修复：弃用系统子菜单，平铺按钮行，悬停高亮） -->
+        <Style x:Key="MenuRowStyle" TargetType="Button">
+            <Setter Property="Height" Value="30" />
+            <Setter Property="Margin" Value="0,1" />
+            <Setter Property="Padding" Value="10,0" />
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="Background" Value="Transparent" />
+            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="FontSize" Value="13" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="6">
+                            <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" Margin="{TemplateBinding Padding}" />
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+        <Style x:Key="SwatchButtonStyle" TargetType="Button">
+            <Setter Property="Width" Value="22" />
+            <Setter Property="Height" Value="22" />
+            <Setter Property="Margin" Value="2" />
+            <Setter Property="Cursor" Value="Hand" />
+            <Setter Property="Focusable" Value="False" />
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="Button">
+                        <Border x:Name="Bd" CornerRadius="11" Background="{TemplateBinding Background}"
+                                BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
+                            <Border.Effect>
+                                <DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.3" />
+                            </Border.Effect>
+                        </Border>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsMouseOver" Value="True">
+                                <Setter TargetName="Bd" Property="BorderBrush" Value="{DynamicResource AccentBrush}" />
+                                <Setter TargetName="Bd" Property="BorderThickness" Value="2" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </Window.Resources>
+    <Grid MouseEnter="OnRootMouseEnter" MouseLeave="OnRootMouseLeave" Background="Transparent"
+          PreviewMouseRightButtonUp="OnRootPreviewMouseRightButtonUp">
         <!-- 圆角半透明背景条（L1.1-③：可隐藏/调透明；目验修复①：文字层与背景分离，隐藏背景不丢文字） -->
         <Border x:Name="Backdrop" CornerRadius="14" Opacity="0.82"
                 Background="{DynamicResource SurfaceStrongBrush}"
@@ -64,34 +119,68 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Border>
 
-        <!-- 解锁态：调宽柄（右侧） -->
+        <!-- 解锁态：调宽柄（右侧；背景隐藏时一并隐藏，避免悬浮小条——目验三修复） -->
         <Border x:Name="ResizeHandle" Width="10" Height="36" CornerRadius="5"
                 HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-6,0"
                 Background="{DynamicResource AccentBrush}" Cursor="SizeWE"
                 Visibility="Collapsed" MouseLeftButtonDown="OnResizeHandleDown" />
-    </Grid>
 
-    <!-- L1.1-③ 右键菜单：锁定/翻译/背景/字号/字体/文字颜色/关闭 -->
-    <Window.ContextMenu>
-        <ContextMenu Opened="OnMenuOpened">
-            <MenuItem x:Name="LockMenuItem" Click="OnMenuToggleLock" />
-            <MenuItem x:Name="TwoLinesMenuItem" Header="显示翻译（双行）" IsCheckable="True" Click="OnMenuToggleTwoLines" />
-            <MenuItem x:Name="BgShowMenuItem" Header="显示背景卡片" IsCheckable="True" Click="OnMenuToggleBackground" />
-            <MenuItem Header="背景透明度">
-                <MenuItem Header="30%" Tag="0.3" Click="OnMenuBgOpacity" />
-                <MenuItem Header="50%" Tag="0.5" Click="OnMenuBgOpacity" />
-                <MenuItem Header="70%" Tag="0.7" Click="OnMenuBgOpacity" />
-                <MenuItem Header="90%" Tag="0.9" Click="OnMenuBgOpacity" />
-            </MenuItem>
-            <Separator />
-            <MenuItem Header="字号">
-                <MenuItem Header="增大（+2）" Click="OnMenuFontSizePlus" />
-                <MenuItem Header="减小（-2）" Click="OnMenuFontSizeMinus" />
-            </MenuItem>
-            <MenuItem x:Name="FontFamilyMenu" Header="字体" />
-            <MenuItem x:Name="TextColorMenu" Header="文字颜色" />
-            <Separator />
-            <MenuItem Header="关闭桌面歌词" Click="OnMenuClose" />
-        </ContextMenu>
-    </Window.ContextMenu>
+        <!-- 自定义悬浮设置面板（目验三修复：平铺行 + 色板，无系统子菜单走廊问题；右键解锁态打开） -->
+        <Popup x:Name="SettingsPopup" Placement="MousePoint" StaysOpen="False" AllowsTransparency="True">
+            <Border Background="{DynamicResource SurfaceStrongBrush}" CornerRadius="10" Padding="6"
+                    BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1" MinWidth="210">
+                <StackPanel>
+                    <Button x:Name="MenuLockRow" Style="{StaticResource MenuRowStyle}" Click="OnMenuToggleLock" />
+                    <Button x:Name="MenuTwoLinesRow" Style="{StaticResource MenuRowStyle}" Click="OnMenuToggleTwoLines" />
+                    <Button x:Name="MenuBgRow" Style="{StaticResource MenuRowStyle}" Click="OnMenuToggleBackground" />
+
+                    <Border Height="1" Background="{DynamicResource BorderSoftBrush}" Margin="4,6" />
+
+                    <!-- 字号 -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <Button Style="{StaticResource MenuRowStyle}" MinWidth="44" Content="A−"
+                                ToolTip="字号减小" Click="OnMenuFontSizeMinus" />
+                        <TextBlock Grid.Column="1" x:Name="MenuFontSizeText" VerticalAlignment="Center"
+                                   HorizontalAlignment="Center" FontSize="12"
+                                   Foreground="{DynamicResource TextSecondaryBrush}" />
+                        <Button Grid.Column="2" Style="{StaticResource MenuRowStyle}" MinWidth="44" Content="A+"
+                                ToolTip="字号增大" Click="OnMenuFontSizePlus" />
+                    </Grid>
+
+                    <!-- 背景透明度 -->
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="*" />
+                        </Grid.ColumnDefinitions>
+                        <Button Grid.Column="0" Style="{StaticResource MenuRowStyle}" Content="30%" Tag="0.3" Click="OnMenuBgOpacity" />
+                        <Button Grid.Column="1" Style="{StaticResource MenuRowStyle}" Content="50%" Tag="0.5" Click="OnMenuBgOpacity" />
+                        <Button Grid.Column="2" Style="{StaticResource MenuRowStyle}" Content="70%" Tag="0.7" Click="OnMenuBgOpacity" />
+                        <Button Grid.Column="3" Style="{StaticResource MenuRowStyle}" Content="90%" Tag="0.9" Click="OnMenuBgOpacity" />
+                    </Grid>
+
+                    <Border Height="1" Background="{DynamicResource BorderSoftBrush}" Margin="4,6" />
+
+                    <!-- 文字颜色色板（跟随主题 + 预设纯色） -->
+                    <TextBlock Text="文字颜色" FontSize="11" Margin="10,2,0,4"
+                               Foreground="{DynamicResource TextSecondaryBrush}" />
+                    <WrapPanel x:Name="MenuColorSwatches" />
+
+                    <!-- 字体设置入口 -->
+                    <Button Style="{StaticResource MenuRowStyle}" Content="字体设置…" Click="OnMenuFontSettings" />
+
+                    <Border Height="1" Background="{DynamicResource BorderSoftBrush}" Margin="4,6" />
+
+                    <Button Style="{StaticResource MenuRowStyle}" Content="关闭桌面歌词" Click="OnMenuClose" />
+                </StackPanel>
+            </Border>
+        </Popup>
+    </Grid>
 </Window>

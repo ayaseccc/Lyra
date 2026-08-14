@@ -69,6 +69,9 @@ public partial class DesktopLyricsWindow : Window
 
         // L1.1-③ 背景卡片：隐藏或调透明；隐藏时描边/阴影加强保可读（锁定态恒为纯文字，见 ApplyBackdropVisibility）
         ApplyBackdropVisibility();
+
+        // 目验三修复：设置页/面板改文字颜色后必须真正应用（此前只存配置不刷前景）
+        ApplyTextColor();
     }
 
     /// <summary>文字颜色：跟随主题（清本地值回退 DynamicResource）/ 自定义纯色（副文本 75% 透明）。</summary>
@@ -165,12 +168,14 @@ public partial class DesktopLyricsWindow : Window
         ApplyBackdropVisibility();
     }
 
-    /// <summary>背景卡片可见性：锁定=隐藏（纯文字）；解锁=按设置。</summary>
+    /// <summary>背景卡片可见性：锁定=隐藏（纯文字）；解锁=按设置。
+    /// 目验三修复：背景隐藏时调宽柄一并隐藏（避免悬浮小条）；调宽仍可用右键面板（无宽度入口时先显示背景）。</summary>
     private void ApplyBackdropVisibility()
     {
         var show = !_locked && ConfigService.Current.Ui.DesktopLyricsShowBackground;
         Backdrop.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         Backdrop.Opacity = show ? ConfigService.Current.Ui.DesktopLyricsBgOpacity : 1.0;
+        ResizeHandle.Visibility = show ? Visibility.Visible : Visibility.Collapsed;
         var shadowStrength = show ? 0.9 : 1.0;
         var shadowBlur = show ? 6.0 : 12.0;
         if (PrimaryText.Effect is DropShadowEffect ps) { ps.Opacity = shadowStrength; ps.BlurRadius = shadowBlur; }
@@ -266,55 +271,51 @@ public partial class DesktopLyricsWindow : Window
 
     private void OnToolbarCloseClick(object sender, RoutedEventArgs e) => CloseDesktopLyrics();
 
-    // ================= 右键菜单 =================
+    // ================= 右键悬浮设置面板（目验三修复：平铺行 + 色板，替代系统子菜单） =================
 
-    private void OnMenuOpened(object sender, RoutedEventArgs e)
+    private void OnRootPreviewMouseRightButtonUp(object sender, MouseButtonEventArgs e)
+    {
+        // 锁定态右键穿透到下层窗口（本窗收不到）；解锁态才打开面板
+        if (_locked) return;
+        RefreshSettingsPopup();
+        SettingsPopup.IsOpen = true;
+        e.Handled = true;
+    }
+
+    private void RefreshSettingsPopup()
     {
         var ui = ConfigService.Current.Ui;
-        LockMenuItem.Header = _locked ? "解锁（可拖动 / 调宽）" : "锁定（鼠标穿透）";
-        TwoLinesMenuItem.IsChecked = ui.DesktopLyricsTwoLines;
-        BgShowMenuItem.IsChecked = ui.DesktopLyricsShowBackground;
+        MenuLockRow.Content = _locked ? "解锁（可拖动 / 调宽）" : "锁定（鼠标穿透）";
+        MenuTwoLinesRow.Content = (ui.DesktopLyricsTwoLines ? "✓ " : "  ") + "显示翻译（双行）";
+        MenuBgRow.Content = (ui.DesktopLyricsShowBackground ? "✓ " : "  ") + "显示背景卡片";
+        MenuFontSizeText.Text = $"字号 {ui.DesktopLyricsFontSize:0}";
 
-        // 字体子菜单：置顶中日文友好项 + 当前字体，末尾给设置页入口
-        FontFamilyMenu.Items.Clear();
-        var installed = LyricUiOptions.FontFamilies;
-        var shown = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
-        foreach (var name in installed.Take(18))
-        {
-            shown.Add(name);
-            var familyItem = new MenuItem { Header = name };
-            familyItem.Click += OnMenuFontFamily;
-            FontFamilyMenu.Items.Add(familyItem);
-        }
-        if (!shown.Contains(ui.LyricFontFamily) && !string.IsNullOrEmpty(ui.LyricFontFamily))
-        {
-            var currentItem = new MenuItem { Header = ui.LyricFontFamily };
-            currentItem.Click += OnMenuFontFamily;
-            FontFamilyMenu.Items.Add(currentItem);
-        }
-        FontFamilyMenu.Items.Add(new Separator());
-        var fontSettings = new MenuItem { Header = "打开字体设置…" };
-        fontSettings.Click += (_, _) => OpenFontSettingsRequested?.Invoke();
-        FontFamilyMenu.Items.Add(fontSettings);
-
-        // 文字颜色子菜单：跟随主题 + 预设纯色，勾选当前
-        TextColorMenu.Items.Clear();
+        // 色板：跟随主题 + 预设纯色（Tag=DesktopLyricsColorOption），勾选当前
+        MenuColorSwatches.Children.Clear();
         var currentKey = ui.DesktopLyricsTextColorMode == "Custom" ? ui.DesktopLyricsTextColor : "Theme";
         foreach (var option in LyricUiOptions.TextColors)
         {
-            var item = new MenuItem
+            var swatch = new Button
             {
-                Header = option.Name,
-                IsCheckable = true,
-                IsChecked = string.Equals(option.Key, currentKey, StringComparison.OrdinalIgnoreCase),
-                Tag = option
+                Style = (Style)FindResource("SwatchButtonStyle"),
+                Tag = option,
+                ToolTip = option.Name,
+                Background = option.Key == "Theme"
+                    ? (Brush)Application.Current.FindResource("AccentBrush")
+                    : (Brush)new SolidColorBrush((Color)ColorConverter.ConvertFromString(option.Key))
             };
-            item.Click += OnMenuTextColor;
-            TextColorMenu.Items.Add(item);
+            if (string.Equals(option.Key, currentKey, StringComparison.OrdinalIgnoreCase))
+                swatch.BorderThickness = new Thickness(2);
+            swatch.Click += OnMenuTextColor;
+            MenuColorSwatches.Children.Add(swatch);
         }
     }
 
-    private void OnMenuToggleLock(object sender, RoutedEventArgs e) => SetLocked(!_locked);
+    private void OnMenuToggleLock(object sender, RoutedEventArgs e)
+    {
+        SetLocked(!_locked);
+        CloseSettingsPopup();
+    }
 
     private void OnMenuToggleTwoLines(object sender, RoutedEventArgs e)
     {
@@ -323,6 +324,7 @@ public partial class DesktopLyricsWindow : Window
         ConfigService.Save();
         ApplySettings();
         UpdateLyrics(PrimaryText.Text, SecondaryText.Text, hasTimeline: ui.DesktopLyricsTwoLines);
+        RefreshSettingsPopup();
     }
 
     private void OnMenuToggleBackground(object sender, RoutedEventArgs e)
@@ -331,20 +333,30 @@ public partial class DesktopLyricsWindow : Window
         ui.DesktopLyricsShowBackground = !ui.DesktopLyricsShowBackground;
         ConfigService.Save();
         ApplySettings();
+        RefreshSettingsPopup();
     }
 
     private void OnMenuBgOpacity(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuItem { Tag: string tag } || !double.TryParse(tag, out var opacity)) return;
+        if (sender is not Button { Tag: string tag } || !double.TryParse(tag, out var opacity)) return;
         var ui = ConfigService.Current.Ui;
         ui.DesktopLyricsBgOpacity = opacity;
         ConfigService.Save();
         ApplySettings();
+        CloseSettingsPopup();
     }
 
-    private void OnMenuFontSizePlus(object sender, RoutedEventArgs e) => AdjustFontSize(+2);
+    private void OnMenuFontSizePlus(object sender, RoutedEventArgs e)
+    {
+        AdjustFontSize(+2);
+        RefreshSettingsPopup();
+    }
 
-    private void OnMenuFontSizeMinus(object sender, RoutedEventArgs e) => AdjustFontSize(-2);
+    private void OnMenuFontSizeMinus(object sender, RoutedEventArgs e)
+    {
+        AdjustFontSize(-2);
+        RefreshSettingsPopup();
+    }
 
     private void AdjustFontSize(double delta)
     {
@@ -354,18 +366,15 @@ public partial class DesktopLyricsWindow : Window
         ApplySettings();
     }
 
-    private void OnMenuFontFamily(object sender, RoutedEventArgs e)
+    private void OnMenuFontSettings(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuItem { Header: string family }) return;
-        var ui = ConfigService.Current.Ui;
-        ui.LyricFontFamily = family;
-        ConfigService.Save();
-        ApplySettings();
+        CloseSettingsPopup();
+        OpenFontSettingsRequested?.Invoke();
     }
 
     private void OnMenuTextColor(object sender, RoutedEventArgs e)
     {
-        if (sender is not MenuItem { Tag: DesktopLyricsColorOption option }) return;
+        if (sender is not Button { Tag: DesktopLyricsColorOption option }) return;
         var ui = ConfigService.Current.Ui;
         if (option.Key == "Theme")
         {
@@ -378,9 +387,16 @@ public partial class DesktopLyricsWindow : Window
         }
         ConfigService.Save();
         ApplyTextColor();
+        CloseSettingsPopup();
     }
 
-    private void OnMenuClose(object sender, RoutedEventArgs e) => CloseDesktopLyrics();
+    private void OnMenuClose(object sender, RoutedEventArgs e)
+    {
+        CloseSettingsPopup();
+        CloseDesktopLyrics();
+    }
+
+    private void CloseSettingsPopup() => SettingsPopup.IsOpen = false;
 
     private void CloseDesktopLyrics()
     {
