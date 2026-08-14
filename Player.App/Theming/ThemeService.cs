@@ -5,6 +5,8 @@ using System.Windows.Media.Imaging;
 using System.Windows.Threading;
 using Player.Core.Infra;
 using Player.Core.Theming;
+using Wpf.Ui.Appearance;
+using Wpf.Ui.Controls;
 
 namespace Player.App.Theming;
 
@@ -37,6 +39,11 @@ public static class ThemeService
         _initialized = true;
 
         FollowCover = !string.Equals(ConfigService.Current.Ui.ThemeMode, "FixedDark", StringComparison.OrdinalIgnoreCase);
+        // WPF-UI 控件主题与染色模式联动：跟随封面=浅色控件（浅底深字），固定深色=深色控件
+        ApplicationThemeManager.Apply(
+            FollowCover ? ApplicationTheme.Light : ApplicationTheme.Dark,
+            WindowBackdropType.Mica,
+            updateAccent: false);
         if (!FollowCover)
         {
             ApplyPalette(ThemePalette.FixedDark);
@@ -51,6 +58,11 @@ public static class ThemeService
         FollowCover = followCover;
         ConfigService.Current.Ui.ThemeMode = followCover ? "FollowCover" : "FixedDark";
         ConfigService.Save();
+
+        ApplicationThemeManager.Apply(
+            followCover ? ApplicationTheme.Light : ApplicationTheme.Dark,
+            WindowBackdropType.Mica,
+            updateAccent: false);
 
         if (followCover)
         {
