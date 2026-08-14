@@ -69,6 +69,7 @@ public static class Db
                 album_artist TEXT NOT NULL DEFAULT '',
                 track_no     INTEGER NOT NULL DEFAULT 0,
                 disc_no      INTEGER NOT NULL DEFAULT 0,
+                year         INTEGER NOT NULL DEFAULT 0,
                 duration_ms  INTEGER NOT NULL DEFAULT 0,
                 sample_rate  INTEGER NOT NULL DEFAULT 0,
                 bit_depth    INTEGER NOT NULL DEFAULT 0,
@@ -143,20 +144,31 @@ public static class Db
 
     private static void EnsureTrackColumns(SqliteConnection connection)
     {
-        using (var command = connection.CreateCommand())
+        // 旧库补列（幂等）：netease_id（歌词匹配）、year（R2 专辑分组年份）。
+        // 注意：索引必须等列加好之后再建，否则旧库上 CREATE INDEX 会整批失败。
+        using var command = connection.CreateCommand();
+        command.CommandText = "PRAGMA table_info(tracks);";
+        var existing = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (var reader = command.ExecuteReader())
         {
-            command.CommandText = "PRAGMA table_info(tracks);";
-            using var reader = command.ExecuteReader();
             while (reader.Read())
-            {
-                if (string.Equals(reader.GetString(1), "netease_id", StringComparison.OrdinalIgnoreCase))
-                    return;
-            }
+                existing.Add(reader.GetString(1));
         }
 
-        using var alter = connection.CreateCommand();
-        alter.CommandText = "ALTER TABLE tracks ADD COLUMN netease_id INTEGER;";
-        alter.ExecuteNonQuery();
-        Log.Information("tracks 表已迁移：新增 netease_id 列");
+        if (!existing.Contains("netease_id"))
+        {
+            using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE tracks ADD COLUMN netease_id INTEGER;";
+            alter.ExecuteNonQuery();
+            Log.Information("tracks 表已迁移：新增 netease_id 列");
+        }
+
+        if (!existing.Contains("year"))
+        {
+            using var alter = connection.CreateCommand();
+            alter.CommandText = "ALTER TABLE tracks ADD COLUMN year INTEGER NOT NULL DEFAULT 0;";
+            alter.ExecuteNonQuery();
+            Log.Information("tracks 表已迁移：新增 year 列");
+        }
     }
 }

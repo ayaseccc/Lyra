@@ -86,6 +86,31 @@ public sealed class VolumeSquareConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>bool → 列表首列宽度（UI-R2）：分组模式 84px 封面列，平铺模式 0（无封面列）。</summary>
+public sealed class BoolToGroupCoverWidthConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? new System.Windows.GridLength(84) : new System.Windows.GridLength(0);
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>多绑定：行路径 == 当前播放路径（UI-R2 的 ▶ 与整行淡色高亮）。</summary>
+public sealed class TrackIsCurrentConverter : IMultiValueConverter
+{
+    public object? Convert(object?[] values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var rowPath = values.Length > 0 ? values[0] as string : null;
+        var currentPath = values.Length > 1 ? values[1] as string : null;
+        if (string.IsNullOrEmpty(rowPath) || string.IsNullOrEmpty(currentPath)) return false;
+        return string.Equals(rowPath, currentPath, StringComparison.OrdinalIgnoreCase);
+    }
+
+    public object?[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>bool → 强调色/次级文字色（UI-R1.5 ⑬：激活态用强调色着色，不用实心填充）。</summary>
 public sealed class BoolToTintBrushConverter : IValueConverter
 {

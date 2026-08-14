@@ -52,6 +52,7 @@ public static partial class TagReader
                     : Clean(tag.JoinedAlbumArtists);
                 record.TrackNo = (int)Math.Min(tag.Track, int.MaxValue);
                 record.DiscNo = (int)Math.Min(tag.Disc, int.MaxValue);
+                record.Year = (int)Math.Min(tag.Year, int.MaxValue);
             }
 
             var properties = file.Properties;

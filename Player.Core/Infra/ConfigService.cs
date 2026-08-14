@@ -112,6 +112,9 @@ public sealed class UiConfig
     public double WindowWidth { get; set; }
 
     public double WindowHeight { get; set; }
+
+    /// <summary>曲目列表显示模式（UI-R2）：true = 专辑分组，false = 平铺。</summary>
+    public bool ListGrouped { get; set; }
 }
 
 /// <summary>

@@ -49,8 +49,12 @@ public static class Program
                 await RunLyricsChecksAsync();
                 break;
 
+            case "grouping":
+                RunGroupingChecks();
+                break;
+
             default:
-                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics）");
+                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping）");
                 return 2;
         }
 
@@ -690,5 +694,80 @@ public static class Program
     {
         if (ok) _passed++; else _failed++;
         Console.WriteLine($"  {(ok ? "✓" : "✗ 失败")}  {what}");
+    }
+
+    // ================= 专辑分组（UI-R2） =================
+
+    private static void RunGroupingChecks()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 专辑分组（TrackGrouper） ===");
+
+        static TrackRecord T(string path, string title, string artist, string album,
+            string albumArtist = "", int disc = 0, int track = 0, int year = 0) => new()
+        {
+            Path = path,
+            Title = title,
+            Artist = artist,
+            Album = album,
+            AlbumArtist = albumArtist,
+            DiscNo = disc,
+            TrackNo = track,
+            Year = year
+        };
+
+        // ① 分组键 = 专辑 + 专辑艺术家：同名专辑不同艺术家要分开
+        var tracks = new[]
+        {
+            T(@"C:\a\01.flac", "曲1", "乐队A", "同名专辑", "乐队A", 1, 1, 2020),
+            T(@"C:\a\02.flac", "曲2", "乐队A", "同名专辑", "乐队A", 1, 2, 2020),
+            T(@"C:\b\01.flac", "曲1", "乐队B", "同名专辑", "乐队B", 1, 1, 2019),
+            T(@"C:\c\01.flac", "散曲1", "歌手C", ""),
+            T(@"C:\c\02.flac", "散曲2", "歌手C", ""),
+            T(@"C:\d\01.flac", "散曲3", "歌手D", ""),
+            T(@"C:\e\01.flac", "跨碟1", "乐队A", "多碟专辑", "乐队A", 1, 1, 2021),
+            T(@"C:\e\02.flac", "跨碟2", "乐队A", "多碟专辑", "乐队A", 2, 1, 2021),
+            T(@"C:\e\03.flac", "跨碟3", "乐队A", "多碟专辑", "乐队A", 2, 3, 2021),
+            T(@"C:\f\01.flac", "无号1", "乐队A", "多碟专辑", "乐队A"),
+            T(@"C:\f\02.flac", "无号2", "乐队A", "多碟专辑", "乐队A"),
+            T(@"C:\g\01.flac", "艺术家兜底", "独唱者", "个人专辑")
+        };
+        var groups = TrackGrouper.Group(tracks);
+
+        Check("同名专辑不同艺术家分成两组", groups.Count(g => g.Album == "同名专辑") == 2);
+        Check("散曲归「单曲 | 艺术家」组", groups.Any(g => g.Album == "单曲" && g.Artist == "歌手C" && g.Tracks.Count == 2));
+        Check("单曲组按艺术家独立", groups.Any(g => g.Album == "单曲" && g.Artist == "歌手D" && g.Tracks.Count == 1));
+
+        var multi = groups.First(g => g.Album == "多碟专辑");
+        Check("组内按 碟号→曲号 排序", multi.Tracks.Select(t => t.Title).SequenceEqual(
+            new[] { "跨碟1", "跨碟2", "跨碟3", "无号1", "无号2" }));
+        Check("组年份取组内最早年份", multi.Year == "2021");
+        Check("同名专辑组年份正确", groups.First(g => g.Album == "同名专辑" && g.Artist == "乐队A").Year == "2020");
+        Check("无年份的组年份为空", groups.First(g => g.Album == "个人专辑").Year == string.Empty);
+        Check("专辑艺术家缺失时退回曲目艺术家", groups.Any(g => g.Album == "个人专辑" && g.Artist == "独唱者"));
+
+        // ② 组排序：艺术家 → 专辑名
+        var orderedArtists = groups.Select(g => g.Artist).ToList();
+        Check("组按艺术家排序（乐队A 在 乐队B 前）",
+            orderedArtists.IndexOf("乐队A") < orderedArtists.IndexOf("乐队B"));
+        Check("组排序稳定（同一艺术家按专辑名）",
+            groups.Where(g => g.Artist == "乐队A").Select(g => g.Album).SequenceEqual(new[] { "多碟专辑", "同名专辑" }));
+
+        // ③ 空输入与退化
+        Check("空输入返回空列表", TrackGrouper.Group(Array.Empty<TrackRecord>()).Count == 0);
+        var noMeta = new[] { T(@"C:\x\01.flac", "无标签", "", "") };
+        var noMetaGroups = TrackGrouper.Group(noMeta);
+        Check("全空标签归入单曲组（未知艺术家）",
+            noMetaGroups.Count == 1 && noMetaGroups[0].Album == "单曲" && noMetaGroups[0].Artist == "未知艺术家");
+
+        // ④ 输入顺序不影响组内顺序（组内始终按碟/曲号重排）
+        var shuffled = new[]
+        {
+            T(@"C:\z\03.flac", "三", "乐队A", "排序专辑", "乐队A", 1, 3, 2000),
+            T(@"C:\z\01.flac", "一", "乐队A", "排序专辑", "乐队A", 1, 1, 2000),
+            T(@"C:\z\02.flac", "二", "乐队A", "排序专辑", "乐队A", 1, 2, 2000)
+        };
+        Check("组内顺序与输入顺序无关（按曲号重排）",
+            TrackGrouper.Group(shuffled)[0].Tracks.Select(t => t.Title).SequenceEqual(new[] { "一", "二", "三" }));
     }
 }

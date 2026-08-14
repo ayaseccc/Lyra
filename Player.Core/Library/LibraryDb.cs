@@ -25,7 +25,7 @@ public sealed class PlaylistRecord
 public static class LibraryDb
 {
     private const string TrackColumns =
-        "id, path, title, artist, album, album_artist, track_no, disc_no, duration_ms, " +
+        "id, path, title, artist, album, album_artist, track_no, disc_no, year, duration_ms, " +
         "sample_rate, bit_depth, bitrate, file_size, mtime, added_at, play_count, last_played, cover_hash";
 
     // ---------------- tracks ----------------
@@ -72,15 +72,16 @@ public static class LibraryDb
         command.Transaction = transaction;
         command.CommandText = """
             INSERT INTO tracks(path, title, artist, album, album_artist, track_no, disc_no,
-                               duration_ms, sample_rate, bit_depth, bitrate, file_size, mtime,
-                               added_at, cover_hash)
-            VALUES(@path, @title, @artist, @album, @albumArtist, @trackNo, @discNo,
+                               year, duration_ms, sample_rate, bit_depth, bitrate, file_size,
+                               mtime, added_at, cover_hash)
+            VALUES(@path, @title, @artist, @album, @albumArtist, @trackNo, @discNo, @year,
                    @durationMs, @sampleRate, @bitDepth, @bitrate, @fileSize, @mtime,
                    @addedAt, @coverHash)
             ON CONFLICT(path) DO UPDATE SET
                 title = excluded.title, artist = excluded.artist, album = excluded.album,
                 album_artist = excluded.album_artist, track_no = excluded.track_no,
-                disc_no = excluded.disc_no, duration_ms = excluded.duration_ms,
+                disc_no = excluded.disc_no, year = excluded.year,
+                duration_ms = excluded.duration_ms,
                 sample_rate = excluded.sample_rate, bit_depth = excluded.bit_depth,
                 bitrate = excluded.bitrate, file_size = excluded.file_size,
                 mtime = excluded.mtime, cover_hash = excluded.cover_hash;
@@ -93,6 +94,7 @@ public static class LibraryDb
         var pAlbumArtist = command.Parameters.Add("@albumArtist", SqliteType.Text);
         var pTrackNo = command.Parameters.Add("@trackNo", SqliteType.Integer);
         var pDiscNo = command.Parameters.Add("@discNo", SqliteType.Integer);
+        var pYear = command.Parameters.Add("@year", SqliteType.Integer);
         var pDuration = command.Parameters.Add("@durationMs", SqliteType.Integer);
         var pSampleRate = command.Parameters.Add("@sampleRate", SqliteType.Integer);
         var pBitDepth = command.Parameters.Add("@bitDepth", SqliteType.Integer);
@@ -111,6 +113,7 @@ public static class LibraryDb
             pAlbumArtist.Value = track.AlbumArtist;
             pTrackNo.Value = track.TrackNo;
             pDiscNo.Value = track.DiscNo;
+            pYear.Value = track.Year;
             pDuration.Value = track.DurationMs;
             pSampleRate.Value = track.SampleRate;
             pBitDepth.Value = track.BitDepth;
@@ -187,16 +190,17 @@ public static class LibraryDb
             AlbumArtist = reader.GetString(5),
             TrackNo = reader.GetInt32(6),
             DiscNo = reader.GetInt32(7),
-            DurationMs = reader.GetInt64(8),
-            SampleRate = reader.GetInt32(9),
-            BitDepth = reader.GetInt32(10),
-            Bitrate = reader.GetInt32(11),
-            FileSize = reader.GetInt64(12),
-            Mtime = reader.GetInt64(13),
-            AddedAt = reader.GetInt64(14),
-            PlayCount = reader.GetInt32(15),
-            LastPlayed = reader.IsDBNull(16) ? null : reader.GetInt64(16),
-            CoverHash = reader.IsDBNull(17) ? null : reader.GetString(17)
+            Year = reader.GetInt32(8),
+            DurationMs = reader.GetInt64(9),
+            SampleRate = reader.GetInt32(10),
+            BitDepth = reader.GetInt32(11),
+            Bitrate = reader.GetInt32(12),
+            FileSize = reader.GetInt64(13),
+            Mtime = reader.GetInt64(14),
+            AddedAt = reader.GetInt64(15),
+            PlayCount = reader.GetInt32(16),
+            LastPlayed = reader.IsDBNull(17) ? null : reader.GetInt64(17),
+            CoverHash = reader.IsDBNull(18) ? null : reader.GetString(18)
         };
 
         track.RebuildSearchKey();

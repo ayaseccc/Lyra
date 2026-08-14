@@ -22,6 +22,9 @@ public sealed class TrackRecord
 
     public int DiscNo { get; set; }
 
+    /// <summary>发行年份（标签里有才写，0 = 未知）。</summary>
+    public int Year { get; set; }
+
     public long DurationMs { get; set; }
 
     public int SampleRate { get; set; }

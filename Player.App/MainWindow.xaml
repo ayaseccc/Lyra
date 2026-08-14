@@ -47,140 +47,175 @@
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        
+                        <!-- 平铺/专辑分组切换（UI-R2，选择持久化） -->
+                        <Button Style="{StaticResource ModeButtonStyle}" ToolTip="{Binding ViewModeToolTip}"
+                                Command="{Binding ToggleViewModeCommand}">
+                            <Grid>
+                                <ui:SymbolIcon Symbol="AppsList24" FontSize="16" Foreground="{StaticResource TextSecondaryBrush}"
+                                               Visibility="{Binding IsGrouped, Converter={StaticResource BoolToVis}}" />
+                                <ui:SymbolIcon Symbol="List24" FontSize="16" Foreground="{StaticResource TextSecondaryBrush}"
+                                               Visibility="{Binding IsGrouped, Converter={StaticResource InverseBoolToVisibility}}" />
+                            </Grid>
+                        </Button>
                     </StackPanel>
                 </Grid>
 
-                <!-- 列表 -->
+                <!-- 列表（UI-R2：静态列头 + 扁平 ListBox，平铺/分组共用，虚拟化保持） -->
                 <Grid Grid.Row="2">
-                    <ListView ItemsSource="{Binding View}"
-                              SelectedItem="{Binding SelectedTrack}"
-                              SelectionMode="Extended"
-                              ItemContainerStyle="{StaticResource TrackRowStyle}"
-                              Background="Transparent" BorderThickness="0"
-                              AllowDrop="True"
-                              GridViewColumnHeader.Click="OnTrackHeaderClick"
-                              SelectionChanged="OnTrackListSelectionChanged"
-                              MouseDoubleClick="OnTrackListDoubleClick"
-                              PreviewMouseLeftButtonDown="OnTrackListPreviewMouseLeftButtonDown"
-                              PreviewMouseLeftButtonUp="OnTrackListPreviewMouseLeftButtonUp"
-                              MouseMove="OnTrackListMouseMove"
-                              DragOver="OnTrackListDragOver"
-                              Drop="OnTrackListDrop"
-                                ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                        <ListView.View>
-                            <GridView ColumnHeaderContainerStyle="{StaticResource TrackHeaderStyle}">
-                                                                                                                                                                <GridViewColumn Header="" Width="96">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <Grid Height="110">
-                                            <StackPanel VerticalAlignment="Top" Margin="0,4,0,0">
-                                                <TextBlock Text="{Binding DisplayAlbum}" FontSize="12.5" LineHeight="18"
-                                                           Foreground="{StaticResource TextSecondaryBrush}"
-                                                           TextTrimming="CharacterEllipsis" MaxWidth="82" />
-                                                <Border Width="84" Height="84" CornerRadius="2" Margin="0,3,0,0"
-                                                        Background="{StaticResource HoverBrush}">
-                                                    <Grid>
-                                                        <ui:SymbolIcon Symbol="MusicNote224" FontSize="28"
-                                                                       Foreground="{StaticResource TextTertiaryBrush}"
-                                                                       Visibility="{Binding CoverHash, Converter={StaticResource NullToVisible}}" />
-                                                        <Image Source="{Binding CoverHash, Converter={StaticResource CoverToImage}}"
-                                                               Stretch="UniformToFill" />
-                                                    </Grid>
-                                                </Border>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                    </Grid.RowDefinitions>
+
+                    <Border BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="0,0,0,1">
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="{Binding IsGrouped, Converter={StaticResource BoolToGroupCoverWidth}}" />
+                                <ColumnDefinition Width="500" />
+                                <ColumnDefinition Width="64" />
+                                <ColumnDefinition Width="60" />
+                                <ColumnDefinition Width="80" />
+                                <ColumnDefinition Width="60" />
+                            </Grid.ColumnDefinitions>
+                            <Border Grid.Column="1" Background="Transparent" Tag="DisplayTitle" Cursor="Hand"
+                                    MouseLeftButtonUp="OnTrackHeaderClick">
+                                <TextBlock Text="标题" Style="{StaticResource TrackHeaderLabelStyle}" />
+                            </Border>
+                            <Border Grid.Column="2" Background="Transparent" Tag="DurationMs" Cursor="Hand"
+                                    MouseLeftButtonUp="OnTrackHeaderClick">
+                                <TextBlock Text="时长" Style="{StaticResource TrackHeaderLabelStyle}" TextAlignment="Right" />
+                            </Border>
+                            <Border Grid.Column="3" Background="Transparent" Tag="Format" Cursor="Hand"
+                                    MouseLeftButtonUp="OnTrackHeaderClick">
+                                <TextBlock Text="格式" Style="{StaticResource TrackHeaderLabelStyle}" />
+                            </Border>
+                            <Border Grid.Column="4" Background="Transparent" Tag="SampleRate" Cursor="Hand"
+                                    MouseLeftButtonUp="OnTrackHeaderClick">
+                                <TextBlock Text="采样率" Style="{StaticResource TrackHeaderLabelStyle}" />
+                            </Border>
+                            <Border Grid.Column="5" Background="Transparent" Tag="BitDepth" Cursor="Hand"
+                                    MouseLeftButtonUp="OnTrackHeaderClick">
+                                <TextBlock Text="位深" Style="{StaticResource TrackHeaderLabelStyle}" />
+                            </Border>
+                        </Grid>
+                    </Border>
+
+                    <ListBox Grid.Row="1" ItemsSource="{Binding DisplayItems}"
+                             SelectionMode="Extended"
+                             ItemContainerStyle="{StaticResource TrackRowStyle}"
+                             Background="Transparent" BorderThickness="0"
+                             AllowDrop="True"
+                             DragOver="OnTrackListDragOver"
+                             Drop="OnTrackListDrop"
+                             SelectionChanged="OnTrackListSelectionChanged"
+                             MouseDoubleClick="OnTrackListDoubleClick"
+                             PreviewMouseLeftButtonDown="OnTrackListPreviewMouseLeftButtonDown"
+                             PreviewMouseLeftButtonUp="OnTrackListPreviewMouseLeftButtonUp"
+                             MouseMove="OnTrackListMouseMove"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <!-- 组头（UI-R2）：专辑名 | 艺术家 ———— 年份（年份右对齐） -->
+                                    <Grid Visibility="{Binding IsGroupHeader, Converter={StaticResource BoolToVis}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToGroupCoverWidth}}" />
+                                            <ColumnDefinition Width="500" />
+                                            <ColumnDefinition Width="64" />
+                                            <ColumnDefinition Width="60" />
+                                            <ColumnDefinition Width="80" />
+                                            <ColumnDefinition Width="60" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding AlbumText}" FontSize="12" FontWeight="SemiBold"
+                                                       Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="  |  " FontSize="11" Foreground="{StaticResource TextTertiaryBrush}"
+                                                       VerticalAlignment="Center" />
+                                            <TextBlock Text="{Binding ArtistText}" FontSize="11"
+                                                       Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                        <Border Grid.Column="2" Grid.ColumnSpan="3" Height="1"
+                                                Background="{StaticResource BorderSoftBrush}" Margin="12,0" VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="5" Text="{Binding YearText}" FontSize="11"
+                                                   Foreground="{StaticResource TextTertiaryBrush}" TextAlignment="Right"
+                                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                                    </Grid>
+
+                                    <!-- 曲目行（UI-R2）：组封面（仅首行，溢出不参与布局）+ 标题/歌手双行 + 信息列 -->
+                                    <Grid Height="56" VerticalAlignment="Top"
+                                          Visibility="{Binding IsGroupHeader, Converter={StaticResource InverseBoolToVisibility}}">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToGroupCoverWidth}}" />
+                                            <ColumnDefinition Width="500" />
+                                            <ColumnDefinition Width="64" />
+                                            <ColumnDefinition Width="60" />
+                                            <ColumnDefinition Width="80" />
+                                            <ColumnDefinition Width="60" />
+                                        </Grid.ColumnDefinitions>
+
+                                        <Border Grid.Column="0" Width="84" Height="84" CornerRadius="2"
+                                                VerticalAlignment="Top" Margin="0,6,0,0"
+                                                Background="{StaticResource HoverBrush}"
+                                                Visibility="{Binding ShowCover, Converter={StaticResource BoolToVis}}">
+                                            <Grid>
+                                                <ui:SymbolIcon Symbol="MusicNote224" FontSize="28"
+                                                               Foreground="{StaticResource TextTertiaryBrush}"
+                                                               Visibility="{Binding Track.CoverHash, Converter={StaticResource NullToVisible}}" />
+                                                <Image Source="{Binding Track.CoverHash, Converter={StaticResource CoverToImage}}"
+                                                       Stretch="UniformToFill" />
+                                            </Grid>
+                                        </Border>
+
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <ui:SymbolIcon Symbol="Play24" FontSize="11" Foreground="{StaticResource AccentBrush}"
+                                                           VerticalAlignment="Center" Margin="0,0,8,0">
+                                                <ui:SymbolIcon.Style>
+                                                    <Style TargetType="ui:SymbolIcon">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Value="True">
+                                                                <DataTrigger.Binding>
+                                                                    <MultiBinding Converter="{StaticResource TrackIsCurrent}">
+                                                                        <Binding Path="Track.Path" />
+                                                                        <Binding Path="DataContext.Player.CurrentTrack.Path"
+                                                                                 RelativeSource="{RelativeSource AncestorType=Window}" />
+                                                                    </MultiBinding>
+                                                                </DataTrigger.Binding>
+                                                                <Setter Property="Visibility" Value="Visible" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </ui:SymbolIcon.Style>
+                                            </ui:SymbolIcon>
+                                            <StackPanel>
+                                                <TextBlock Text="{Binding Track.DisplayTitle}" FontSize="12"
+                                                           Foreground="{StaticResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
+                                                <TextBlock Text="{Binding Track.DisplayArtist}" FontSize="10.5"
+                                                           Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                                           Margin="0,2,0,0" />
                                             </StackPanel>
-                                            </Grid>
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                                <GridViewColumn Header="标题" Width="300">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <Grid Height="110">
-                                            <TextBlock Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="12" VerticalAlignment="Top" Margin="12,26,0,0"
-                                                       Foreground="{StaticResource TextPrimaryBrush}" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                                <GridViewColumn Header="歌手" Width="180">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <Grid Height="110">
-                                            <TextBlock Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,26,0,0"
-                                                       Foreground="{StaticResource TextSecondaryBrush}" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                                <GridViewColumn Header="时长" Width="64">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <Grid Height="110">
-                                            <TextBlock Text="{Binding DurationText}" TextAlignment="Right"
-                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,26,0,0"
-                                                       Foreground="{StaticResource TextSecondaryBrush}" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                                <GridViewColumn Header="格式" Width="60">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <Grid Height="110">
-                                            <TextBlock Text="{Binding Format}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,26,0,0"
-                                                       Foreground="{StaticResource TextSecondaryBrush}" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                                <GridViewColumn Header="采样率" Width="80">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <Grid Height="110">
-                                            <TextBlock Text="{Binding SampleRateText}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,26,0,0"
-                                                       Foreground="{StaticResource TextSecondaryBrush}" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-                                <GridViewColumn Header="位深" Width="60">
-                                    <GridViewColumn.CellTemplate>
-                                        <DataTemplate>
-                                            <Grid Height="110">
-                                            <TextBlock Text="{Binding BitDepthText}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,26,0,0"
-                                                       Foreground="{StaticResource TextSecondaryBrush}" />
-                                            </Grid>
-                                        </DataTemplate>
-                                    </GridViewColumn.CellTemplate>
-                                </GridViewColumn>
-</GridView>
-                        </ListView.View>
-                        <ListView.ContextMenu>
-                            <ContextMenu>
-                                <MenuItem Header="播放" Command="{Binding PlaySelectedCommand}" />
-                                <MenuItem Header="添加到歌单"
-                                          IsEnabled="{Binding HasPlaylistTargets}"
-                                          ItemsSource="{Binding PlaylistMenuItems}">
-                                    <MenuItem.ItemContainerStyle>
-                                        <Style TargetType="MenuItem">
-                                            <Setter Property="Header" Value="{Binding Name}" />
-                                            <Setter Property="Command" Value="{Binding Command}" />
-                                            <Setter Property="CommandParameter" Value="{Binding Playlist}" />
-                                        </Style>
-                                    </MenuItem.ItemContainerStyle>
-                                </MenuItem>
-                                <Separator />
-                                <MenuItem Header="从歌单中移除" Command="{Binding RemoveSelectedCommand}"
-                                          IsEnabled="{Binding CanEdit}" />
-                            </ContextMenu>
-                        </ListView.ContextMenu>
-                    </ListView>
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="2" Text="{Binding Track.DurationText}" FontSize="10.5"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" TextAlignment="Right"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="3" Text="{Binding Track.Format}" FontSize="10.5"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="4" Text="{Binding Track.SampleRateText}" FontSize="10.5"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center" />
+                                        <TextBlock Grid.Column="5" Text="{Binding Track.BitDepthText}" FontSize="10.5"
+                                                   Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center" />
+                                    </Grid>
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
 
                     <!-- 曲库页空状态。图标与说明文字设为不可命中：它们盖在列表上面，
                          否则会把拖放事件截走，导致拖到空列表中央走成"入库并开播"；

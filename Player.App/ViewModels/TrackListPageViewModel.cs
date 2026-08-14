@@ -4,12 +4,39 @@ using System.Windows.Data;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using Player.Core.Infra;
 using Player.Core.Library;
 
 namespace Player.App.ViewModels;
 
 /// <summary>右键「添加到歌单」子菜单的一项。</summary>
 public sealed record PlaylistMenuItem(string Name, IRelayCommand<PlaylistRecord?> Command, PlaylistRecord Playlist);
+
+/// <summary>曲目列表的一行（UI-R2）：平铺与分组共用；分组模式下 ShowCover 仅首行 true。</summary>
+public sealed class TrackRowItem
+{
+    public required TrackRecord Track { get; init; }
+
+    /// <summary>分组模式：该行是组内第一行，左侧显示整组封面。</summary>
+    public bool ShowCover { get; init; }
+
+    public bool IsGroupHeader => false;
+}
+
+/// <summary>专辑分组头（UI-R2）：专辑名 | 艺术家 ———— 年份（年份右对齐）。</summary>
+public sealed class GroupHeaderItem
+{
+    public required string AlbumText { get; init; }
+
+    public required string ArtistText { get; init; }
+
+    public required string YearText { get; init; }
+
+    public bool IsGroupHeader => true;
+
+    /// <summary>供「当前播放」MultiBinding 空安全使用（组头没有曲目）。</summary>
+    public TrackRecord? Track => null;
+}
 
 /// <summary>
 /// 曲目列表页：全部歌曲 / 某个歌单 / 某个文件夹虚拟歌单 / 某张专辑 / 某位艺术家 都用它。
@@ -43,11 +70,15 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         View = CollectionViewSource.GetDefaultView(Items);
         View.Filter = FilterPredicate;
 
+        _isGrouped = ConfigService.Current.Ui.ListGrouped;
+
         _filterDebounce = new DispatcherTimer(DispatcherPriority.Background)
         {
             Interval = TimeSpan.FromMilliseconds(200)
         };
         _filterDebounce.Tick += OnFilterDebounceTick;
+
+        RebuildDisplay();
     }
 
     public string Title { get; }
@@ -57,6 +88,55 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     public ObservableCollection<TrackRecord> Items { get; }
 
     public ICollectionView View { get; }
+
+    /// <summary>列表实际显示的行（UI-R2）：平铺 = 全部 TrackRowItem；分组 = 组头 + 曲目行。保持扁平结构以维持虚拟化。</summary>
+    public ObservableCollection<object> DisplayItems { get; } = new();
+
+    /// <summary>显示模式：true = 专辑分组，false = 平铺（UI-R2，选择持久化）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(ViewModeToolTip))]
+    private bool _isGrouped;
+
+    public string ViewModeToolTip => IsGrouped ? "切换为平铺列表" : "切换为专辑分组";
+
+    /// <summary>当前显示顺序的曲目（双击播放、定位用）。</summary>
+    public IReadOnlyList<TrackRecord> DisplayTracks =>
+        DisplayItems.OfType<TrackRowItem>().Select(i => i.Track).ToList();
+
+    /// <summary>平铺/分组切换（UI-R2）。</summary>
+    [RelayCommand]
+    private void ToggleViewMode()
+    {
+        IsGrouped = !IsGrouped;
+        ConfigService.Current.Ui.ListGrouped = IsGrouped;
+        ConfigService.Save();
+        RebuildDisplay();
+    }
+
+    /// <summary>按当前模式重建显示行。分组用 TrackGrouper（纯函数），平铺用过滤/排序后的 View。</summary>
+    private void RebuildDisplay()
+    {
+        DisplayItems.Clear();
+        if (IsGrouped)
+        {
+            foreach (var group in TrackGrouper.Group(View.Cast<TrackRecord>()))
+            {
+                DisplayItems.Add(new GroupHeaderItem
+                {
+                    AlbumText = group.Album,
+                    ArtistText = group.Artist,
+                    YearText = group.Year
+                });
+                for (var i = 0; i < group.Tracks.Count; i++)
+                    DisplayItems.Add(new TrackRowItem { Track = group.Tracks[i], ShowCover = i == 0 });
+            }
+        }
+        else
+        {
+            foreach (var track in View.Cast<TrackRecord>())
+                DisplayItems.Add(new TrackRowItem { Track = track });
+        }
+    }
 
     /// <summary>手工歌单 id；非歌单页面为 null。</summary>
     public long? PlaylistId { get; init; }
@@ -148,6 +228,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         _filterDebounce.Stop();
         _appliedFilter = FilterText.Trim().ToLowerInvariant();
         View.Refresh();
+        RebuildDisplay();
     }
 
     private bool FilterPredicate(object item)
@@ -171,6 +252,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject
             View.SortDescriptions.Clear();
             View.SortDescriptions.Add(new SortDescription(propertyName, _sortDirection));
         }
+        RebuildDisplay();
     }
 
     // ---------------- 选择与播放 ----------------
@@ -193,7 +275,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     [RelayCommand]
     private void PlayAll()
     {
-        var ordered = View.Cast<TrackRecord>().ToList();
+        var ordered = DisplayTracks;
         if (ordered.Count == 0) return;
         _playRequested(ordered, 0, SourceName);
     }
@@ -205,10 +287,10 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         Play(SelectedTrack);
     }
 
-    /// <summary>双击某行：以当前可见顺序作为播放列表，从这一首开始。</summary>
+    /// <summary>双击某行：以当前可见顺序（分组模式下即碟号/曲号顺序）作为播放列表，从这一首开始。</summary>
     public void Play(TrackRecord track)
     {
-        var ordered = View.Cast<TrackRecord>().ToList();
+        var ordered = DisplayTracks.ToList();
         var index = ordered.FindIndex(t => ReferenceEquals(t, track));
         if (index < 0) index = 0;
         _playRequested(ordered, index, SourceName);
@@ -225,7 +307,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject
             View.Refresh();
         }
 
-        var match = View.Cast<TrackRecord>().FirstOrDefault(t =>
+        var match = DisplayTracks.FirstOrDefault(t =>
             string.Equals(t.Path, track.Path, StringComparison.OrdinalIgnoreCase));
         if (match is null) return;
 
@@ -264,6 +346,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject
 
         ItemsReordered?.Invoke(Items.ToList());
         NotifyItemsChanged();
+        RebuildDisplay();
     }
 
     [RelayCommand]
@@ -291,9 +374,9 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         return index < 0 ? Items.Count : index;
     }
 
-    /// <summary>视图正被排序或过滤时，可见顺序与底层顺序对不上，落点索引没有意义。</summary>
+    /// <summary>视图正被排序/过滤/分组时，可见顺序与底层顺序对不上，落点索引没有意义（分组模式一律追加）。</summary>
     public bool IsViewSortedOrFiltered =>
-        View.SortDescriptions.Count > 0 || _appliedFilter.Length > 0;
+        IsGrouped || View.SortDescriptions.Count > 0 || _appliedFilter.Length > 0;
 
     private void NotifyItemsChanged()
     {

@@ -14,17 +14,6 @@ namespace Player.App;
 
 public partial class MainWindow : FluentWindow
 {
-    /// <summary>列头文案 → 排序用的属性名。时长/采样率/位深要按数值排，不能按显示文本排。</summary>
-    private static readonly Dictionary<string, string> SortProperties = new()
-    {
-        ["标题"] = "DisplayTitle",
-        ["歌手"] = "DisplayArtist",
-        ["专辑"] = "DisplayAlbum",
-        ["时长"] = "DurationMs",
-        ["格式"] = "Format",
-        ["采样率"] = "SampleRate",
-        ["位深"] = "BitDepth"
-    };
 
     /// <summary>拖动曲目行时用的自定义剪贴板格式。</summary>
     private const string TrackDragFormat = "Player.TrackRecords";
@@ -139,14 +128,20 @@ public partial class MainWindow : FluentWindow
         base.OnClosing(e);
     }
 
-    /// <summary>定位正在播放：把当前曲目列表滚动到选中的那一行（UI-R1.5 ⑪）。</summary>
+    /// <summary>定位正在播放：找到对应行（分组模式是 TrackRowItem）选中并滚动（UI-R1.5 ⑪ / R2）。</summary>
     private void ScrollToCurrentTrack()
     {
         _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
         {
-            var list = FindVisualChild<System.Windows.Controls.ListView>(
-                this, lv => lv.DataContext is TrackListPageViewModel);
-            if (list?.SelectedItem is not { } item) return;
+            var list = FindVisualChild<System.Windows.Controls.ListBox>(
+                this, lb => lb.DataContext is TrackListPageViewModel);
+            if (list is null || CurrentTrackPage is not { } page) return;
+
+            var item = page.DisplayItems.OfType<TrackRowItem>().FirstOrDefault(i =>
+                string.Equals(i.Track.Path, page.SelectedTrack?.Path, StringComparison.OrdinalIgnoreCase));
+            if (item is null) return;
+
+            list.SelectedItem = item;
             list.ScrollIntoView(item);
         });
     }
@@ -242,26 +237,29 @@ public partial class MainWindow : FluentWindow
 
     // ================= 曲目列表 =================
 
-    private void OnTrackHeaderClick(object sender, RoutedEventArgs e)
+    /// <summary>静态列头点击排序（UI-R2）：平铺模式有效；分组模式按专辑固定顺序。</summary>
+    private void OnTrackHeaderClick(object sender, MouseButtonEventArgs e)
     {
-        if (e.OriginalSource is not GridViewColumnHeader header) return;
-        if (header.Role == GridViewColumnHeaderRole.Padding) return;
-        if (header.Content is not string text) return;
-        if (!SortProperties.TryGetValue(text, out var property)) return;
-
-        CurrentTrackPage?.SortBy(property);
+        if (sender is not FrameworkElement el || el.Tag is not string property) return;
+        if (CurrentTrackPage is not { } page || page.IsGrouped) return;
+        page.SortBy(property);
     }
 
     private void OnTrackListSelectionChanged(object sender, SelectionChangedEventArgs e)
     {
         // WPF-UI 也有一个同名的 ListView，这里要的是标准控件
-        if (sender is not System.Windows.Controls.ListView list) return;
-        CurrentTrackPage?.SetSelection(list.SelectedItems.OfType<TrackRecord>());
+        if (sender is not System.Windows.Controls.ListBox list) return;
+        var tracks = list.SelectedItems.OfType<TrackRowItem>().Select(i => i.Track).ToList();
+        if (CurrentTrackPage is { } page)
+        {
+            page.SetSelection(tracks);
+            page.SelectedTrack = tracks.LastOrDefault();
+        }
     }
 
     private void OnTrackListDoubleClick(object sender, MouseButtonEventArgs e)
     {
-        var track = FindDataContext<TrackRecord>(e.OriginalSource as DependencyObject);
+        var track = FindTrack(e.OriginalSource as DependencyObject);
         if (track is null) return;
 
         CurrentTrackPage?.Play(track);
@@ -270,7 +268,7 @@ public partial class MainWindow : FluentWindow
     private void OnTrackListPreviewMouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
         _dragStartPoint = e.GetPosition(null);
-        _draggingTrack = FindDataContext<TrackRecord>(e.OriginalSource as DependencyObject);
+        _draggingTrack = FindTrack(e.OriginalSource as DependencyObject);
 
         // 负载要在这一刻取：鼠标按下之后 WPF 会把多选收敛成单选，那时就拿不到整个选区了
         _dragPayload = _draggingTrack is null
@@ -344,7 +342,7 @@ public partial class MainWindow : FluentWindow
         // 歌单页之外的落点一律不处理，交给窗口维持"入库并开播"
         if (!page.CanEdit) return;
 
-        var targetRow = FindDataContext<TrackRecord>(e.OriginalSource as DependencyObject);
+        var targetRow = FindTrack(e.OriginalSource as DependencyObject);
 
         // 列表正被排序/过滤时可见顺序与底层顺序不一致，落点没有意义，一律追加到末尾
         var insertIndex = page.IsViewSortedOrFiltered ? page.Items.Count : page.IndexOfRow(targetRow);
@@ -430,5 +428,17 @@ public partial class MainWindow : FluentWindow
         }
 
         return null;
+    }
+
+    /// <summary>曲目列表行的数据解包（UI-R2）：分组模式的行是 TrackRowItem。</summary>
+    private static TrackRecord? FindTrack(DependencyObject? source)
+    {
+        var data = FindDataContext<object>(source);
+        return data switch
+        {
+            TrackRecord track => track,
+            TrackRowItem row => row.Track,
+            _ => null
+        };
     }
 }

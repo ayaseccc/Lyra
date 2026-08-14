@@ -13,6 +13,8 @@
     <conv:BoolToAccentConverter x:Key="BoolToAccent" />
     <conv:BoolToTintBrushConverter x:Key="BoolToTintBrush" />
     <conv:VolumeSquareConverter x:Key="VolumeSquare" />
+    <conv:BoolToGroupCoverWidthConverter x:Key="BoolToGroupCoverWidth" />
+    <conv:TrackIsCurrentConverter x:Key="TrackIsCurrent" />
     <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
     <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
@@ -361,19 +363,17 @@
         </Setter>
     </Style>
 
-    <!-- = 曲目列表（大行：110px，默认窗口约显示 6 首，UI-R1.5 反馈） = -->
-    <Style x:Key="TrackRowStyle" TargetType="ListViewItem">
-        <Setter Property="Height" Value="110" />
+    <!-- = 曲目列表（UI-R2：56px 双行，扁平 ListBox 保持虚拟化；组头矮行 32px） = -->
+    <Style x:Key="TrackRowStyle" TargetType="ListBoxItem">
+        <Setter Property="Height" Value="56" />
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Template">
             <Setter.Value>
-                <ControlTemplate TargetType="ListViewItem">
+                <ControlTemplate TargetType="ListBoxItem">
                     <Border x:Name="Bd" Background="Transparent" CornerRadius="4" Padding="6,0">
-                        <GridViewRowPresenter VerticalAlignment="Center"
-                                              Content="{TemplateBinding Content}"
-                                              Columns="{TemplateBinding GridView.ColumnCollection}" />
+                        <ContentPresenter VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
@@ -383,10 +383,35 @@
                             <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
                             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
                         </Trigger>
+                        <!-- 组头：细行 -->
+                        <DataTrigger Binding="{Binding IsGroupHeader}" Value="True">
+                            <Setter Property="Height" Value="32" />
+                        </DataTrigger>
+                        <!-- 当前播放：整行淡色填充（UI-R2 ▶ 标记） -->
+                        <DataTrigger Value="True">
+                            <DataTrigger.Binding>
+                                <MultiBinding Converter="{StaticResource TrackIsCurrent}">
+                                    <Binding Path="Track.Path" />
+                                    <Binding Path="DataContext.Player.CurrentTrack.Path"
+                                             RelativeSource="{RelativeSource AncestorType=Window}" />
+                                </MultiBinding>
+                            </DataTrigger.Binding>
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
+                        </DataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+    <!-- 静态列头（UI-R2 分组视图用，平铺视图也用它，替代 GridView 表头） -->
+    <Style x:Key="TrackHeaderLabelStyle" TargetType="TextBlock">
+        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="Height" Value="28" />
+        <Setter Property="VerticalAlignment" Value="Center" />
+        <Setter Property="Margin" Value="6,0" />
+        <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
     <!-- 自带模板，不依赖系统主题：否则深色背景上会出现一条浅灰的 Aero 表头 -->
