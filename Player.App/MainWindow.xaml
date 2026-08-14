@@ -441,6 +441,8 @@
                                  Margin="6,0,0,0" IsChecked="{Binding IsLyricTab}" />
                     <RadioButton GroupName="SettingsTab" Content="快捷键" Style="{StaticResource TabRadioStyle}"
                                  Margin="6,0,0,0" IsChecked="{Binding IsShortcutTab}" />
+                    <RadioButton GroupName="SettingsTab" Content="行为" Style="{StaticResource TabRadioStyle}"
+                                 Margin="6,0,0,0" IsChecked="{Binding IsBehaviorTab}" />
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
@@ -752,6 +754,26 @@
                                 </ItemsControl>
                                 <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,12,0,0" TextWrapping="Wrap"
                                            Text="任何输入框（搜索/Key 输入等）聚焦时快捷键一律不响应；按钮聚焦时 Space 归按钮；滑条聚焦时方向键归滑条。自定义改绑进 backlog。" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ===== 行为页（L2：关闭行为） ===== -->
+                        <Border Visibility="{Binding IsBehaviorTab, Converter={StaticResource BoolToVis}}"
+                                CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
+                            <StackPanel>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="关闭行为" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <StackPanel Grid.Column="1">
+                                        <ui:ToggleSwitch IsChecked="{Binding CloseToTray}" Content="关闭时最小化到托盘" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,10,0,0" TextWrapping="Wrap"
+                                           Text="开启后点窗口 × 不退出程序，而是隐藏到系统托盘（播放控制、桌面歌词开关、显示主窗、退出都在托盘菜单里，双击托盘图标还原窗口）；退出请走托盘菜单「退出」。默认关闭 = 关窗即退出。" />
                             </StackPanel>
                         </Border>
 

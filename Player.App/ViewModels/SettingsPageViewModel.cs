@@ -134,6 +134,9 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         ApiKey = ConfigService.Current.ApiKey;
         RefreshKeyStatus();
 
+        // L2 行为组：关闭到托盘（默认关闭）
+        _closeToTray = ConfigService.Current.Ui.CloseToTray;
+
         _loading = false;
     }
 
@@ -160,6 +163,22 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isShortcutTab;
+
+    [ObservableProperty]
+    private bool _isBehaviorTab;
+
+    // ================= 行为（L2：关闭行为；启动恢复策略随 L2 设置页补全） =================
+
+    /// <summary>关闭主窗时最小化到托盘（默认关闭 = 关窗即退出；开启后退出走托盘菜单）。</summary>
+    [ObservableProperty]
+    private bool _closeToTray;
+
+    partial void OnCloseToTrayChanged(bool value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.CloseToTray = value;
+        ConfigService.Save();
+    }
 
     // ================= 快捷键（L2：只读清单） =================
 

@@ -32,6 +32,12 @@ public partial class MainWindow : FluentWindow
 
     private Player.App.SystemMedia.SmtcService? _smtcService;
 
+    /// <summary>L2 托盘（菜单播放控制/桌面歌词开关/显示主窗/退出，双击还原）。</summary>
+    private Player.App.SystemTray.TrayService? _tray;
+
+    /// <summary>托盘菜单「退出」置位：放行后续真实的关闭（配合"关闭到托盘"拦截）。</summary>
+    private bool _exitingFromTray;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -60,7 +66,7 @@ public partial class MainWindow : FluentWindow
                 Shell.TrackLocateRequested += ScrollToCurrentTrack;
                 HookDesktopLyricsUpdates();
                 HookSettingsLyricsUpdates();
-                InitSmtc();
+                InitTray();
                 // 恢复桌面歌词（L1 第三步：开关持久化）
                 if (ConfigService.Current.Ui.DesktopLyricsEnabled && _desktopLyrics is null)
                 {
@@ -68,6 +74,7 @@ public partial class MainWindow : FluentWindow
                     _desktopLyrics.Show();
                     _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, UpdateDesktopLyrics);
                 }
+                _tray?.RefreshDesktopLyricsCheck();
             }
         };
 
@@ -79,8 +86,9 @@ public partial class MainWindow : FluentWindow
         VolumeSquares.AddHandler(PreviewMouseLeftButtonUpEvent,
             new MouseButtonEventHandler(OnVolumeMouseUp), handledEventsToo: true);
 
-        // L2 SMTC：窗口句柄就绪后初始化（媒体键/锁屏控制）
-        SourceInitialized += (_, _) => InitSmtc();
+        // L2 SMTC：窗口**显示后**初始化（GetForWindow 在窗口可见前调用会失败）；
+        // 失败保持 _smtcService = null，下次事件（隐藏后再显示等）自动重试
+        Loaded += (_, _) => InitSmtc();
 
         // 恢复上次的窗口尺寸（UI-R1.5 反馈）
         var ui = ConfigService.Current.Ui;
@@ -123,23 +131,64 @@ public partial class MainWindow : FluentWindow
         Player.SetVolumeFromDrag(Math.Clamp(p.X / VolumeSquares.ActualWidth, 0, 1));
     }
 
-    /// <summary>L2 SMTC：窗口句柄与 Player 都就绪后创建服务（任一方晚到都会在另一方就绪时补建）。</summary>
+    /// <summary>L2 SMTC：Player 就绪且窗口已显示后创建服务（GetForWindow 要求窗口可见）。</summary>
     private void InitSmtc()
     {
         if (_smtcService is not null || Player is null) return;
         try
         {
             _smtcService = new Player.App.SystemMedia.SmtcService(new WindowInteropHelper(this).Handle, Player);
+            Serilog.Log.Information("SMTC 已就绪（媒体键/锁屏控制可用）");
         }
         catch (Exception ex)
         {
-            Serilog.Log.Warning(ex, "SMTC 服务创建失败");
+            Serilog.Log.Warning(ex, "SMTC 初始化失败（媒体键/锁屏控制不可用，HRESULT 0x{HR:X8}）", ex.HResult);
         }
+    }
+
+    /// <summary>L2 托盘：Player 就绪后创建（菜单播放控制需要命令）。</summary>
+    private void InitTray()
+    {
+        if (_tray is not null || Player is null) return;
+        try
+        {
+            _tray = new Player.App.SystemTray.TrayService(Player, ToggleDesktopLyrics, ShowMainWindowFromTray, ExitFromTray);
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Warning(ex, "托盘初始化失败");
+        }
+    }
+
+    /// <summary>托盘「显示主窗」/ 双击还原：恢复最小化并抢焦点。</summary>
+    private void ShowMainWindowFromTray()
+    {
+        Show();
+        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+        Activate();
+    }
+
+    /// <summary>托盘「退出」：唯一显式退出路径（"关闭到托盘"开启时关窗只是隐藏）。</summary>
+    private void ExitFromTray()
+    {
+        _exitingFromTray = true;
+        System.Windows.Application.Current.Shutdown();
     }
 
     /// <summary>关窗前记下窗口尺寸，退出时随配置落盘。</summary>
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        // L2 托盘（B4 ShutdownMode 语义）：开启"关闭到托盘"时关主窗 = 隐藏而非退出，
+        // 进程与托盘继续存活（SMTC 媒体键也不断）；退出只能走托盘菜单。
+        if (ConfigService.Current.Ui.CloseToTray && !_exitingFromTray)
+        {
+            e.Cancel = true;
+            Hide();
+            return;
+        }
+
+        _tray?.Dispose();
+        _tray = null;
         _smtcService?.Dispose();
         _smtcService = null;
         var bounds = RestoreBounds;
@@ -450,6 +499,8 @@ public partial class MainWindow : FluentWindow
         }
         ConfigService.Current.Ui.DesktopLyricsEnabled = _desktopLyrics.IsVisible;
         ConfigService.Save();
+        // L2 托盘：菜单勾选与播放条按钮保持同步
+        _tray?.RefreshDesktopLyricsCheck();
     }
 
     private void UpdateDesktopLyrics()

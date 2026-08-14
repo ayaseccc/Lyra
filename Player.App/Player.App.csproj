@@ -5,6 +5,10 @@
     <!-- L2 SMTC：Windows 桌面 API（SystemMediaTransportControls）需要 Windows SDK 投影，TFM 升到 10.0.17763（探针 SmtcProbe 已验证编译+交叉发布） -->
     <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
     <UseWPF>true</UseWPF>
+    <!-- L2 托盘：WinForms NotifyIcon（随 SDK 自带，无新增 NuGet 依赖） -->
+    <UseWindowsForms>true</UseWindowsForms>
+    <!-- L2 托盘：程序图标（多尺寸 ico，托盘/任务栏/文件管理器共用） -->
+    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
     <RootNamespace>Player.App</RootNamespace>
     <!-- 产物即 PLAN 第 9 节的 Player.exe -->
     <AssemblyName>Player</AssemblyName>
@@ -19,6 +23,16 @@
   <ItemGroup>
     <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
     <PackageReference Include="WPF-UI" Version="4.3.0" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <Resource Include="Assets\app.ico" />
+  </ItemGroup>
+
+  <!-- UseWindowsForms 会给全工程注入 System.Windows.Forms/System.Drawing 隐式 using，与 WPF 的 Point/事件类型冲突；去掉隐式、按需显式 using（TrayService） -->
+  <ItemGroup>
+    <Using Remove="System.Windows.Forms" />
+    <Using Remove="System.Drawing" />
   </ItemGroup>
 
   <ItemGroup>

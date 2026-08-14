@@ -55,7 +55,7 @@ public partial class MainWindow : Window
         }
         catch (Exception ex)
         {
-            Status.Text = "SMTC 失败: " + ex;
+            Status.Text = "SMTC 失败: HRESULT=0x" + ex.HResult.ToString("X8") + "\n" + ex;
         }
     }
 

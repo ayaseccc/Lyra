@@ -156,6 +156,9 @@ public sealed class UiConfig
 
     /// <summary>L1.1-②：歌词字重 Normal / Medium / Bold。</summary>
     public string LyricFontWeight { get; set; } = "Normal";
+
+    /// <summary>L2 托盘：关闭主窗时最小化到托盘而不是退出（默认关闭 = 关窗即退出）。</summary>
+    public bool CloseToTray { get; set; }
 }
 
 /// <summary>

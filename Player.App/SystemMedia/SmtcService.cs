@@ -23,28 +23,25 @@ public sealed class SmtcService : IDisposable
     private DateTime _lastPositionPush = DateTime.MinValue;
     private bool _disposed;
 
+    /// <summary>
+    /// 绑定窗口句柄创建 SMTC。失败直接抛出（带 HResult），由调用方决定重试时机；
+    /// 关键点：GetForWindow 在窗口**显示前**调用会失败，必须等窗口真正可见后初始化
+    /// （MainWindow 在 Loaded 里补建，失败则保持 null 以便重试）。
+    /// </summary>
     public SmtcService(IntPtr hwnd, PlayerViewModel player)
     {
         _player = player;
 
-        try
-        {
-            _smtc = SystemMediaTransportControlsInterop.GetForWindow(hwnd);
-            _smtc.IsEnabled = true;
-            _smtc.IsPlayEnabled = true;
-            _smtc.IsPauseEnabled = true;
-            _smtc.IsNextEnabled = true;
-            _smtc.IsPreviousEnabled = true;
-            _smtc.ButtonPressed += OnButtonPressed;
+        _smtc = SystemMediaTransportControlsInterop.GetForWindow(hwnd);
+        _smtc.IsEnabled = true;
+        _smtc.IsPlayEnabled = true;
+        _smtc.IsPauseEnabled = true;
+        _smtc.IsNextEnabled = true;
+        _smtc.IsPreviousEnabled = true;
+        _smtc.ButtonPressed += OnButtonPressed;
 
-            player.PropertyChanged += OnPlayerPropertyChanged;
-            PushAll();
-        }
-        catch (Exception ex)
-        {
-            Serilog.Log.Warning(ex, "SMTC 初始化失败（媒体键/锁屏控制不可用）");
-            _smtc = null;
-        }
+        player.PropertyChanged += OnPlayerPropertyChanged;
+        PushAll();
     }
 
     private void OnPlayerPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
