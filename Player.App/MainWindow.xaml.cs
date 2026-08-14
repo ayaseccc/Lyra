@@ -235,6 +235,25 @@ public partial class MainWindow : FluentWindow
         if (nav is not null && !nav.IsHeader) list.SelectedItem = nav;
     }
 
+    /// <summary>双击侧边栏文件夹：直接播放该文件夹（UI-R2 反馈；单击仍只切换列表）。</summary>
+    private void OnNavListDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        var nav = FindDataContext<NavItemViewModel>(e.OriginalSource as DependencyObject);
+        if (nav is null) return;
+        Shell?.PlayFolderPlaylist(nav);
+    }
+
+    /// <summary>Esc：退出设置页（UI-R2 bug 修复）。</summary>
+    private void Window_OnPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Escape) return;
+        if (Shell?.CurrentPage is SettingsPageViewModel)
+        {
+            Shell.LeaveSettings();
+            e.Handled = true;
+        }
+    }
+
     // ================= 曲目列表 =================
 
     /// <summary>静态列头点击排序（UI-R2）：平铺模式有效；分组模式按专辑固定顺序。</summary>

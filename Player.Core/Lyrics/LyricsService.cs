@@ -280,10 +280,33 @@ public sealed class LyricsService : IDisposable
         if (!string.IsNullOrWhiteSpace(fresh.Lrc))
         {
             LyricsCacheStore.SaveCached(cacheKey, fresh);
+            SaveLrcToDisk(track.Path, fresh.Lrc);
             return BuildResult(MergeLyrics(fresh), LyricSource.Online, track.Path);
         }
 
         return LyricsLoadResult.Empty;
+    }
+
+    /// <summary>
+    /// 把在线获取到的歌词落盘为同目录同名 .lrc（UI-R2 反馈）：之后切歌直接读本地文件，
+    /// 不再等在线加载；已有本地 .lrc 不覆盖（本地来源本来就优先）。
+    /// </summary>
+    private static void SaveLrcToDisk(string audioPath, string lrc)
+    {
+        _ = Task.Run(() =>
+        {
+            try
+            {
+                var lrcPath = Path.ChangeExtension(audioPath, ".lrc");
+                if (File.Exists(lrcPath)) return;
+                File.WriteAllText(lrcPath, lrc, new System.Text.UTF8Encoding(false));
+                Log.Information("已把在线歌词落盘：{Path}", lrcPath);
+            }
+            catch (Exception ex)
+            {
+                Log.Debug(ex, "在线歌词落盘失败：{Path}", audioPath);
+            }
+        });
     }
 
     /// <summary>歌词 + 翻译 + 罗马音并轨，应用手动偏移。</summary>

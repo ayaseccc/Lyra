@@ -278,7 +278,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>从徽章菜单直接切换输出后端/设备（UI-R1.5 ⑫）。</summary>
+    /// <summary>从徽章菜单直接切换输出后端/设备（UI-R1.5 ⑫ / R2 修复：失败也刷新重同步勾选）。</summary>
     [RelayCommand]
     private void SwitchOutputDevice(OutputDeviceItem? device)
     {
@@ -287,12 +287,17 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         var settings = _engine.OutputSettings.Clone();
         settings.Backend = device.Kind;
         settings.DeviceName = device.Name;
-        if (!_engine.ApplyOutputSettings(settings)) return;
 
+        var ok = _engine.ApplyOutputSettings(settings);
         ConfigService.Current.Output.CopyFrom(settings);
         ConfigService.Save();
+
+        // 无论成败都重建设备列表：菜单勾选以引擎实际状态为准（修多选）
         RefreshOutputState();
-        StatusText = "输出：" + device.DisplayName;
+
+        StatusText = ok
+            ? "输出：" + device.DisplayName
+            : "切换输出失败，已保持当前输出（详见日志）";
     }
 
     private void OnOutputChanged(object? sender, EventArgs e) =>

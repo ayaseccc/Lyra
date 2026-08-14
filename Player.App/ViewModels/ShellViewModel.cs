@@ -525,13 +525,49 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     // ---------------- 命令 ----------------
 
+    private NavItemViewModel? _navBeforeSettings;
+
     [RelayCommand]
     private void OpenSettings()
     {
-        // 设置页不在左侧栏列表里，进入时清空选中项
+        // 设置页不在左侧栏列表里，进入时清空选中项；记住来处，Esc 可以退回
+        _navBeforeSettings = SelectedNav;
         SelectedNav = null;
         CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client,
             () => ImportM3uCommand.Execute(null));
+    }
+
+    /// <summary>Esc 退出设置页（UI-R2 bug 修复）：回到进入设置前的页面。</summary>
+    public void LeaveSettings()
+    {
+        if (CurrentPage is not SettingsPageViewModel) return;
+
+        var target = _navBeforeSettings ?? NavItems.FirstOrDefault(n => n.Kind != NavKind.Header);
+        if (target is not null)
+        {
+            SelectedNav = target;
+        }
+        else
+        {
+            var first = NavItems.FirstOrDefault(n => n.Kind == NavKind.AllTracks);
+            if (first is not null) SelectedNav = first;
+        }
+    }
+
+    /// <summary>双击侧边栏文件夹：直接播放该文件夹的全部曲目（UI-R2 反馈）。</summary>
+    public void PlayFolderPlaylist(NavItemViewModel nav)
+    {
+        if (nav.Kind != NavKind.FolderPlaylist || string.IsNullOrEmpty(nav.FolderPath)) return;
+
+        var folder = _library.GetFolderPlaylists()
+            .FirstOrDefault(f => string.Equals(f.FullPath, nav.FolderPath, StringComparison.OrdinalIgnoreCase));
+        if (folder is null || folder.Tracks.Count == 0)
+        {
+            ScanStatus = "这个文件夹里没有可播放的音频";
+            return;
+        }
+
+        Player.PlayTracks(folder.Tracks, 0, "文件夹：" + nav.Title);
     }
 
     [RelayCommand]

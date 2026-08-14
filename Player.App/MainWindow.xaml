@@ -13,6 +13,7 @@
                  AllowDrop="True"
                  DragOver="Window_OnDragOver"
                  Drop="Window_OnDrop"
+                 PreviewKeyDown="Window_OnPreviewKeyDown"
                  FontFamily="Microsoft YaHei UI, Segoe UI"
                  TextOptions.TextFormattingMode="Display">
 
@@ -115,6 +116,40 @@
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.Template>
+                            <!-- 显式标准模板：WPF-UI 对 ListBox 的隐式模板不生成滚动条（UI-R2 bug 修复） -->
+                            <ControlTemplate TargetType="ListBox">
+                                <ScrollViewer Focusable="False" CanContentScroll="True"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              VerticalScrollBarVisibility="Visible"
+                                              Padding="{TemplateBinding Padding}">
+                                    <ScrollViewer.Template>
+                                        <!-- 标准双列模板（内容+滚动条各占位）：绕开 WPF-UI 的悬浮式 ScrollViewer 隐式样式 -->
+                                        <ControlTemplate TargetType="ScrollViewer">
+                                            <Grid Background="{TemplateBinding Background}">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <ScrollContentPresenter x:Name="PART_ScrollContentPresenter"
+                                                                        CanContentScroll="{TemplateBinding CanContentScroll}"
+                                                                        Content="{TemplateBinding Content}"
+                                                                        ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                                        Margin="{TemplateBinding Padding}" />
+                                                <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Column="1"
+                                                           Orientation="Vertical"
+                                                           ViewportSize="{TemplateBinding ViewportHeight}"
+                                                           Maximum="{TemplateBinding ScrollableHeight}"
+                                                           Value="{TemplateBinding VerticalOffset}"
+                                                           Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"
+                                                           Cursor="Arrow" />
+                                            </Grid>
+                                        </ControlTemplate>
+                                    </ScrollViewer.Template>
+                                    <ItemsPresenter />
+                                </ScrollViewer>
+                            </ControlTemplate>
+                        </ListBox.Template>
                         <ListBox.ItemTemplate>
                             <DataTemplate>
                                 <Grid>
@@ -144,7 +179,7 @@
                                                    VerticalAlignment="Center" Margin="0,0,8,0" />
                                     </Grid>
 
-                                    <!-- 曲目行（UI-R2）：组封面（仅首行，溢出不参与布局）+ 标题/歌手双行 + 信息列 -->
+                                    <!-- 曲目行（UI-R2 修订）：每行一个 48px 方形封面（不再一张 84 溢出留白） -->
                                     <Grid Height="56" VerticalAlignment="Top"
                                           Visibility="{Binding IsGroupHeader, Converter={StaticResource InverseBoolToVisibility}}">
                                         <Grid.ColumnDefinitions>
@@ -156,12 +191,12 @@
                                             <ColumnDefinition Width="60" />
                                         </Grid.ColumnDefinitions>
 
-                                        <Border Grid.Column="0" Width="84" Height="84" CornerRadius="2"
-                                                VerticalAlignment="Top" Margin="0,6,0,0"
+                                        <Border Grid.Column="0" Width="48" Height="48" CornerRadius="2"
+                                                VerticalAlignment="Center"
                                                 Background="{StaticResource HoverBrush}"
-                                                Visibility="{Binding ShowCover, Converter={StaticResource BoolToVis}}">
+                                                Visibility="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVis}}">
                                             <Grid>
-                                                <ui:SymbolIcon Symbol="MusicNote224" FontSize="28"
+                                                <ui:SymbolIcon Symbol="MusicNote224" FontSize="16"
                                                                Foreground="{StaticResource TextTertiaryBrush}"
                                                                Visibility="{Binding Track.CoverHash, Converter={StaticResource NullToVisible}}" />
                                                 <Image Source="{Binding Track.CoverHash, Converter={StaticResource CoverToImage}}"
@@ -610,6 +645,7 @@
                              DragOver="OnNavDragOver"
                              Drop="OnNavDrop"
                              PreviewMouseRightButtonDown="OnNavListPreviewRightButtonDown"
+                             MouseDoubleClick="OnNavListDoubleClick"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
