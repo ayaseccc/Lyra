@@ -347,7 +347,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             }
 
             case NavKind.Settings:
-                CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client);
+                CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client,
+                    () => ImportM3uCommand.Execute(null));
                 break;
         }
     }
@@ -511,7 +512,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     {
         // 设置页不在左侧栏列表里，进入时清空选中项
         SelectedNav = null;
-        CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client);
+        CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client,
+            () => ImportM3uCommand.Execute(null));
     }
 
     [RelayCommand]

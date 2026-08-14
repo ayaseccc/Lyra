@@ -159,6 +159,9 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             ? "音量不是 100%，输出经过了软件衰减"
             : "输出经过重采样（采样率与源文件不一致）";
 
+    /// <summary>输出徽章悬停提示：当前输出 + 位完美状态。</summary>
+    public string OutputToolTip => $"{OutputBadgeText}\n{OutputHint}";
+
     /// <summary>播放条上的小徽章文案，如「WASAPI 96k」（UI-R1.5 ⑫）。</summary>
     public string OutputBadgeText
     {
@@ -177,8 +180,16 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>输出设备切换菜单的条目（UI-R1.5 ⑫）。</summary>
-    public sealed record OutputDeviceItem(string Name, bool IsCurrent);
+    /// <summary>输出设备切换菜单的条目（UI-R1.5 ⑫ 扩展：列出所有后端的设备）。</summary>
+    public sealed record OutputDeviceItem(OutputBackendKind Kind, string Name, bool IsCurrent)
+    {
+        public string DisplayName => (Kind switch
+        {
+            OutputBackendKind.Asio => "ASIO",
+            OutputBackendKind.Wasapi => "WASAPI",
+            _ => "系统输出"
+        }) + " · " + Name;
+    }
 
     public ObservableCollection<OutputDeviceItem> OutputDevices { get; } = new();
 
@@ -194,34 +205,46 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         IsBitPerfect = _engine.IsBitPerfect;
         OnPropertyChanged(nameof(OutputHint));
         OnPropertyChanged(nameof(OutputBadgeText));
+        OnPropertyChanged(nameof(OutputToolTip));
     }
 
     private void RefreshOutputDevices()
     {
         var current = _engine.OutputSettings.DeviceName;
+        var active = _engine.ActiveBackend;
         OutputDevices.Clear();
-        foreach (var device in _engine.EnumerateDevices(_engine.ActiveBackend))
+
+        foreach (var kind in new[]
+                 {
+                     OutputBackendKind.Asio, OutputBackendKind.Wasapi, OutputBackendKind.DirectSound
+                 })
         {
-            OutputDevices.Add(new OutputDeviceItem(
-                device.Name,
-                string.Equals(device.Name, current, StringComparison.OrdinalIgnoreCase)));
+            foreach (var device in _engine.EnumerateDevices(kind))
+            {
+                OutputDevices.Add(new OutputDeviceItem(
+                    kind,
+                    device.Name,
+                    kind == active &&
+                    string.Equals(device.Name, current, StringComparison.OrdinalIgnoreCase)));
+            }
         }
     }
 
-    /// <summary>从徽章菜单直接切换输出设备（UI-R1.5 ⑫）。</summary>
+    /// <summary>从徽章菜单直接切换输出后端/设备（UI-R1.5 ⑫）。</summary>
     [RelayCommand]
     private void SwitchOutputDevice(OutputDeviceItem? device)
     {
         if (device is null) return;
 
         var settings = _engine.OutputSettings.Clone();
+        settings.Backend = device.Kind;
         settings.DeviceName = device.Name;
         if (!_engine.ApplyOutputSettings(settings)) return;
 
         ConfigService.Current.Output.CopyFrom(settings);
         ConfigService.Save();
         RefreshOutputState();
-        StatusText = "输出设备：" + device.Name;
+        StatusText = "输出：" + device.DisplayName;
     }
 
     private void OnOutputChanged(object? sender, EventArgs e) =>

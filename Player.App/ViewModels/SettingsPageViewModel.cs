@@ -35,17 +35,19 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     private readonly IPlaybackEngine _engine;
     private readonly ChkszClient _client;
     private readonly Func<bool, Task> _requestScan;
+    private readonly Action? _importM3u;
 
     /// <summary>初始化期间不要把界面上的默认值当成用户改动去应用。</summary>
     private bool _loading = true;
 
     public SettingsPageViewModel(LibraryService library, IPlaybackEngine engine, Func<bool, Task> requestScan,
-        ChkszClient? client = null)
+        ChkszClient? client = null, Action? importM3u = null)
     {
         _library = library;
         _engine = engine;
         _client = client ?? new ChkszClient();
         _requestScan = requestScan;
+        _importM3u = importM3u;
 
         Folders = new ObservableCollection<string>(ConfigService.Current.Library.Folders);
 
@@ -275,6 +277,10 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     }
 
     // ================= 媒体库 =================
+
+    /// <summary>导入 m3u8 播放列表（UI-R1.5 反馈：入口从侧边栏移进设置页）。</summary>
+    [RelayCommand]
+    private void ImportM3u() => _importM3u?.Invoke();
 
     public ObservableCollection<string> Folders { get; }
 
