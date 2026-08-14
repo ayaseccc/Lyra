@@ -365,7 +365,7 @@
 
     <!-- = 曲目列表（UI-R2：分组 112px 一页约 6 曲 / 平铺 56px 紧凑，互不影响） = -->
     <Style x:Key="TrackRowStyle" TargetType="ListBoxItem">
-        <Setter Property="Height" Value="112" />
+        <Setter Property="Height" Value="84" />
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -383,6 +383,10 @@
                             <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
                             <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
                         </Trigger>
+                        <!-- 组头行：细行 32px -->
+                        <DataTrigger Binding="{Binding IsGroupHeader}" Value="True">
+                            <Setter Property="Height" Value="32" />
+                        </DataTrigger>
                         <!-- 行高随模式（平铺保持紧凑 56px，不受分组布局影响） -->
                         <DataTrigger Binding="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="False">
                             <Setter Property="Height" Value="56" />

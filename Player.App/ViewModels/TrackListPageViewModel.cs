@@ -124,13 +124,18 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         {
             foreach (var group in TrackGrouper.Group(View.Cast<TrackRecord>()))
             {
+                DisplayItems.Add(new GroupHeaderItem
+                {
+                    AlbumText = group.Album,
+                    ArtistText = group.Artist,
+                    YearText = group.Year
+                });
                 for (var i = 0; i < group.Tracks.Count; i++)
                 {
                     DisplayItems.Add(new TrackRowItem
                     {
                         Track = group.Tracks[i],
-                        ShowCover = i == 0,
-                        YearText = i == 0 ? group.Year : string.Empty
+                        ShowCover = i == 0
                     });
                 }
             }
