@@ -44,8 +44,8 @@ public sealed record ThemePalette(
         new RgbColor(0xFF, 0xFF, 0xFF, 0x2E),
         new RgbColor(0xFF, 0xFF, 0xFF, 0x26),
         new RgbColor(0xFF, 0xFF, 0xFF, 0x40),
-        new RgbColor(0x3A, 0x3A, 0x3A),
-        new RgbColor(0x8B, 0x8B, 0x8B));
+        new RgbColor(0xFF, 0xFF, 0xFF),
+        new RgbColor(0x3A, 0x3A, 0x3A));
 }
 
 /// <summary>
@@ -238,8 +238,8 @@ public static class ThemeDeriver
             Mix(background, Black, 0.10),
             Mix(background, Black, 0.14),
             Mix(background, Black, 0.28),
-            Mix(background, Black, 0.72),
-            Mix(background, Black, 0.26));
+            textPrimary,
+            Mix(background, Black, 0.12));
     }
 
     /// <summary>深色基底 + 封面染色：深 tint 背景 + 浅色文字 + 高亮强调色。</summary>
@@ -283,8 +283,8 @@ public static class ThemeDeriver
             Mix(background, White, 0.14),
             Mix(background, White, 0.18),
             Mix(background, White, 0.30),
-            Mix(background, White, 0.20),
-            Mix(background, White, 0.45));
+            textPrimary,
+            Mix(background, White, 0.28));
     }
 
     // ---------- 颜色工具 ----------

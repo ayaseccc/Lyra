@@ -8,8 +8,8 @@
         Background="Transparent" Topmost="True" ShowInTaskbar="False"
         WindowStartupLocation="Manual" Top="860" Left="680"
         Loaded="OnLoaded" MouseLeftButtonDown="OnWindowMouseDown">
-    <Grid>
-        <!-- 圆角半透明背景条 -->
+    <Grid MouseEnter="OnRootMouseEnter" MouseLeave="OnRootMouseLeave" Background="Transparent">
+        <!-- 圆角半透明背景条（L1.1-③：可隐藏/调透明，纯文字模式靠描边阴影保可读） -->
         <Border x:Name="Backdrop" CornerRadius="14" Opacity="0.82"
                 Background="{DynamicResource SurfaceStrongBrush}"
                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1"
@@ -23,18 +23,36 @@
                            Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Center"
                            TextTrimming="CharacterEllipsis">
                     <TextBlock.Effect>
-                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.9" Color="Black" />
+                        <DropShadowEffect x:Name="PrimaryShadow" BlurRadius="6" ShadowDepth="1" Opacity="0.9" Color="Black" />
                     </TextBlock.Effect>
                 </TextBlock>
                 <TextBlock x:Name="SecondaryText" Grid.Row="1" FontSize="14" Margin="0,4,0,0"
                            Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Center"
                            TextTrimming="CharacterEllipsis">
                     <TextBlock.Effect>
-                        <DropShadowEffect BlurRadius="6" ShadowDepth="1" Opacity="0.9" Color="Black" />
+                        <DropShadowEffect x:Name="SecondaryShadow" BlurRadius="6" ShadowDepth="1" Opacity="0.9" Color="Black" />
                     </TextBlock.Effect>
                 </TextBlock>
             </Grid>
         </Border>
+
+        <!-- 悬停迷你工具条（L1.1-③：解锁态悬停左上角显示，含锁定按钮——解锁后唯一再锁定入口） -->
+        <StackPanel x:Name="HoverToolbar" Orientation="Horizontal" HorizontalAlignment="Left" VerticalAlignment="Top"
+                    Margin="10,8,0,0" Visibility="Collapsed">
+            <Border Background="{DynamicResource SurfaceStrongBrush}" CornerRadius="8" Padding="4"
+                    BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1" Opacity="0.95">
+                <StackPanel Orientation="Horizontal">
+                    <Button x:Name="ToolbarLockButton" Width="26" Height="26" Style="{StaticResource ModeButtonStyle}"
+                            ToolTip="锁定（鼠标穿透）" Click="OnToolbarLockClick">
+                        <ui:SymbolIcon Symbol="LockClosed24" FontSize="12" />
+                    </Button>
+                    <Button x:Name="ToolbarCloseButton" Width="26" Height="26" Style="{StaticResource ModeButtonStyle}"
+                            Margin="4,0,0,0" ToolTip="关闭桌面歌词" Click="OnToolbarCloseClick">
+                        <ui:SymbolIcon Symbol="Dismiss24" FontSize="12" />
+                    </Button>
+                </StackPanel>
+            </Border>
+        </StackPanel>
 
         <!-- 小柄：锁定态唯一可点的解锁按钮 -->
         <Border x:Name="UnlockHandle" Width="18" Height="18" CornerRadius="9"
@@ -51,4 +69,28 @@
                 Background="{DynamicResource AccentBrush}" Cursor="SizeWE"
                 Visibility="Collapsed" MouseLeftButtonDown="OnResizeHandleDown" />
     </Grid>
+
+    <!-- L1.1-③ 右键菜单：锁定/翻译/背景/字号/字体/文字颜色/关闭 -->
+    <Window.ContextMenu>
+        <ContextMenu Opened="OnMenuOpened">
+            <MenuItem x:Name="LockMenuItem" Click="OnMenuToggleLock" />
+            <MenuItem x:Name="TwoLinesMenuItem" Header="显示翻译（双行）" IsCheckable="True" Click="OnMenuToggleTwoLines" />
+            <MenuItem x:Name="BgShowMenuItem" Header="显示背景卡片" IsCheckable="True" Click="OnMenuToggleBackground" />
+            <MenuItem Header="背景透明度">
+                <MenuItem Header="30%" Tag="0.3" Click="OnMenuBgOpacity" />
+                <MenuItem Header="50%" Tag="0.5" Click="OnMenuBgOpacity" />
+                <MenuItem Header="70%" Tag="0.7" Click="OnMenuBgOpacity" />
+                <MenuItem Header="90%" Tag="0.9" Click="OnMenuBgOpacity" />
+            </MenuItem>
+            <Separator />
+            <MenuItem Header="字号">
+                <MenuItem Header="增大（+2）" Click="OnMenuFontSizePlus" />
+                <MenuItem Header="减小（-2）" Click="OnMenuFontSizeMinus" />
+            </MenuItem>
+            <MenuItem x:Name="FontFamilyMenu" Header="字体" />
+            <MenuItem x:Name="TextColorMenu" Header="文字颜色" />
+            <Separator />
+            <MenuItem Header="关闭桌面歌词" Click="OnMenuClose" />
+        </ContextMenu>
+    </Window.ContextMenu>
 </Window>

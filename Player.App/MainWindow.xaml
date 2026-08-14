@@ -661,7 +661,7 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- ===== 歌词页（L1 第三步） ===== -->
+                        <!-- ===== 歌词页（L1 第三步 + L1.1 打磨） ===== -->
                         <Border Visibility="{Binding IsLyricTab, Converter={StaticResource BoolToVis}}"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
@@ -671,11 +671,29 @@
                                         <ColumnDefinition Width="110" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
+                                    <TextBlock Text="歌词字体" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding LyricFonts}"
+                                              SelectedItem="{Binding SelectedLyricFontFamily}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="字重" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding Weights}"
+                                              SelectedItem="{Binding SelectedLyricFontWeight}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
                                     <TextBlock Text="桌面歌词字号" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding LyricFontSizes}"
                                               SelectedItem="{Binding SelectedLyricFontSize}" />
                                 </Grid>
-                                <Grid>
+                                <Grid Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="110" />
                                         <ColumnDefinition Width="*" />
@@ -683,10 +701,29 @@
                                     <TextBlock Text="桌面歌词" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <StackPanel Grid.Column="1">
                                         <ui:ToggleSwitch IsChecked="{Binding DesktopLyricsTwoLines}" Content="显示翻译（双行）" />
+                                        <ui:ToggleSwitch IsChecked="{Binding DesktopLyricsShowBackground}" Content="显示背景卡片" Margin="0,8,0,0" />
                                     </StackPanel>
                                 </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="背景透明度" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding BgOpacities}"
+                                              SelectedItem="{Binding SelectedDesktopLyricsBgOpacity}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="文字颜色" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding TextColors}"
+                                              SelectedItem="{Binding SelectedDesktopLyricsTextColor}" />
+                                </Grid>
                                 <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,10,0,0" TextWrapping="Wrap"
-                                           Text="桌面歌词开关在播放条（第二个预留按钮），锁定=鼠标穿透（点击右上小柄解锁后可拖动/调宽）；颜色跟随取色主题；无时间轴歌词显示曲名。" />
+                                           Text="字体/字重作用于右栏歌词、大歌词页与桌面歌词（桌面歌词字号独立）。桌面歌词开关在播放条（第二个预留按钮），锁定=鼠标穿透（点击右上小柄解锁后可拖动/调宽），解锁后悬停左上角迷你工具条可再锁定；右键菜单可快速调整。无时间轴歌词显示曲名。" />
                             </StackPanel>
                         </Border>
 
@@ -1075,25 +1112,35 @@
                                               x:Name="VolumeSquares" Background="Transparent" Cursor="Hand">
                                             <StackPanel Orientation="Horizontal" IsHitTestVisible="False" VerticalAlignment="Center">
                                         <Border Width="5" Height="4" Margin="2,0" CornerRadius="0"
-                                                Background="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=0}" />
+                                                Background="{DynamicResource VolumeReachedBrush}"
+                                                Opacity="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=0}" />
                                         <Border Width="5" Height="4" Margin="2,0" CornerRadius="0"
-                                                Background="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=1}" />
+                                                Background="{DynamicResource VolumeReachedBrush}"
+                                                Opacity="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=1}" />
                                         <Border Width="5" Height="4" Margin="2,0" CornerRadius="0"
-                                                Background="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=2}" />
+                                                Background="{DynamicResource VolumeReachedBrush}"
+                                                Opacity="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=2}" />
                                         <Border Width="5" Height="4" Margin="2,0" CornerRadius="0"
-                                                Background="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=3}" />
+                                                Background="{DynamicResource VolumeReachedBrush}"
+                                                Opacity="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=3}" />
                                         <Border Width="5" Height="4" Margin="2,0" CornerRadius="0"
-                                                Background="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=4}" />
+                                                Background="{DynamicResource VolumeReachedBrush}"
+                                                Opacity="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=4}" />
                                         <Border Width="5" Height="4" Margin="2,0" CornerRadius="0"
-                                                Background="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=5}" />
+                                                Background="{DynamicResource VolumeReachedBrush}"
+                                                Opacity="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=5}" />
                                         <Border Width="5" Height="4" Margin="2,0" CornerRadius="0"
-                                                Background="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=6}" />
+                                                Background="{DynamicResource VolumeReachedBrush}"
+                                                Opacity="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=6}" />
                                         <Border Width="5" Height="4" Margin="2,0" CornerRadius="0"
-                                                Background="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=7}" />
+                                                Background="{DynamicResource VolumeReachedBrush}"
+                                                Opacity="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=7}" />
                                         <Border Width="5" Height="4" Margin="2,0" CornerRadius="0"
-                                                Background="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=8}" />
+                                                Background="{DynamicResource VolumeReachedBrush}"
+                                                Opacity="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=8}" />
                                         <Border Width="5" Height="4" Margin="2,0" CornerRadius="0"
-                                                Background="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=9}" />
+                                                Background="{DynamicResource VolumeReachedBrush}"
+                                                Opacity="{Binding VolumeLevel, Converter={StaticResource VolumeSquare}, ConverterParameter=9}" />
                                             </StackPanel>
                                             <Popup IsOpen="{Binding IsVolumeFeedbackVisible}" Placement="Right"
                                                    AllowsTransparency="True" Focusable="False" HorizontalOffset="6">
@@ -1108,9 +1155,10 @@
 
 
 
-            <!-- ============ 大歌词页（L1 第二步：入口=预留按钮①，再点/Esc 返回，200ms 淡入淡出） ============ -->
+            <!-- ============ 大歌词页（L1 第二步 + L1.1-④ 收尾：点击空白/右上关闭退出、底部控制条自动收敛） ============ -->
             <Grid x:Name="BigLyricsOverlay" Grid.RowSpan="3" Visibility="Collapsed" Opacity="0"
-                  Background="{DynamicResource SurfaceStrongBrush}" ClipToBounds="True">
+                  Background="{DynamicResource SurfaceStrongBrush}" ClipToBounds="True"
+                  PreviewMouseLeftButtonDown="OnBigLyricsOverlayMouseDown">
                 <!-- 背景：放大模糊封面 + 遮罩保证可读 -->
                 <Image x:Name="BigLyricsBgImage" Source="{Binding Player.CoverImage}"
                        Stretch="UniformToFill" RenderTransformOrigin="0.5,0.5">
@@ -1131,6 +1179,13 @@
                     </Border.Background>
                 </Border>
 
+                <!-- 右上角关闭按钮（L1.1-④：第三种退出方式，Esc 与点击空白同样可用） -->
+                <Button HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,14,18,0"
+                        Width="34" Height="34" Style="{StaticResource ModeButtonStyle}"
+                        ToolTip="关闭大歌词页（Esc）" Click="OnBigLyricsCloseClick">
+                    <ui:SymbolIcon Symbol="Dismiss24" FontSize="16" />
+                </Button>
+
                 <!-- 中央大字号歌词（复用 R5 引擎，1.8 倍） -->
                 <Grid Margin="60,0,60,84">
                     <ctrl:LyricCanvas x:Name="BigLyricCanvas" FontScale="1.8"
@@ -1143,8 +1198,22 @@
                                       LineClicked="OnBigLyricClicked" />
                 </Grid>
 
-                <!-- 底部：细进度条 + 基本控制 -->
-                <Border VerticalAlignment="Bottom" Background="{DynamicResource SurfaceStrongBrush}"
+                <!-- 底部细进度线（常显，3px，不可交互） -->
+                <Border VerticalAlignment="Bottom" Height="3" Background="{DynamicResource TrackEmptyBrush}">
+                    <Border HorizontalAlignment="Left" Background="{DynamicResource AccentBrush}">
+                        <Border.Width>
+                            <MultiBinding Converter="{StaticResource ThinProgressWidth}">
+                                <Binding Path="ActualWidth" RelativeSource="{RelativeSource AncestorType=Grid}" />
+                                <Binding Path="Player.PositionSeconds" />
+                                <Binding Path="Player.DurationSeconds" />
+                            </MultiBinding>
+                        </Border.Width>
+                    </Border>
+                </Border>
+
+                <!-- 完整控制条：默认隐藏（Opacity=0），鼠标活动淡入、3 秒无操作淡出（L1.1-④） -->
+                <Border x:Name="BigLyricsControlBar" VerticalAlignment="Bottom" Opacity="0"
+                        Background="{DynamicResource SurfaceStrongBrush}"
                         BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="0,1,0,0">
                     <Grid Margin="24,10" DataContext="{Binding Player}">
                         <Grid.RowDefinitions>

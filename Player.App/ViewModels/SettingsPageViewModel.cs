@@ -6,6 +6,7 @@ using Microsoft.Win32;
 using Player.Core.Audio;
 using Player.Core.Infra;
 using Player.Core.Library;
+using Player.App.Controls;
 using Player.Core.Online;
 using Serilog;
 
@@ -112,10 +113,22 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             t.Key.Equals(ConfigService.Current.Ui.ThemeBase, StringComparison.OrdinalIgnoreCase)) ?? ThemeBases[0];
         _themeTint = ConfigService.Current.Ui.ThemeTint;
 
-        // L1 第三步：歌词组（桌面歌词）
+        // L1 第三步 + L1.1：歌词组（字体/字重/桌面歌词个性化）
         var fs = (int)ConfigService.Current.Ui.DesktopLyricsFontSize;
         _selectedLyricFontSize = Array.IndexOf((LyricFontSizes as int[])!, fs) >= 0 ? fs : 20;
         _desktopLyricsTwoLines = ConfigService.Current.Ui.DesktopLyricsTwoLines;
+
+        var ui = ConfigService.Current.Ui;
+        _selectedLyricFontFamily = LyricFonts.Contains(ui.LyricFontFamily)
+            ? ui.LyricFontFamily
+            : (LyricFonts.Contains("Microsoft YaHei UI") ? "Microsoft YaHei UI" : LyricFonts[0]);
+        _selectedLyricFontWeight = Weights.FirstOrDefault(w => w.Key == ui.LyricFontWeight) ?? Weights[0];
+        _desktopLyricsShowBackground = ui.DesktopLyricsShowBackground;
+        _selectedDesktopLyricsBgOpacity = BgOpacities.FirstOrDefault(o => Math.Abs(o.Value - ui.DesktopLyricsBgOpacity) < 0.01) ?? BgOpacities[2];
+        _selectedDesktopLyricsTextColor = TextColors.FirstOrDefault(c =>
+            (c.Key == "Theme" && ui.DesktopLyricsTextColorMode == "Theme")
+            || (c.Key != "Theme" && ui.DesktopLyricsTextColorMode == "Custom" && string.Equals(c.Key, ui.DesktopLyricsTextColor, StringComparison.OrdinalIgnoreCase)))
+            ?? TextColors[0];
 
         // P3 在线组：Key 只从 data/config.json 读
         ApiKey = ConfigService.Current.ApiKey;
@@ -145,9 +158,34 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLyricTab;
 
-    // ================= 歌词（L1 第三步：桌面歌词设置） =================
+    // ================= 歌词（L1 第三步 + L1.1 打磨） =================
+
+    /// <summary>L1.1-②：系统字体（置顶中日文友好项）+ 字重，作用于右栏/大歌词页/桌面歌词。</summary>
+    public IReadOnlyList<string> LyricFonts => LyricUiOptions.FontFamilies;
+
+    public IReadOnlyList<FontWeightOption> Weights => LyricUiOptions.Weights;
 
     public IReadOnlyList<int> LyricFontSizes { get; } = new[] { 16, 20, 24 };
+
+    [ObservableProperty]
+    private string _selectedLyricFontFamily = string.Empty;
+
+    [ObservableProperty]
+    private FontWeightOption? _selectedLyricFontWeight;
+
+    partial void OnSelectedLyricFontFamilyChanged(string value)
+    {
+        if (_loading || string.IsNullOrEmpty(value)) return;
+        ConfigService.Current.Ui.LyricFontFamily = value;
+        ConfigService.Save();
+    }
+
+    partial void OnSelectedLyricFontWeightChanged(FontWeightOption? value)
+    {
+        if (_loading || value is null) return;
+        ConfigService.Current.Ui.LyricFontWeight = value.Key;
+        ConfigService.Save();
+    }
 
     [ObservableProperty]
     private int _selectedLyricFontSize;
@@ -166,6 +204,50 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     {
         if (_loading) return;
         ConfigService.Current.Ui.DesktopLyricsTwoLines = value;
+        ConfigService.Save();
+    }
+
+    // ---- L1.1-③：桌面歌词个性化 ----
+
+    public IReadOnlyList<BgOpacityOption> BgOpacities => LyricUiOptions.BgOpacities;
+
+    public IReadOnlyList<DesktopLyricsColorOption> TextColors => LyricUiOptions.TextColors;
+
+    [ObservableProperty]
+    private bool _desktopLyricsShowBackground;
+
+    [ObservableProperty]
+    private BgOpacityOption? _selectedDesktopLyricsBgOpacity;
+
+    [ObservableProperty]
+    private DesktopLyricsColorOption? _selectedDesktopLyricsTextColor;
+
+    partial void OnDesktopLyricsShowBackgroundChanged(bool value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.DesktopLyricsShowBackground = value;
+        ConfigService.Save();
+    }
+
+    partial void OnSelectedDesktopLyricsBgOpacityChanged(BgOpacityOption? value)
+    {
+        if (_loading || value is null) return;
+        ConfigService.Current.Ui.DesktopLyricsBgOpacity = value.Value;
+        ConfigService.Save();
+    }
+
+    partial void OnSelectedDesktopLyricsTextColorChanged(DesktopLyricsColorOption? value)
+    {
+        if (_loading || value is null) return;
+        if (value.Key == "Theme")
+        {
+            ConfigService.Current.Ui.DesktopLyricsTextColorMode = "Theme";
+        }
+        else
+        {
+            ConfigService.Current.Ui.DesktopLyricsTextColorMode = "Custom";
+            ConfigService.Current.Ui.DesktopLyricsTextColor = value.Key;
+        }
         ConfigService.Save();
     }
 

@@ -896,6 +896,19 @@ public static class Program
         Check("过暗封面深色派生回退固定深色",
             ThemeDeriver.DeriveDark(new RgbColor(0x10, 0x10, 0x10)) == ThemePalette.FixedDark);
 
+        // ---- 音量格语义色（L1.1-①：已到达=前景强调，未到达=弱化，两挡主题都成立） ----
+        var lightVol = ThemeDeriver.Derive(new RgbColor(0xD0, 0x20, 0x18));
+        Check("浅色：已到达格 = 前景文字色（深/醒目）", lightVol.VolumeReached == lightVol.TextPrimary);
+        Check("浅色：未到达格明显浅于已到达格（弱化）",
+            ThemeDeriver.RelativeLuminance(lightVol.VolumeSlot) > ThemeDeriver.RelativeLuminance(lightVol.VolumeReached));
+        var darkVol = ThemeDeriver.DeriveDark(new RgbColor(0xD0, 0x20, 0x18));
+        Check("深色：已到达格 = 前景文字色（亮/醒目）", darkVol.VolumeReached == darkVol.TextPrimary);
+        Check("深色：未到达格明显暗于已到达格（弱化）",
+            ThemeDeriver.RelativeLuminance(darkVol.VolumeSlot) < ThemeDeriver.RelativeLuminance(darkVol.VolumeReached));
+        Check("固定深色：已到达=白、未到达=深灰",
+            ThemePalette.FixedDark.VolumeReached == new RgbColor(0xFF, 0xFF, 0xFF)
+            && ThemePalette.FixedDark.VolumeSlot == new RgbColor(0x3A, 0x3A, 0x3A));
+
         Console.WriteLine();
     }
 }

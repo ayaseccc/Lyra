@@ -128,7 +128,7 @@ public sealed class UiConfig
     /// <summary>右侧信息栏折叠状态（UI-R4）：true = 展开（默认）。</summary>
     public bool SidePaneOpen { get; set; } = true;
 
-    /// <summary>桌面歌词（L1 第三步）：开关 / 锁定 / 单双行 / 字号 / 宽度。</summary>
+    /// <summary>桌面歌词（L1 第三步 + L1.1 个性化）：开关 / 锁定 / 单双行 / 字号 / 宽度 / 背景 / 文字颜色；歌词字体见下。</summary>
     public bool DesktopLyricsEnabled { get; set; }
 
     public bool DesktopLyricsLocked { get; set; } = true;
@@ -138,6 +138,24 @@ public sealed class UiConfig
     public double DesktopLyricsFontSize { get; set; } = 20;
 
     public double DesktopLyricsWidth { get; set; } = 560;
+
+    /// <summary>L1.1-③：背景卡片显示开关（纯文字模式靠描边/阴影保可读）。</summary>
+    public bool DesktopLyricsShowBackground { get; set; } = true;
+
+    /// <summary>L1.1-③：背景卡片不透明度（0.3–0.9）。</summary>
+    public double DesktopLyricsBgOpacity { get; set; } = 0.82;
+
+    /// <summary>L1.1-③：文字颜色模式 Theme=跟随取色主题 / Custom=自定义纯色。</summary>
+    public string DesktopLyricsTextColorMode { get; set; } = "Theme";
+
+    /// <summary>L1.1-③：自定义文字颜色（#RRGGBB）。</summary>
+    public string DesktopLyricsTextColor { get; set; } = "#FFFFFF";
+
+    /// <summary>L1.1-②：歌词字体（右栏/大歌词页/桌面歌词共用；桌面歌词字号独立）。</summary>
+    public string LyricFontFamily { get; set; } = "Microsoft YaHei UI";
+
+    /// <summary>L1.1-②：歌词字重 Normal / Medium / Bold。</summary>
+    public string LyricFontWeight { get; set; } = "Normal";
 }
 
 /// <summary>

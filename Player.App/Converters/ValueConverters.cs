@@ -76,23 +76,39 @@ public sealed class BoolToAccentConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
-/// <summary>音量方块（UI-R1.5 反馈）：已到达的方块用浅灰，未到达的用深灰/近黑（容量槽样式）。</summary>
+/// <summary>
+/// 音量方块（L1.1-① 语义色修正）：返回该格的透明度——已到达格=1.0（前景强调色，醒目），
+/// 未到达格=0.22（弱化）。方块背景统一绑定 DynamicResource VolumeReachedBrush：
+/// 主题切换/300ms 过渡由 DynamicResource 自动跟随，明暗语义在深浅两挡主题下都成立
+/// （浅色：已到达=深色前景、未到达≈浅灰；深色：已到达=亮前景、未到达=深灰）。
+/// 旧实现把 R1.5 写死的灰度直接当颜色用，浅色主题下明暗倒挂。
+/// </summary>
 public sealed class VolumeSquareConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
     {
         var level = value is int i ? i : 0;
         var index = parameter is string s && int.TryParse(s, out var n) ? n : 0;
-        if (level > index)
-        {
-            return System.Windows.Application.Current?.TryFindResource("VolumeSlotBrush") as SolidColorBrush
-                   ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x8B, 0x8B, 0x8B));
-        }
-        return System.Windows.Application.Current?.TryFindResource("VolumeReachedBrush") as SolidColorBrush
-               ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x3A, 0x3A, 0x3A));
+        return level > index ? 1.0 : 0.22;
     }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>大歌词页细进度线（L1.1-④）：宽度 = 视口宽 × 位置/时长。</summary>
+public sealed class ThinProgressWidthConverter : IMultiValueConverter
+{
+    public object Convert(object?[] values, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var viewport = values.Length > 0 && values[0] is double v ? v : 0.0;
+        var position = values.Length > 1 && values[1] is double p ? p : 0.0;
+        var duration = values.Length > 2 && values[2] is double d ? d : 0.0;
+        if (viewport <= 0 || duration <= 0) return 0.0;
+        return Math.Clamp(viewport * position / duration, 0, viewport);
+    }
+
+    public object?[] ConvertBack(object? value, Type[] targetTypes, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
 

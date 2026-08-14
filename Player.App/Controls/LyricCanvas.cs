@@ -39,6 +39,12 @@ public sealed class LyricCanvas : FrameworkElement
 
     private static readonly FontFamily UiFont = new("Microsoft YaHei UI, Segoe UI");
 
+    /// <summary>L1.1-② 字体/字重（跟随设置，右栏/大歌词页共用；桌面歌词字号独立）。缓存键变化时重建。</summary>
+    private FontFamily _fontFamily = UiFont;
+    private Typeface _primaryTypeface = new(UiFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
+    private Typeface _currentTypeface = new(UiFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
+    private string _layoutFontKey = string.Empty;
+
     /// <summary>单元渲染缓存（按行号）：折行后的主/副文本 + 单元高度。宽度或数据变化时整体失效。</summary>
     private sealed class UnitRenderData
     {
@@ -254,12 +260,6 @@ public sealed class LyricCanvas : FrameworkElement
 
     // ---------------- 布局与绘制 ----------------
 
-    private static readonly Typeface PrimaryTypeface =
-        new(UiFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
-
-    private static readonly Typeface CurrentTypeface =
-        new(UiFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
-
     protected override void OnRender(DrawingContext dc)
     {
         var lines = Lines;
@@ -275,7 +275,21 @@ public sealed class LyricCanvas : FrameworkElement
         var innerGap = LyricLayout.InnerGap * scale;
         var maxWidth = Math.Max(0, ActualWidth - 16);
 
-        // 数据、宽度或字号缩放变化 → 整表重排（R5 ⑥：栏宽变化即时重排）
+        // L1.1-②：字体/字重跟随设置，变化时重建字型并整表重排
+        var fontKey = LyricFontKey();
+        if (_layoutFontKey != fontKey)
+        {
+            _layoutFontKey = fontKey;
+            _fontFamily = ResolveFontFamily();
+            var weightKey = Player.Core.Infra.ConfigService.Current.Ui.LyricFontWeight;
+            _primaryTypeface = new Typeface(_fontFamily, FontStyles.Normal,
+                LyricUiOptions.ParseWeight(weightKey), FontStretches.Normal);
+            _currentTypeface = new Typeface(_fontFamily, FontStyles.Normal,
+                LyricUiOptions.CurrentLineWeight(weightKey), FontStretches.Normal);
+            _cacheDirty = true;
+        }
+
+        // 数据、宽度、字号缩放或字体变化 → 整表重排（R5 ⑥：栏宽变化即时重排）
         if (_cacheDirty || Math.Abs(_layoutWidth - ActualWidth) > 0.5 || Math.Abs(_layoutScale - scale) > 0.001)
         {
             _unitCache.Clear();
@@ -287,13 +301,13 @@ public sealed class LyricCanvas : FrameworkElement
             for (var i = 0; i < lines.Count; i++)
             {
                 var line = lines[i];
-                var primary = LyricLayout.WrapText(line.Primary, maxWidth, s => Measure(s, PrimaryTypeface, primaryFont, pixelsPerDip));
+                var primary = LyricLayout.WrapText(line.Primary, maxWidth, s => Measure(s, _primaryTypeface, primaryFont, pixelsPerDip));
                 var secondary = string.IsNullOrWhiteSpace(line.Secondary)
                     ? Array.Empty<string>()
-                    : LyricLayout.WrapText(line.Secondary, maxWidth, s => Measure(s, PrimaryTypeface, secondaryFont, pixelsPerDip));
+                    : LyricLayout.WrapText(line.Secondary, maxWidth, s => Measure(s, _primaryTypeface, secondaryFont, pixelsPerDip));
 
-                var primaryFt = primary.Select(t => Build(t, PrimaryTypeface, primaryFont, pixelsPerDip)).ToArray();
-                var secondaryFt = secondary.Select(t => Build(t, PrimaryTypeface, secondaryFont, pixelsPerDip)).ToArray();
+                var primaryFt = primary.Select(t => Build(t, _primaryTypeface, primaryFont, pixelsPerDip)).ToArray();
+                var secondaryFt = secondary.Select(t => Build(t, _primaryTypeface, secondaryFont, pixelsPerDip)).ToArray();
 
                 var height = primaryFt.Length * primaryLine
                              + (secondaryFt.Length > 0
@@ -357,10 +371,21 @@ public sealed class LyricCanvas : FrameworkElement
         if (_currentCache.TryGetValue(index, out var cached)) return cached;
 
         var scale = FontScale;
-        var wrapped = LyricLayout.WrapText(text, maxWidth, s => Measure(s, CurrentTypeface, LyricLayout.PrimaryFontSize * scale, pixelsPerDip));
-        var fts = wrapped.Select(t => Build(t, CurrentTypeface, LyricLayout.PrimaryFontSize * scale, pixelsPerDip)).ToArray();
+        var wrapped = LyricLayout.WrapText(text, maxWidth, s => Measure(s, _currentTypeface, LyricLayout.PrimaryFontSize * scale, pixelsPerDip));
+        var fts = wrapped.Select(t => Build(t, _currentTypeface, LyricLayout.PrimaryFontSize * scale, pixelsPerDip)).ToArray();
         _currentCache[index] = fts;
         return fts;
+    }
+
+    /// <summary>设置里的字体键（族名|字重），变化即重建字型与布局。</summary>
+    private static string LyricFontKey() =>
+        (Player.Core.Infra.ConfigService.Current.Ui.LyricFontFamily ?? string.Empty) + "|"
+        + (Player.Core.Infra.ConfigService.Current.Ui.LyricFontWeight ?? string.Empty);
+
+    private static FontFamily ResolveFontFamily()
+    {
+        var name = Player.Core.Infra.ConfigService.Current.Ui.LyricFontFamily;
+        return string.IsNullOrWhiteSpace(name) ? UiFont : new FontFamily(name);
     }
 
     private static double Measure(string text, Typeface typeface, double fontSize, double pixelsPerDip) =>

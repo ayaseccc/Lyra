@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
 using System.Windows.Media;
+using Player.App.Controls;
 using Player.App.ViewModels;
 using Player.Core.Audio;
 using Player.Core.Infra;
@@ -58,12 +59,17 @@ public partial class MainWindow : FluentWindow
                 // 恢复桌面歌词（L1 第三步：开关持久化）
                 if (ConfigService.Current.Ui.DesktopLyricsEnabled && _desktopLyrics is null)
                 {
-                    _desktopLyrics = new DesktopLyricsWindow();
+                    _desktopLyrics = CreateDesktopLyricsWindow();
                     _desktopLyrics.Show();
                     _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, UpdateDesktopLyrics);
                 }
             }
         };
+
+        // 大歌词页：鼠标活动淡入控制条，3 秒无操作淡出（L1.1-④）
+        BigLyricsOverlay.MouseMove += OnBigLyricsMouseMove;
+        _bigLyricsIdle.Tick += (_, _) =>
+            BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200)));
 
         // 音量方块：点击/拖动设置音量（UI-R1.5 反馈）
         VolumeSquares.AddHandler(PreviewMouseLeftButtonDownEvent,
@@ -276,13 +282,29 @@ public partial class MainWindow : FluentWindow
 
     private DesktopLyricsWindow? _desktopLyrics;
 
+    /// <summary>新建桌面歌词窗（统一接上"打开字体设置"请求）。</summary>
+    private DesktopLyricsWindow CreateDesktopLyricsWindow()
+    {
+        var window = new DesktopLyricsWindow();
+        window.OpenFontSettingsRequested += OpenLyricSettingsFromDesktopLyrics;
+        return window;
+    }
+
+    /// <summary>桌面歌词右键菜单"字体设置…"：跳设置页歌词组。</summary>
+    private void OpenLyricSettingsFromDesktopLyrics()
+    {
+        if (Shell is not { } shell) return;
+        if (shell.OpenSettingsCommand.CanExecute(null)) shell.OpenSettingsCommand.Execute(null);
+        if (shell.CurrentPage is SettingsPageViewModel settings) settings.IsLyricTab = true;
+    }
+
     private void OnDesktopLyricsButtonClick(object sender, RoutedEventArgs e) => ToggleDesktopLyrics();
 
     private void ToggleDesktopLyrics()
     {
         if (_desktopLyrics is null)
         {
-            _desktopLyrics = new DesktopLyricsWindow();
+            _desktopLyrics = CreateDesktopLyricsWindow();
             _desktopLyrics.Show();
         }
         else if (_desktopLyrics.IsVisible)
@@ -316,7 +338,7 @@ public partial class MainWindow : FluentWindow
         }
     }
 
-    /// <summary>设置页「歌词」组：字号 / 单双行改动即时作用到已打开的桌面歌词窗。</summary>
+    /// <summary>设置页「歌词」组：字体/字重/字号/单双行/个性化改动即时作用（桌面歌词窗 + 两个 LyricCanvas）。</summary>
     private void HookSettingsLyricsUpdates()
     {
         if (Shell is null) return;
@@ -326,9 +348,25 @@ public partial class MainWindow : FluentWindow
             if (Shell.CurrentPage is not SettingsPageViewModel settings) return;
             settings.PropertyChanged += (_, se) =>
             {
-                if (se.PropertyName is nameof(SettingsPageViewModel.SelectedLyricFontSize)
-                    or nameof(SettingsPageViewModel.DesktopLyricsTwoLines))
-                    _desktopLyrics?.ApplySettings();
+                switch (se.PropertyName)
+                {
+                    // 字体/字重：三处全刷（右栏/大歌词页画布重排 + 桌面歌词重设）
+                    case nameof(SettingsPageViewModel.SelectedLyricFontFamily):
+                    case nameof(SettingsPageViewModel.SelectedLyricFontWeight):
+                        SideLyricCanvas?.InvalidateVisual();
+                        BigLyricCanvas?.InvalidateVisual();
+                        _desktopLyrics?.ApplySettings();
+                        break;
+
+                    // 桌面歌词个性化（背景/透明度/文字颜色/字号/单双行）
+                    case nameof(SettingsPageViewModel.SelectedLyricFontSize):
+                    case nameof(SettingsPageViewModel.DesktopLyricsTwoLines):
+                    case nameof(SettingsPageViewModel.DesktopLyricsShowBackground):
+                    case nameof(SettingsPageViewModel.SelectedDesktopLyricsBgOpacity):
+                    case nameof(SettingsPageViewModel.SelectedDesktopLyricsTextColor):
+                        _desktopLyrics?.ApplySettings();
+                        break;
+                }
             };
         };
     }
@@ -349,13 +387,45 @@ public partial class MainWindow : FluentWindow
         };
     }
 
-    // ================= 大歌词页（L1 第二步） =================
+    // ================= 大歌词页（L1 第二步 + L1.1-④ 收尾） =================
 
     private bool _bigLyricsVisible;
 
+    private readonly System.Windows.Threading.DispatcherTimer _bigLyricsIdle = new()
+    {
+        Interval = TimeSpan.FromSeconds(3)
+    };
+
     private void OnBigLyricsButtonClick(object sender, RoutedEventArgs e) => ToggleBigLyrics();
 
+    private void OnBigLyricsCloseClick(object sender, RoutedEventArgs e) => ToggleBigLyrics();
+
     private void OnBigLyricClicked(int index) => Player?.Lyrics.SeekToLine(index);
+
+    /// <summary>点击空白（非歌词画布/滑条/按钮）退出（L1.1-④：顺带恢复"再点按钮①退出"——按钮①位于覆盖层下方，
+    /// 其落点即空白，走同一路径）。</summary>
+    private void OnBigLyricsOverlayMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        var source = e.OriginalSource as DependencyObject;
+        while (source is not null)
+        {
+            if (source is System.Windows.Controls.Button or Slider or LyricCanvas) return;
+            source = source is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(source)
+                : LogicalTreeHelper.GetParent(source);
+        }
+        ToggleBigLyrics();
+    }
+
+    /// <summary>鼠标活动：淡入完整控制条并重启 3 秒无操作计时。</summary>
+    private void OnBigLyricsMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_bigLyricsVisible) return;
+        if (BigLyricsControlBar.Opacity < 0.99)
+            BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
+        _bigLyricsIdle.Stop();
+        _bigLyricsIdle.Start();
+    }
 
     private void ToggleBigLyrics()
     {
@@ -365,9 +435,15 @@ public partial class MainWindow : FluentWindow
             BigLyricsOverlay.Visibility = Visibility.Visible;
             BigLyricsOverlay.BeginAnimation(OpacityProperty,
                 new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
+            // 进场先显示完整控制，3 秒无操作后自动收敛为细进度线
+            BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
+            _bigLyricsIdle.Stop();
+            _bigLyricsIdle.Start();
         }
         else
         {
+            _bigLyricsIdle.Stop();
+            BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(150)));
             var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200));
             fade.Completed += (_, _) => BigLyricsOverlay.Visibility = Visibility.Collapsed;
             BigLyricsOverlay.BeginAnimation(OpacityProperty, fade);
