@@ -221,6 +221,7 @@ public static class ThemeService
         var resources = Application.Current.Resources;
         Set(resources, "SurfaceBrush", p.Surface);
         Set(resources, "SurfaceStrongBrush", p.SurfaceStrong);
+        resources["SurfaceStrongColor"] = Color.FromArgb(p.SurfaceStrong.A, p.SurfaceStrong.R, p.SurfaceStrong.G, p.SurfaceStrong.B);
         Set(resources, "TextPrimaryBrush", p.TextPrimary);
         Set(resources, "TextSecondaryBrush", p.TextSecondary);
         Set(resources, "TextTertiaryBrush", p.TextTertiary);

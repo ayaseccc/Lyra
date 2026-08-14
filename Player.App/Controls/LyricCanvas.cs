@@ -55,6 +55,9 @@ public sealed class LyricCanvas : FrameworkElement
     /// <summary>布局缓存对应的画布宽度（变化即重排）。</summary>
     private double _layoutWidth = double.NaN;
 
+    /// <summary>布局缓存对应的字号缩放。</summary>
+    private double _layoutScale = 1.0;
+
     /// <summary>缓存失效标志：Lines 或宽度变化时置 true，下一帧重建。</summary>
     private bool _cacheDirty = true;
 
@@ -69,6 +72,17 @@ public sealed class LyricCanvas : FrameworkElement
 
     /// <summary>点击某行（参数为行号）。</summary>
     public event Action<int>? LineClicked;
+
+    /// <summary>字号缩放（大歌词页用，默认 1.0；同时缩放行高/间距/折行宽度判断）。</summary>
+    public double FontScale
+    {
+        get => (double)GetValue(FontScaleProperty);
+        set => SetValue(FontScaleProperty, value);
+    }
+
+    public static readonly DependencyProperty FontScaleProperty = DependencyProperty.Register(
+        nameof(FontScale), typeof(double), typeof(LyricCanvas),
+        new PropertyMetadata(1.0, OnVisualPropertyChanged));
 
     public LyricCanvas()
     {
@@ -253,30 +267,37 @@ public sealed class LyricCanvas : FrameworkElement
 
         var dpi = VisualTreeHelper.GetDpi(this);
         var pixelsPerDip = dpi.PixelsPerDip;
+        var scale = FontScale;
+        var primaryFont = LyricLayout.PrimaryFontSize * scale;
+        var secondaryFont = LyricLayout.SecondaryFontSize * scale;
+        var primaryLine = LyricLayout.PrimaryLineHeight * scale;
+        var secondaryLine = LyricLayout.SecondaryLineHeight * scale;
+        var innerGap = LyricLayout.InnerGap * scale;
         var maxWidth = Math.Max(0, ActualWidth - 16);
 
-        // 数据或宽度变化 → 整表重排（R5 ⑥：栏宽变化即时重排）
-        if (_cacheDirty || Math.Abs(_layoutWidth - ActualWidth) > 0.5)
+        // 数据、宽度或字号缩放变化 → 整表重排（R5 ⑥：栏宽变化即时重排）
+        if (_cacheDirty || Math.Abs(_layoutWidth - ActualWidth) > 0.5 || Math.Abs(_layoutScale - scale) > 0.001)
         {
             _unitCache.Clear();
             _currentCache.Clear();
             _layoutWidth = ActualWidth;
+            _layoutScale = scale;
             _cacheDirty = false;
 
             for (var i = 0; i < lines.Count; i++)
             {
                 var line = lines[i];
-                var primary = LyricLayout.WrapText(line.Primary, maxWidth, s => Measure(s, PrimaryTypeface, LyricLayout.PrimaryFontSize, pixelsPerDip));
+                var primary = LyricLayout.WrapText(line.Primary, maxWidth, s => Measure(s, PrimaryTypeface, primaryFont, pixelsPerDip));
                 var secondary = string.IsNullOrWhiteSpace(line.Secondary)
                     ? Array.Empty<string>()
-                    : LyricLayout.WrapText(line.Secondary, maxWidth, s => Measure(s, PrimaryTypeface, LyricLayout.SecondaryFontSize, pixelsPerDip));
+                    : LyricLayout.WrapText(line.Secondary, maxWidth, s => Measure(s, PrimaryTypeface, secondaryFont, pixelsPerDip));
 
-                var primaryFt = primary.Select(t => Build(t, PrimaryTypeface, LyricLayout.PrimaryFontSize, pixelsPerDip)).ToArray();
-                var secondaryFt = secondary.Select(t => Build(t, PrimaryTypeface, LyricLayout.SecondaryFontSize, pixelsPerDip)).ToArray();
+                var primaryFt = primary.Select(t => Build(t, PrimaryTypeface, primaryFont, pixelsPerDip)).ToArray();
+                var secondaryFt = secondary.Select(t => Build(t, PrimaryTypeface, secondaryFont, pixelsPerDip)).ToArray();
 
-                var height = primaryFt.Length * LyricLayout.PrimaryLineHeight
+                var height = primaryFt.Length * primaryLine
                              + (secondaryFt.Length > 0
-                                 ? secondaryFt.Length * LyricLayout.SecondaryLineHeight + LyricLayout.InnerGap
+                                 ? secondaryFt.Length * secondaryLine + innerGap
                                  : 0);
                 _unitCache[i] = new UnitRenderData { Primary = primaryFt, Secondary = secondaryFt, Height = height };
             }
@@ -312,19 +333,19 @@ public sealed class LyricCanvas : FrameworkElement
                 var x = Math.Max(0, (ActualWidth - ft.Width) / 2);
                 ft.SetForegroundBrush(isCurrent ? _currentBrush : _normalBrush);
                 dc.DrawText(ft, new Point(x, y));
-                y += LyricLayout.PrimaryLineHeight;
+                y += LyricLayout.PrimaryLineHeight * scale;
             }
 
             // ---- 翻译 / 罗马音（当前单元整对高亮） ----
             if (data.Secondary.Length > 0)
             {
-                y += LyricLayout.InnerGap;
+                y += LyricLayout.InnerGap * scale;
                 foreach (var ft in data.Secondary)
                 {
                     var x = Math.Max(0, (ActualWidth - ft.Width) / 2);
                     ft.SetForegroundBrush(isCurrent ? _currentSubBrush : _normalSubBrush);
                     dc.DrawText(ft, new Point(x, y));
-                    y += LyricLayout.SecondaryLineHeight;
+                    y += LyricLayout.SecondaryLineHeight * scale;
                 }
             }
         }
@@ -335,8 +356,9 @@ public sealed class LyricCanvas : FrameworkElement
     {
         if (_currentCache.TryGetValue(index, out var cached)) return cached;
 
-        var wrapped = LyricLayout.WrapText(text, maxWidth, s => Measure(s, CurrentTypeface, LyricLayout.PrimaryFontSize, pixelsPerDip));
-        var fts = wrapped.Select(t => Build(t, CurrentTypeface, LyricLayout.PrimaryFontSize, pixelsPerDip)).ToArray();
+        var scale = FontScale;
+        var wrapped = LyricLayout.WrapText(text, maxWidth, s => Measure(s, CurrentTypeface, LyricLayout.PrimaryFontSize * scale, pixelsPerDip));
+        var fts = wrapped.Select(t => Build(t, CurrentTypeface, LyricLayout.PrimaryFontSize * scale, pixelsPerDip)).ToArray();
         _currentCache[index] = fts;
         return fts;
     }

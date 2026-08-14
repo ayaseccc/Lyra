@@ -934,8 +934,10 @@
                                 Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}">
                             <ui:SymbolIcon Symbol="Settings24" FontSize="16" />
                         </Button>
-                        <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Opacity="0.22"
-                                Background="{DynamicResource HoverBrush}" ToolTip="预留功能位" />
+                        <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnBigLyricsButtonClick"
+                                ToolTip="大歌词页">
+                            <ui:SymbolIcon Symbol="ReadingList24" FontSize="16" />
+                        </Button>
                         <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Opacity="0.22"
                                 Background="{DynamicResource HoverBrush}" ToolTip="预留功能位" />
                         <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Opacity="0.22"
@@ -1072,7 +1074,86 @@
 
 
 
+            <!-- ============ 大歌词页（L1 第二步：入口=预留按钮①，再点/Esc 返回，200ms 淡入淡出） ============ -->
+            <Grid x:Name="BigLyricsOverlay" Grid.RowSpan="3" Visibility="Collapsed" Opacity="0"
+                  Background="{DynamicResource SurfaceStrongBrush}" ClipToBounds="True">
+                <!-- 背景：放大模糊封面 + 遮罩保证可读 -->
+                <Image x:Name="BigLyricsBgImage" Source="{Binding Player.CoverImage}"
+                       Stretch="UniformToFill" RenderTransformOrigin="0.5,0.5">
+                    <Image.RenderTransform>
+                        <ScaleTransform ScaleX="1.15" ScaleY="1.15" />
+                    </Image.RenderTransform>
+                    <Image.Effect>
+                        <BlurEffect Radius="36" />
+                    </Image.Effect>
+                </Image>
+                <Border Background="{DynamicResource SurfaceStrongBrush}" Opacity="0.5" />
+                <Border VerticalAlignment="Bottom" Height="220">
+                    <Border.Background>
+                        <LinearGradientBrush StartPoint="0,0" EndPoint="0,1">
+                            <GradientStop Offset="0" Color="Transparent" />
+                            <GradientStop Offset="1" Color="{DynamicResource SurfaceStrongColor}" />
+                        </LinearGradientBrush>
+                    </Border.Background>
+                </Border>
 
+                <!-- 中央大字号歌词（复用 R5 引擎，1.8 倍） -->
+                <Grid Margin="60,0,60,84">
+                    <ctrl:LyricCanvas x:Name="BigLyricCanvas" FontScale="1.8"
+                                      Lines="{Binding Player.Lyrics.RenderLines}"
+                                      CurrentIndex="{Binding Player.Lyrics.CurrentIndex}"
+                                      IsStatic="{Binding Player.Lyrics.IsStatic}"
+                                      AccentBrush="{DynamicResource AccentBrush}"
+                                      TextBrush="{DynamicResource TextPrimaryBrush}"
+                                      SubTextBrush="{DynamicResource TextSecondaryBrush}"
+                                      LineClicked="OnBigLyricClicked" />
+                </Grid>
 
+                <!-- 底部：细进度条 + 基本控制 -->
+                <Border VerticalAlignment="Bottom" Background="{DynamicResource SurfaceStrongBrush}"
+                        BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="0,1,0,0">
+                    <Grid Margin="24,10" DataContext="{Binding Player}">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="Auto" />
+                                <ColumnDefinition Width="*" />
+                                <ColumnDefinition Width="Auto" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Text="{Binding PositionText}" Style="{StaticResource SubTextStyle}" Width="46"
+                                       VerticalAlignment="Center" />
+                            <Slider Grid.Column="1" Margin="2,0" VerticalAlignment="Center"
+                                    Style="{StaticResource SeekSliderStyle}"
+                                    Maximum="{Binding DurationSeconds}"
+                                    Value="{Binding PositionSeconds, Mode=TwoWay}"
+                                    IsEnabled="{Binding HasTrack}" LargeChange="5" SmallChange="1" />
+                            <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource SubTextStyle}"
+                                       Width="46" TextAlignment="Right" VerticalAlignment="Center" />
+                        </Grid>
+                        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,8,0,0">
+                            <Button Style="{StaticResource TransportButtonStyle}" ToolTip="上一首"
+                                    Command="{Binding PreviousCommand}">
+                                <ui:SymbolIcon Symbol="Previous24" FontSize="18" />
+                            </Button>
+                            <Button Style="{StaticResource PrimaryPlayButtonStyle}" Margin="10,0"
+                                    Command="{Binding PlayPauseCommand}" ToolTip="播放 / 暂停">
+                                <Grid>
+                                    <ui:SymbolIcon Symbol="Play24" FontSize="20"
+                                                   Visibility="{Binding IsPlaying, Converter={StaticResource InverseBoolToVisibility}}" />
+                                    <ui:SymbolIcon Symbol="Pause24" FontSize="20"
+                                                   Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVis}}" />
+                                </Grid>
+                            </Button>
+                            <Button Style="{StaticResource TransportButtonStyle}" ToolTip="下一首"
+                                    Command="{Binding NextCommand}">
+                                <ui:SymbolIcon Symbol="Next24" FontSize="18" />
+                            </Button>
+                        </StackPanel>
+                    </Grid>
+                </Border>
+            </Grid>
             </Grid>
 </ui:FluentWindow>

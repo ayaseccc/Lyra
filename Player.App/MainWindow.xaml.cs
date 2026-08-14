@@ -1,5 +1,6 @@
 using System.IO;
 using System.Windows;
+using System.Windows.Media.Animation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -254,14 +255,45 @@ public partial class MainWindow : FluentWindow
         Shell?.PlayFolderPlaylist(nav);
     }
 
-    /// <summary>Esc：退出设置页（UI-R2 bug 修复）。</summary>
+    /// <summary>Esc：先退大歌词页，再退设置页（UI-R2 bug 修复）。</summary>
     private void Window_OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key != Key.Escape) return;
+        if (_bigLyricsVisible)
+        {
+            ToggleBigLyrics();
+            e.Handled = true;
+            return;
+        }
         if (Shell?.CurrentPage is SettingsPageViewModel)
         {
             Shell.LeaveSettings();
             e.Handled = true;
+        }
+    }
+
+    // ================= 大歌词页（L1 第二步） =================
+
+    private bool _bigLyricsVisible;
+
+    private void OnBigLyricsButtonClick(object sender, RoutedEventArgs e) => ToggleBigLyrics();
+
+    private void OnBigLyricClicked(int index) => Player?.Lyrics.SeekToLine(index);
+
+    private void ToggleBigLyrics()
+    {
+        _bigLyricsVisible = !_bigLyricsVisible;
+        if (_bigLyricsVisible)
+        {
+            BigLyricsOverlay.Visibility = Visibility.Visible;
+            BigLyricsOverlay.BeginAnimation(OpacityProperty,
+                new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
+        }
+        else
+        {
+            var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200));
+            fade.Completed += (_, _) => BigLyricsOverlay.Visibility = Visibility.Collapsed;
+            BigLyricsOverlay.BeginAnimation(OpacityProperty, fade);
         }
     }
 
