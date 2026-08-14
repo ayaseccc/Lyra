@@ -134,8 +134,10 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
         SelectFirstPage();
 
-        // 恢复上次播放的曲目：只显示信息与歌词，不自动播放（UI-R1.5 反馈）
-        var lastTrackPath = ConfigService.Current.Ui.LastTrackPath;
+        // 恢复上次播放的曲目：只显示信息与歌词，不自动播放（UI-R1.5 反馈；L2 行为页可关）
+        var lastTrackPath = ConfigService.Current.Ui.RestoreLastTrack
+            ? ConfigService.Current.Ui.LastTrackPath
+            : string.Empty;
         if (!string.IsNullOrEmpty(lastTrackPath))
         {
             var lastTrack = _library.Tracks.FirstOrDefault(t =>
@@ -157,8 +159,10 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     private void SelectFirstPage()
     {
-        // 优先恢复上次停留的页面（歌单/文件夹/全部歌曲），找不到再回退全部歌曲（UI-R1.5 反馈）
-        var saved = ConfigService.Current.Ui.LastNav;
+        // 优先恢复上次停留的页面（歌单/文件夹/全部歌曲），找不到再回退全部歌曲（UI-R1.5 反馈；L2 行为页可关）
+        var saved = ConfigService.Current.Ui.RestoreLastNav
+            ? ConfigService.Current.Ui.LastNav
+            : string.Empty;
         var target = string.IsNullOrEmpty(saved)
             ? null
             : NavItems.FirstOrDefault(n => NavKey(n) == saved);

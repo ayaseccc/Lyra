@@ -162,6 +162,12 @@ public sealed class UiConfig
 
     /// <summary>L2 全局热键：默认全关；开启后 Ctrl+Alt+P 播放/暂停、Ctrl+Alt+←/→ 上下曲。</summary>
     public bool GlobalHotkeysEnabled { get; set; }
+
+    /// <summary>L2 行为页-启动恢复策略：启动时恢复上次播放的曲目信息（不自动播放）。</summary>
+    public bool RestoreLastTrack { get; set; } = true;
+
+    /// <summary>L2 行为页-启动恢复策略：启动时回到上次停留的页面。</summary>
+    public bool RestoreLastNav { get; set; } = true;
 }
 
 /// <summary>

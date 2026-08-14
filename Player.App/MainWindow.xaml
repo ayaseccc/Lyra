@@ -443,6 +443,8 @@
                                  Margin="6,0,0,0" IsChecked="{Binding IsShortcutTab}" />
                     <RadioButton GroupName="SettingsTab" Content="行为" Style="{StaticResource TabRadioStyle}"
                                  Margin="6,0,0,0" IsChecked="{Binding IsBehaviorTab}" />
+                    <RadioButton GroupName="SettingsTab" Content="关于" Style="{StaticResource TabRadioStyle}"
+                                 Margin="6,0,0,0" IsChecked="{Binding IsAboutTab}" />
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
@@ -626,9 +628,19 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="API Key" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <ui:TextBox Grid.Column="1" PlaceholderText="在 api.chksz.com 后台生成的 Key"
-                                                Text="{Binding ApiKey, UpdateSourceTrigger=PropertyChanged}" />
+                                                Text="{Binding ApiKeyDisplay, UpdateSourceTrigger=PropertyChanged}"
+                                                IsReadOnly="{Binding IsKeyReadOnly}" />
                                     <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
-                                        <ui:Button Content="保存" Appearance="Primary"
+                                        <Button Style="{StaticResource ModeButtonStyle}" ToolTip="显示 / 隐藏完整 Key"
+                                                Click="OnToggleKeyReveal">
+                                            <Grid>
+                                                <ui:SymbolIcon Symbol="Eye24" FontSize="16" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               Visibility="{Binding IsKeyRevealed, Converter={StaticResource InverseBoolToVisibility}}" />
+                                                <ui:SymbolIcon Symbol="EyeOff24" FontSize="16" Foreground="{DynamicResource TextSecondaryBrush}"
+                                                               Visibility="{Binding IsKeyRevealed, Converter={StaticResource BoolToVis}}" />
+                                            </Grid>
+                                        </Button>
+                                        <ui:Button Content="保存" Appearance="Primary" Margin="8,0,0,0"
                                                    Command="{Binding SaveApiKeyCommand}" />
                                         <ui:Button Content="测试连接" Margin="8,0,0,0"
                                                    Command="{Binding TestApiKeyCommand}" />
@@ -786,6 +798,61 @@
                                 </Grid>
                                 <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,10,0,0" TextWrapping="Wrap"
                                            Text="开启后点窗口 × 不退出程序，而是隐藏到系统托盘（播放控制、桌面歌词开关、显示主窗、退出都在托盘菜单里，双击托盘图标还原窗口）；退出请走托盘菜单「退出」。默认关闭 = 关窗即退出。" />
+                                <Grid Margin="0,16,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="启动恢复" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <StackPanel Grid.Column="1">
+                                        <ui:ToggleSwitch IsChecked="{Binding RestoreLastTrack}" Content="恢复上次播放的曲目（只恢复信息与歌词，不自动播放）" />
+                                        <ui:ToggleSwitch IsChecked="{Binding RestoreLastNav}" Content="回到上次停留的页面" Margin="0,8,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ===== 关于页（L2 设置页补全） ===== -->
+                        <Border Visibility="{Binding IsAboutTab, Converter={StaticResource BoolToVis}}"
+                                CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="版本" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <TextBlock Grid.Column="1" Text="{Binding AppVersion}" VerticalAlignment="Center"
+                                               Style="{StaticResource TitleTextStyle}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="BASS 授权" VerticalAlignment="Top" Style="{StaticResource TitleTextStyle}" />
+                                    <TextBlock Grid.Column="1" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
+                                               Text="音频引擎 BASS（un4seen）对个人 / 非商业使用免费；若未来上架收费需向 un4seen 购买授权。" />
+                                </Grid>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="开源组件" VerticalAlignment="Top" Style="{StaticResource TitleTextStyle}" />
+                                    <TextBlock Grid.Column="1" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
+                                               Text="WPF-UI（MIT）、CommunityToolkit.Mvvm（MIT）、Serilog（Apache-2.0）、TagLibSharp（LGPL-2.1）、ManagedBass（MIT）、Microsoft.Data.Sqlite（MIT）。" />
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="在线接口" VerticalAlignment="Top" Style="{StaticResource TitleTextStyle}" />
+                                    <TextBlock Grid.Column="1" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
+                                               Text="歌词 / 搜索 / 歌单同步使用 ChKSz（api.chksz.com）接口，GD Studio 音源计划在 P4 接入；额度与限流以服务端响应头为准。" />
+                                </Grid>
                             </StackPanel>
                         </Border>
 

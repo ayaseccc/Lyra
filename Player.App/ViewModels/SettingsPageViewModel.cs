@@ -137,6 +137,10 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         // L2 行为组：关闭到托盘（默认关闭）
         _closeToTray = ConfigService.Current.Ui.CloseToTray;
 
+        // L2 行为组：启动恢复策略（默认都恢复）
+        _restoreLastTrack = ConfigService.Current.Ui.RestoreLastTrack;
+        _restoreLastNav = ConfigService.Current.Ui.RestoreLastNav;
+
         // L2 全局热键（默认全关）
         _globalHotkeysEnabled = ConfigService.Current.Ui.GlobalHotkeysEnabled;
 
@@ -146,6 +150,25 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     public string Title => "设置";
 
     public string Subtitle => "输出与媒体库";
+
+    // ================= 关于（L2 设置页补全） =================
+
+    /// <summary>应用版本（assembly 信息版本，去掉 +hash 尾巴）。</summary>
+    public string AppVersion { get; } = GetAppVersion();
+
+    private static string GetAppVersion()
+    {
+        var asm = System.Reflection.Assembly.GetExecutingAssembly();
+        var attrs = asm.GetCustomAttributes(typeof(System.Reflection.AssemblyInformationalVersionAttribute), false);
+        var info = attrs.Length > 0
+            ? ((System.Reflection.AssemblyInformationalVersionAttribute)attrs[0]).InformationalVersion
+            : null;
+        var version = string.IsNullOrWhiteSpace(info) ? null : info;
+        if (version is not null && version.IndexOf('+') is var plus && plus > 0) version = version[..plus];
+        return string.IsNullOrWhiteSpace(version)
+            ? asm.GetName().Version?.ToString(3) ?? "1.0.0"
+            : version;
+    }
 
     // ================= 分页（UI-R3 反馈） =================
 
@@ -170,7 +193,10 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     [ObservableProperty]
     private bool _isBehaviorTab;
 
-    // ================= 行为（L2：关闭行为；启动恢复策略随 L2 设置页补全） =================
+    [ObservableProperty]
+    private bool _isAboutTab;
+
+    // ================= 行为（L2：关闭行为 + 启动恢复策略） =================
 
     /// <summary>关闭主窗时最小化到托盘（默认关闭 = 关窗即退出；开启后退出走托盘菜单）。</summary>
     [ObservableProperty]
@@ -180,6 +206,28 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     {
         if (_loading) return;
         ConfigService.Current.Ui.CloseToTray = value;
+        ConfigService.Save();
+    }
+
+    /// <summary>启动时恢复上次播放的曲目（只恢复信息与歌词，不自动播放）。</summary>
+    [ObservableProperty]
+    private bool _restoreLastTrack;
+
+    partial void OnRestoreLastTrackChanged(bool value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.RestoreLastTrack = value;
+        ConfigService.Save();
+    }
+
+    /// <summary>启动时回到上次停留的页面。</summary>
+    [ObservableProperty]
+    private bool _restoreLastNav;
+
+    partial void OnRestoreLastNavChanged(bool value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.RestoreLastNav = value;
         ConfigService.Save();
     }
 
@@ -592,11 +640,39 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     [ObservableProperty]
     private bool _isTestingKey;
 
+    /// <summary>L2：Key 输入框密文显示。默认只回显尾 4 位；眼睛按钮临时明文（可编辑）。</summary>
+    [ObservableProperty]
+    private bool _isKeyRevealed;
+
+    partial void OnApiKeyChanged(string value) => OnPropertyChanged(nameof(ApiKeyDisplay));
+
+    partial void OnIsKeyRevealedChanged(bool value)
+    {
+        OnPropertyChanged(nameof(ApiKeyDisplay));
+        OnPropertyChanged(nameof(IsKeyReadOnly));
+    }
+
+    /// <summary>输入框内容：隐藏态 = 圆点 + 尾 4 位；显示态 = 完整 Key（可编辑）。</summary>
+    public string ApiKeyDisplay
+    {
+        get => IsKeyRevealed
+            ? ApiKey
+            : string.IsNullOrEmpty(ApiKey)
+                ? string.Empty
+                : "••••" + (ApiKey.Length >= 4 ? ApiKey[^4..] : ApiKey);
+        set
+        {
+            if (IsKeyRevealed && ApiKey != value) ApiKey = value;
+        }
+    }
+
+    /// <summary>隐藏态只读（避免把掩码前缀当 Key 编辑）。</summary>
+    public bool IsKeyReadOnly => !IsKeyRevealed;
+
+    /// <summary>掩码回显只保留尾 4 位（状态行等处共用）。</summary>
     public string KeyMasked => string.IsNullOrEmpty(ApiKey)
         ? string.Empty
-        : ApiKey.Length <= 10
-            ? ApiKey[..Math.Min(4, ApiKey.Length)] + "…"
-            : ApiKey[..6] + "…" + ApiKey[^4..];
+        : "••••" + (ApiKey.Length >= 4 ? ApiKey[^4..] : ApiKey);
 
     /// <summary>额度展示（P3.1-④ 从播放条迁到设置页）：免费/付费余量 + UTC+8 重置时间。</summary>
     public string QuotaDisplay

@@ -154,6 +154,13 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    /// <summary>L2 设置页-在线组：Key 输入框眼睛按钮（密文/明文切换）。</summary>
+    private void OnToggleKeyReveal(object sender, RoutedEventArgs e)
+    {
+        if (Shell?.CurrentPage is ViewModels.SettingsPageViewModel settings)
+            settings.IsKeyRevealed = !settings.IsKeyRevealed;
+    }
+
     /// <summary>L2 托盘：Player 就绪后创建（菜单播放控制需要命令）。</summary>
     private void InitTray()
     {
