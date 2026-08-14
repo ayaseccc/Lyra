@@ -163,18 +163,15 @@
                                             <ColumnDefinition Width="80" />
                                             <ColumnDefinition Width="60" />
                                         </Grid.ColumnDefinitions>
-                                        <!-- 组头（专辑名已移入封面列，UI-R2 反馈四） -->
-                                        <TextBlock Grid.Column="1" Text="{Binding ArtistText}" FontSize="11"
-                                                   Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
-                                                   VerticalAlignment="Center" />
-                                        <Border Grid.Column="2" Grid.ColumnSpan="3" Height="1"
+                                        <!-- 组头（专辑名已移入封面列；艺术家在行内，UI-R2 反馈五） -->
+                                        <Border Grid.Column="1" Grid.ColumnSpan="4" Height="1"
                                                 Background="{StaticResource BorderSoftBrush}" Margin="12,0" VerticalAlignment="Center" />
                                         <TextBlock Grid.Column="5" Text="{Binding YearText}" FontSize="11"
                                                    Foreground="{StaticResource TextTertiaryBrush}" TextAlignment="Right"
                                                    VerticalAlignment="Center" Margin="0,0,8,0" />
                                     </Grid>
 
-                                    <!-- 曲目行（UI-R2）：专辑名+64px 封面在封面列（仅组首行显示专辑名，非首行封面降透明） -->
+                                    <!-- 曲目行（UI-R2 反馈五）：专辑名在上跨封面+标题两列完整显示，封面 64 与标题行对齐，非首行封面降透明 -->
                                     <Grid Visibility="{Binding IsGroupHeader, Converter={StaticResource InverseBoolToVisibility}}">
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToGroupCoverWidth}}" />
@@ -184,47 +181,51 @@
                                             <ColumnDefinition Width="80" />
                                             <ColumnDefinition Width="60" />
                                         </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="*" />
+                                        </Grid.RowDefinitions>
 
-                                        <StackPanel Grid.Column="0" VerticalAlignment="Top" Margin="0,2,0,0"
-                                                    Visibility="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVis}}">
-                                            <TextBlock Text="{Binding Track.DisplayAlbum}" FontSize="11"
-                                                       Foreground="{StaticResource TextSecondaryBrush}"
-                                                       TextTrimming="CharacterEllipsis" MaxWidth="64">
-                                                <TextBlock.Style>
-                                                    <!-- 仅组首行显示，非首行透明占位保持封面列对齐 -->
-                                                    <Style TargetType="TextBlock">
-                                                        <Setter Property="Opacity" Value="0" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding ShowCover}" Value="True">
-                                                                <Setter Property="Opacity" Value="1" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </TextBlock.Style>
-                                            </TextBlock>
-                                            <Border Width="64" Height="64" CornerRadius="2" Margin="0,3,0,0"
-                                                    Background="{StaticResource HoverBrush}">
-                                                <Border.Style>
-                                                    <Style TargetType="Border">
-                                                        <Setter Property="Opacity" Value="0.35" />
-                                                        <Style.Triggers>
-                                                            <DataTrigger Binding="{Binding ShowCover}" Value="True">
-                                                                <Setter Property="Opacity" Value="1" />
-                                                            </DataTrigger>
-                                                        </Style.Triggers>
-                                                    </Style>
-                                                </Border.Style>
-                                                <Grid>
-                                                    <ui:SymbolIcon Symbol="MusicNote224" FontSize="22"
-                                                                   Foreground="{StaticResource TextTertiaryBrush}"
-                                                                   Visibility="{Binding Track.CoverHash, Converter={StaticResource NullToVisible}}" />
-                                                    <Image Source="{Binding Track.CoverHash, Converter={StaticResource CoverToImage}}"
-                                                           Stretch="UniformToFill" />
-                                                </Grid>
-                                            </Border>
-                                        </StackPanel>
+                                        <!-- 专辑名：跨封面列+标题列，不设宽度限制，仅组首行显示（透明占位保持对齐）；平铺模式整行折叠 -->
+                                        <TextBlock Grid.Row="0" Grid.ColumnSpan="2" Text="{Binding Track.DisplayAlbum}"
+                                                   FontSize="13" Foreground="{StaticResource TextSecondaryBrush}"
+                                                   TextTrimming="CharacterEllipsis" Margin="0,2,0,0"
+                                                   Visibility="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVis}}">
+                                            <TextBlock.Style>
+                                                <Style TargetType="TextBlock">
+                                                    <Setter Property="Opacity" Value="0" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ShowCover}" Value="True">
+                                                            <Setter Property="Opacity" Value="1" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
 
-                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                        <Border Grid.Row="1" Grid.Column="0" Width="64" Height="64" CornerRadius="2"
+                                                Margin="0,3,0,0" VerticalAlignment="Top"
+                                                Background="{StaticResource HoverBrush}">
+                                            <Border.Style>
+                                                <Style TargetType="Border">
+                                                    <Setter Property="Opacity" Value="0.35" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding ShowCover}" Value="True">
+                                                            <Setter Property="Opacity" Value="1" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </Border.Style>
+                                            <Grid>
+                                                <ui:SymbolIcon Symbol="MusicNote224" FontSize="22"
+                                                               Foreground="{StaticResource TextTertiaryBrush}"
+                                                               Visibility="{Binding Track.CoverHash, Converter={StaticResource NullToVisible}}" />
+                                                <Image Source="{Binding Track.CoverHash, Converter={StaticResource CoverToImage}}"
+                                                       Stretch="UniformToFill" />
+                                            </Grid>
+                                        </Border>
+
+                                        <StackPanel Grid.Row="1" Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
                                             <ui:SymbolIcon Symbol="Play24" FontSize="11" Foreground="{StaticResource AccentBrush}"
                                                            VerticalAlignment="Center" Margin="0,0,8,0">
                                                 <ui:SymbolIcon.Style>
@@ -253,19 +254,21 @@
                                                            Margin="0,2,0,0" />
                                             </StackPanel>
                                         </StackPanel>
-                                        <TextBlock Grid.Column="2" Text="{Binding Track.DurationText}" FontSize="10.5"
+                                        <TextBlock Grid.Row="1" Grid.Column="2" Text="{Binding Track.DurationText}" FontSize="10.5"
                                                    Foreground="{StaticResource TextSecondaryBrush}" TextAlignment="Right"
                                                    VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="3" Text="{Binding Track.Format}" FontSize="10.5"
+                                        <TextBlock Grid.Row="1" Grid.Column="3" Text="{Binding Track.Format}" FontSize="10.5"
                                                    Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                    VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="4" Text="{Binding Track.SampleRateText}" FontSize="10.5"
+                                        <TextBlock Grid.Row="1" Grid.Column="4" Text="{Binding Track.SampleRateText}" FontSize="10.5"
                                                    Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                    VerticalAlignment="Center" />
-                                        <TextBlock Grid.Column="5" Text="{Binding Track.BitDepthText}" FontSize="10.5"
+                                        <TextBlock Grid.Row="1" Grid.Column="5" Text="{Binding Track.BitDepthText}" FontSize="10.5"
                                                    Foreground="{StaticResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                    VerticalAlignment="Center" />
                                     </Grid>
+
+
                                 </Grid>
                             </DataTemplate>
                         </ListBox.ItemTemplate>
