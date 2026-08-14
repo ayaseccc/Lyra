@@ -73,6 +73,7 @@
                                                                                                                                                                 <GridViewColumn Header="" Width="96">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
+                                            <Grid Height="110">
                                             <StackPanel VerticalAlignment="Top" Margin="0,4,0,0">
                                                 <TextBlock Text="{Binding DisplayAlbum}" FontSize="12.5" LineHeight="18"
                                                            Foreground="{StaticResource TextSecondaryBrush}"
@@ -88,60 +89,73 @@
                                                     </Grid>
                                                 </Border>
                                             </StackPanel>
+                                            </Grid>
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
                                 <GridViewColumn Header="标题" Width="300">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
+                                            <Grid Height="110">
                                             <TextBlock Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="12" VerticalAlignment="Top" Margin="12,25,0,0"
+                                                       FontSize="12" VerticalAlignment="Top" Margin="12,26,0,0"
                                                        Foreground="{StaticResource TextPrimaryBrush}" />
+                                            </Grid>
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
                                 <GridViewColumn Header="歌手" Width="180">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
+                                            <Grid Height="110">
                                             <TextBlock Text="{Binding DisplayArtist}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,42,0,0"
+                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,44,0,0"
                                                        Foreground="{StaticResource TextSecondaryBrush}" />
+                                            </Grid>
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
                                 <GridViewColumn Header="时长" Width="64">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
+                                            <Grid Height="110">
                                             <TextBlock Text="{Binding DurationText}" TextAlignment="Right"
-                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,42,0,0"
+                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,44,0,0"
                                                        Foreground="{StaticResource TextSecondaryBrush}" />
+                                            </Grid>
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
                                 <GridViewColumn Header="格式" Width="60">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
+                                            <Grid Height="110">
                                             <TextBlock Text="{Binding Format}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,42,0,0"
+                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,44,0,0"
                                                        Foreground="{StaticResource TextSecondaryBrush}" />
+                                            </Grid>
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
                                 <GridViewColumn Header="采样率" Width="80">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
+                                            <Grid Height="110">
                                             <TextBlock Text="{Binding SampleRateText}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,42,0,0"
+                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,44,0,0"
                                                        Foreground="{StaticResource TextSecondaryBrush}" />
+                                            </Grid>
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
                                 <GridViewColumn Header="位深" Width="60">
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
+                                            <Grid Height="110">
                                             <TextBlock Text="{Binding BitDepthText}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,42,0,0"
+                                                       FontSize="10.5" VerticalAlignment="Top" Margin="0,44,0,0"
                                                        Foreground="{StaticResource TextSecondaryBrush}" />
+                                            </Grid>
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
                                 </GridViewColumn>
@@ -730,7 +744,7 @@
                 </Grid.RowDefinitions>
 
                 <!-- 第一行：完整进度条（时间文字 + 滑条），总长与下方按钮行两端对齐 -->
-                <Grid Grid.Row="0">
+                <Grid Grid.Row="0" Margin="0,0,8,0">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="Auto" />
                         <ColumnDefinition Width="*" />
