@@ -158,15 +158,16 @@
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="*" />
                                         <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="Auto" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding AlbumText}" FontSize="13" FontWeight="SemiBold"
                                                Foreground="{StaticResource TextSecondaryBrush}"
                                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="6,0,0,0" />
-                                    <TextBlock Grid.Column="1" Text="{Binding YearText}" FontSize="11"
+                                    <Border Grid.Column="1" Width="96" Height="1" VerticalAlignment="Center"
+                                            Background="{StaticResource BorderSoftBrush}" Margin="0,0,10,0" />
+                                    <TextBlock Grid.Column="2" Text="{Binding YearText}" FontSize="11"
                                                Foreground="{StaticResource TextTertiaryBrush}"
                                                VerticalAlignment="Center" Margin="0,0,8,0" />
-                                    <Border Grid.ColumnSpan="2" Height="1" VerticalAlignment="Bottom"
-                                            Background="{StaticResource BorderSoftBrush}" Margin="6,0,6,0" />
                                 </Grid>
                         
                                 <!-- 曲目行：封面 72 + 标题/艺术家 + 信息列；组内非首行封面降透明 -->
@@ -189,6 +190,9 @@
                                                 <Style.Triggers>
                                                     <DataTrigger Binding="{Binding ShowCover}" Value="True">
                                                         <Setter Property="Opacity" Value="1" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}}" Value="False">
+                                                        <Setter Property="Visibility" Value="Collapsed" />
                                                     </DataTrigger>
                                                 </Style.Triggers>
                                             </Style>
@@ -495,12 +499,16 @@
                             </Grid>
 
                             <Border Background="{StaticResource HoverBrush}" CornerRadius="6" Padding="10,8" Margin="0,4,0,0">
-                                <StackPanel Orientation="Horizontal">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
                                     <ui:SymbolIcon Symbol="Speaker224" FontSize="14" VerticalAlignment="Center"
                                                    Foreground="{StaticResource AccentBrush}" />
-                                    <TextBlock Text="{Binding OutputStatus}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="1" Text="{Binding OutputStatus}" Margin="8,0,0,0" VerticalAlignment="Center"
                                                TextWrapping="Wrap" Style="{StaticResource SubTextStyle}" />
-                                </StackPanel>
+                                </Grid>
                             </Border>
                         </StackPanel>
                     </Border>
@@ -510,7 +518,7 @@
                     <Border CornerRadius="8" Padding="16" Background="{StaticResource SurfaceBrush}"
                             BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1">
                         <StackPanel>
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <WrapPanel Margin="0,0,0,10">
                                 <ui:Button Content="添加文件夹" Appearance="Primary"
                                            Icon="{ui:SymbolIcon FolderOpen24}" Command="{Binding AddFolderCommand}" />
                                 <ui:Button Content="导入 m3u8" Margin="8,0,0,0"
@@ -523,7 +531,7 @@
                                            Command="{Binding IncrementalScanCommand}" />
                                 <ui:Button Content="停止扫描" Margin="8,0,0,0"
                                            Icon="{ui:SymbolIcon Dismiss24}" Command="{Binding CancelScanCommand}" />
-                            </StackPanel>
+                            </WrapPanel>
 
                             <Border CornerRadius="6" Padding="4" MinHeight="80" MaxHeight="260"
                                     Background="{StaticResource HoverBrush}">
@@ -536,7 +544,8 @@
                                                 <ui:SymbolIcon Symbol="Folder24" FontSize="14" VerticalAlignment="Center"
                                                                Foreground="{StaticResource TextTertiaryBrush}" />
                                                 <TextBlock Text="{Binding}" Margin="8,0,0,0" VerticalAlignment="Center"
-                                                           Foreground="{StaticResource TextPrimaryBrush}" FontSize="12" />
+                                                           Foreground="{StaticResource TextPrimaryBrush}" FontSize="12"
+                                                           TextTrimming="CharacterEllipsis" ToolTip="{Binding}" />
                                             </StackPanel>
                                         </DataTemplate>
                                     </ListBox.ItemTemplate>
@@ -568,20 +577,28 @@
                             </Grid>
 
                             <Border Background="{StaticResource HoverBrush}" CornerRadius="6" Padding="10,8">
-                                <StackPanel Orientation="Horizontal">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
                                     <ui:SymbolIcon Symbol="Key24" FontSize="14" VerticalAlignment="Center"
                                                    Foreground="{StaticResource AccentBrush}" />
-                                    <TextBlock Text="{Binding KeyStatus}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="1" Text="{Binding KeyStatus}" Margin="8,0,0,0" VerticalAlignment="Center"
                                                TextWrapping="Wrap" Style="{StaticResource SubTextStyle}" />
-                                </StackPanel>
+                                </Grid>
                             </Border>
 <Border Background="{StaticResource HoverBrush}" CornerRadius="6" Padding="10,8" Margin="0,8,0,0">
-                                <StackPanel Orientation="Horizontal">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="Auto" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
                                     <ui:SymbolIcon Symbol="Cloud24" FontSize="14" VerticalAlignment="Center"
                                                    Foreground="{StaticResource AccentBrush}" />
-                                    <TextBlock Text="{Binding QuotaDisplay}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                    <TextBlock Grid.Column="1" Text="{Binding QuotaDisplay}" Margin="8,0,0,0" VerticalAlignment="Center"
                                                TextWrapping="Wrap" Style="{StaticResource SubTextStyle}" />
-                                </StackPanel>
+                                </Grid>
                             </Border>
 
                             <TextBlock Margin="0,8,0,0" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
