@@ -815,7 +815,7 @@
                                        FontSize="10.5" Foreground="{DynamicResource TextTertiaryBrush}"
                                        TextWrapping="Wrap" />
                         </StackPanel>
-                        <TextBlock Text="{Binding Player.Lyrics.HeaderCreditsText}" Margin="0,4,0,0"
+                        <TextBlock Text="{Binding Player.Lyrics.LyricCreditsText}" Margin="0,4,0,0"
                                    FontSize="10.5" Foreground="{DynamicResource TextTertiaryBrush}"
                                    TextWrapping="Wrap"
                                    Visibility="{Binding Player.Credits, Converter={StaticResource EmptyToVis}}" />

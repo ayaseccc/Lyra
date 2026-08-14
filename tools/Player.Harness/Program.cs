@@ -455,45 +455,70 @@ public static class Program
 
     private static void RunLyricLayoutChecks()
     {
-        Console.WriteLine("=== 自绘歌词布局（UI-R0） ===");
+        Console.WriteLine("=== 自绘歌词布局（UI-R5 单元化） ===");
 
-        // 目标偏移：当前行居中
-        Check("第 0 行目标 = 0", LyricLayout.TargetOffsetFor(0, 100, 500) == 0);
-        Check("第 5 行目标居中", LyricLayout.TargetOffsetFor(5, 100, 500) == 5 * LyricLayout.LineHeight + LyricLayout.LineHeight / 2 - 250);
-        Check("末行钳制到最大偏移", LyricLayout.TargetOffsetFor(99, 100, 500) == 100 * LyricLayout.LineHeight - 500);
-        Check("负索引 = 0", LyricLayout.TargetOffsetFor(-1, 100, 500) == 0);
-        Check("空列表 = 0", LyricLayout.TargetOffsetFor(3, 0, 500) == 0);
+        // ---- 元数据识别（R5 ①：从时间流剥离） ----
+        Check("元数据识别 作词：X", LyricLayout.TryParseMetadata("作词：林夕") is { Key: "作词" } m1 && m1.Value == "林夕");
+        Check("元数据识别 作曲:X（半角冒号）", LyricLayout.TryParseMetadata("作曲:X") is { Key: "作曲" });
+        Check("元数据识别 编曲 X（空格变体）", LyricLayout.TryParseMetadata("编曲 王双骏") is { Key: "编曲" });
+        Check("元数据识别 OP：X", LyricLayout.TryParseMetadata("OP：シグナル") is { Key: "OP" });
+        Check("元数据识别 作词人：X", LyricLayout.TryParseMetadata("作词人：林夕") is { Key: "作词人" });
+        Check("元数据识别 前导空格+全角冒号", LyricLayout.TryParseMetadata("  作词　：　林夕  ") is { Key: "作词" });
+        Check("元数据识别 不误判普通歌词", !LyricLayout.IsMetadataLine("春风十里不如你"));
+        Check("键归一 词→作词", LyricLayout.NormalizeMetadataKey("词") == "作词");
 
-        // 可见范围（视口 500px 内的行数随行高变化，用常量推导）
-        var (first, last) = LyricLayout.VisibleRange(0, 500, 100);
-        var rowsPerViewport = (int)Math.Ceiling(500 / LyricLayout.LineHeight);
-        Check("offset=0 可见首段", first == 0 && last == rowsPerViewport - 1);
-        var (f2, l2) = LyricLayout.VisibleRange(LyricLayout.LineHeight * 10, 500, 100);
-        Check("offset=10行 可见下一段", f2 == 10 && l2 == 10 + rowsPerViewport - 1);
-        var (f3, l3) = LyricLayout.VisibleRange(0, 500, 0);
-        Check("空列表 (-1,-1)", f3 == -1 && l3 == -1);
+        // ---- 折行（R5 ④：CJK 逐字符 / 拉丁按词，禁止截断） ----
+        // 合成量法：CJK 每字符 17px，拉丁半宽 8.5px，空格 4px
+        double Measure(string s) => s.Sum(c => c >= 0x2E80 ? 17.0 : c == ' ' ? 4.0 : 8.5);
 
-        // 淡出
-        Check("当前行不透明", LyricLayout.LineFade(0) == 1.0);
-        Check("相邻行渐淡", LyricLayout.LineFade(1) > LyricLayout.LineFade(3));
-        Check("远处收敛", Math.Abs(LyricLayout.LineFade(6) - LyricLayout.LineFade(9)) < 0.001);
+        var cjk = LyricLayout.WrapText("春风吹又生", 51, Measure);
+        Check("CJK 按字符折行（51px = 3 字符）", cjk.Count == 2 && cjk[0] == "春风吹" && cjk[1] == "又生");
 
-        // 缓动
+        var latin = LyricLayout.WrapText("hello world foo", 60, Measure);
+        Check("拉丁按词折行（词界空格断）", latin.Count == 3 && latin[0] == "hello" && latin[1] == "world" && latin[2] == "foo");
+
+        var noTrunc = LyricLayout.WrapText("超长单字符", 10, Measure);
+        Check("单字符超宽不截断（完整显示）", noTrunc.Count == 5 && string.Concat(noTrunc) == "超长单字符");
+
+        var empty = LyricLayout.WrapText("", 100, Measure);
+        Check("空文本折行返回空", empty.Count == 0);
+
+        // ---- 单元布局（R5 ③：动态高度，无翻译不留空位） ----
+        var layout = LyricLayout.BuildUnitLayout(new[] { 1, 2, 1 }, new[] { 1, 0, 0 }, isSecondaryShown: true);
+        Check("有翻译单元 = 主行高+副行高+内距", layout[0].Height == LyricLayout.PrimaryLineHeight + LyricLayout.SecondaryLineHeight + LyricLayout.InnerGap);
+        Check("无翻译单元不保留空位（动态高度）", layout[1].Height == 2 * LyricLayout.PrimaryLineHeight);
+        Check("副文本隐藏时不占位", LyricLayout.BuildUnitLayout(new[] { 1 }, new[] { 2 }, isSecondaryShown: false)[0].Height == LyricLayout.PrimaryLineHeight);
+
+        var tops = LyricLayout.ComputeUnitTops(new[] { 30.0, 40.0, 30.0 });
+        Check("单元顶部偏移累加（含间距）", tops[1] == 30 + LyricLayout.UnitGap && tops[2] == 30 + LyricLayout.UnitGap + 40 + LyricLayout.UnitGap);
+
+        // ---- 滚动目标 = 当前单元几何中心（R5 ⑥） ----
+        var heights = new[] { 30.0, 60.0, 30.0, 30.0 };
+        Check("单元 0 目标 = 0", LyricLayout.TargetOffsetForUnit(0, heights, 120) == 0);
+        Check("单元 1 目标 = 几何中心", LyricLayout.TargetOffsetForUnit(1, heights, 120) == 46 + 30 - 60);
+        Check("单元 2 目标 = 几何中心", LyricLayout.TargetOffsetForUnit(2, heights, 120) == 122 + 15 - 60);
+        Check("末单元钳制到最大偏移", LyricLayout.TargetOffsetForUnit(3, heights, 120) == LyricLayout.TotalHeight(heights) - 120);
+        Check("负索引 = 0", LyricLayout.TargetOffsetForUnit(-1, heights, 120) == 0);
+
+        // ---- 可见范围 / 命中（按单元） ----
+        var (first, last) = LyricLayout.VisibleUnits(0, 120, heights);
+        Check("offset=0 可见 0..1", first == 0 && last == 1);
+        var (f2, l2) = LyricLayout.VisibleUnits(LyricLayout.TotalHeight(heights) - 120, 120, heights);
+        Check("offset=最大 可见 1..3", f2 == 1 && l2 == 3);
+        Check("空列表 (-1,-1)", LyricLayout.VisibleUnits(0, 120, Array.Empty<double>()) == (-1, -1));
+        Check("单元 1 中部命中", LyricLayout.HitTestUnit(46 + 20, 0, heights) == 1);
+        Check("命中越界 -1", LyricLayout.HitTestUnit(9999, 0, heights) == -1);
+
+        // ---- 缓动（沿用） ----
         var (o1, s1) = LyricLayout.EaseTowards(0, 100, 0.1);
         Check("缓动朝目标收敛", o1 > 0 && o1 < 100 && !s1);
         var (o2, s2) = LyricLayout.EaseTowards(0, 0.2, 0.1);
         Check("到位判定（<0.5px）", o2 == 0.2 && s2);
 
-        // 命中测试
-        Check("行中心命中第 0 行", LyricLayout.HitTest(LyricLayout.LineHeight / 2, 0, 10) == 0);
-        Check("offset 后命中正确行", LyricLayout.HitTest(LyricLayout.LineHeight / 2, LyricLayout.LineHeight * 10, 20) == 10);
-        Check("越界返回 -1", LyricLayout.HitTest(9999, 0, 10) == -1);
-
-        // 滚轮步进方向
+        // ---- 滚轮步进方向 ----
         Check("滚轮向上=内容上移", LyricLayout.WheelStep(120) < 0);
         Check("滚轮向下=内容下移", LyricLayout.WheelStep(-120) > 0);
 
-        Console.WriteLine();
     }
 
     // ---------------- 内嵌标签歌词（P3.1-③） ----------------

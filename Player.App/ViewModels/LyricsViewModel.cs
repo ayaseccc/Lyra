@@ -201,7 +201,7 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(RenderLines));
         OnPropertyChanged(nameof(IsStatic));
         OnPropertyChanged(nameof(HasLyrics));
-        OnPropertyChanged(nameof(HeaderCreditsText));
+        OnPropertyChanged(nameof(LyricCreditsText));
     }
 
     private void ApplyResult(LyricsLoadResult result)
@@ -213,33 +213,37 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         RefreshSourceText(result);
         UpdateCurrentIndex();
         NotifyPreferenceChanged();
-        OnPropertyChanged(nameof(HeaderCreditsText));
+        OnPropertyChanged(nameof(LyricCreditsText));
     }
 
     /// <summary>
-    /// LRC 头部元数据的制作信息（UI-R4：词/曲/编曲，有才显示；标签里没有时才值得看这里）。
+    /// 歌词侧制作信息（UI-R5 ①）：流内剥离的元数据行 + LRC 头部元数据，合并去重。
+    /// 作词/作曲/编曲/OP/ED，有才显示；标签里没有时才值得看这里。
     /// </summary>
-    public string HeaderCreditsText
+    public string LyricCreditsText
     {
         get
         {
-            var parts = new List<string>(3);
-            var lyricist = FirstHeader("作词", "词", "lyricist");
-            var composer = FirstHeader("作曲", "曲", "composer");
-            var arranger = FirstHeader("编曲", "编", "arranger");
-            if (!string.IsNullOrWhiteSpace(lyricist)) parts.Add("作词 " + lyricist);
-            if (!string.IsNullOrWhiteSpace(composer)) parts.Add("作曲 " + composer);
-            if (!string.IsNullOrWhiteSpace(arranger)) parts.Add("编曲 " + arranger);
+            var seen = new HashSet<string>(StringComparer.Ordinal);
+            var parts = new List<string>(4);
+
+            void Add(string key, string value)
+            {
+                var norm = LyricLayout.NormalizeMetadataKey(key);
+                if (!seen.Add(norm + "\u0001" + value)) return;
+                parts.Add(norm + " " + value);
+            }
+
+            // 流内剥离的元数据优先（更可靠）
+            foreach (var (k, v) in _flowCredits) Add(k, v);
+
+            // LRC 头部补位
+            foreach (var key in new[] { "作词", "词", "lyricist", "作曲", "曲", "composer", "编曲", "编", "arranger", "OP", "ED", "制作", "混音", "母带" })
+                if (_document.Header.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
+                    Add(key, v);
+
             return string.Join(" · ", parts);
         }
-    }
-
-    private string FirstHeader(params string[] keys)
-    {
-        foreach (var key in keys)
-            if (_document.Header.TryGetValue(key, out var v) && !string.IsNullOrWhiteSpace(v))
-                return v;
-        return string.Empty;
     }
 
     private void RefreshSourceText(LyricsLoadResult result)
@@ -270,21 +274,38 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         _ => string.Empty
     };
 
-    /// <summary>重建渲染行（加载完成 / 切换显示模式）。纯数据，自绘控件增量重绘。</summary>
+    /// <summary>流内剥离出的元数据（作词/作曲/编曲/OP/ED 等），并入制作信息。</summary>
+    private readonly List<(string Key, string Value)> _flowCredits = new();
+
+    /// <summary>重建渲染行（加载完成 / 切换显示模式）。R5 ①：元数据行从时间流剥离。</summary>
     private void RebuildRenderLines()
     {
-        RenderLines = _document.Lines
-            .Select(line => new LyricRenderLine
+        _flowCredits.Clear();
+
+        var units = new List<LyricRenderLine>(_document.Lines.Count);
+        foreach (var line in _document.Lines)
+        {
+            // R5 ①：作词/作曲/编曲/OP/ED 等头部行不进歌词流、不参与当前行判定
+            if (LyricLayout.TryParseMetadata(line.Text) is { } meta)
+            {
+                _flowCredits.Add((LyricLayout.NormalizeMetadataKey(meta.Key), meta.Value));
+                continue;
+            }
+
+            units.Add(new LyricRenderLine
             {
                 Time = line.Time,
                 Primary = line.Text,
                 Secondary = SubTextFor(line)
-            })
-            .ToList();
+            });
+        }
+
+        RenderLines = units;
 
         OnPropertyChanged(nameof(RenderLines));
         OnPropertyChanged(nameof(IsStatic));
         OnPropertyChanged(nameof(HasLyrics));
+        OnPropertyChanged(nameof(LyricCreditsText));
     }
 
     // ================= 当前行跟随播放进度 =================
@@ -299,12 +320,30 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     {
         if (!_document.HasTimeline || RenderLines.Count == 0) return;
 
-        // 正偏移 = 歌词提前：显示时把播放位置往后推
+        // 正偏移 = 歌词提前：显示时把播放位置往后推。
+        // R5 ①：元数据行已剥离，当前行索引在过滤后的单元上二分（开播第一句真实歌词前无高亮）。
         var position = _player.PositionSeconds + _effectiveOffset.TotalSeconds;
-        var index = _document.FindIndexAt(TimeSpan.FromSeconds(Math.Max(0, position)));
-        if (index == CurrentIndex) return;
+        var pos = TimeSpan.FromSeconds(Math.Max(0, position));
+        var lines = RenderLines;
+        var lo = 0;
+        var hi = lines.Count - 1;
+        var found = -1;
+        while (lo <= hi)
+        {
+            var mid = (lo + hi) / 2;
+            if (lines[mid].Time <= pos)
+            {
+                found = mid;
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
+        }
 
-        CurrentIndex = index;
+        if (found == CurrentIndex) return;
+        CurrentIndex = found;
     }
 
     /// <summary>自绘控件点击某一行：跳到对应时间点。</summary>

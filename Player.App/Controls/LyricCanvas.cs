@@ -18,14 +18,16 @@ public sealed class LyricRenderLine
 }
 
 /// <summary>
-/// 自绘歌词控件（UI-R0）。基于 FrameworkElement + OnRender + FormattedText，
-/// 自行管理滚动偏移与缓动动画；**禁止** ItemsControl/ListBox/DataTemplate/ScrollViewer。
+/// 自绘歌词控件（UI-R5 单元化排版）。基于 FrameworkElement + OnRender + FormattedText，
+/// **禁止** ItemsControl/ListBox/DataTemplate/ScrollViewer。
 ///
-/// 行为：
-/// - 跟随模式：当前行居中为目标，指数缓动平滑滚向目标；当前行加粗+强调色，相邻行按距离淡出。
-/// - 滚轮：临时自由浏览，静置 3 秒自动回到跟随。
-/// - 点击行：触发 <see cref="LineClicked"/>（由宿主负责 seek）。
-/// - 静态模式（无时间轴歌词）：不跟随不淡出，整篇正常显示，仍可滚动浏览。
+/// R5 规则：
+/// - 成对单元：原文+翻译=一个布局单元，无翻译不留空位（动态高度）。
+/// - 按栏宽折行（CJK 逐字符 / 拉丁按词），任何情况不省略号、不截断。
+/// - 全部水平居中（含折行续行）。
+/// - 当前单元整对高亮（原文加粗+强调色，翻译同强调色略淡）；非当前单元统一次级色。
+/// - 滚动目标 = 当前单元几何中心，缓动保留；栏宽变化即时重排（布局缓存按宽度失效）。
+/// - 元数据行（作词/作曲/编曲/OP/ED 等）已在 VM 层剥离，本控件永不绘制、不参与当前行判定。
 /// </summary>
 public sealed class LyricCanvas : FrameworkElement
 {
@@ -35,34 +37,35 @@ public sealed class LyricCanvas : FrameworkElement
     private double _offset;
     private bool _animating;
 
-    /// <summary>FrameworkElement 没有 FontFamily 属性，这里自持字体。</summary>
     private static readonly FontFamily UiFont = new("Microsoft YaHei UI, Segoe UI");
 
-    /// <summary>缓存条目：绘制用 FormattedText + 无约束自然宽度（窄栏判断用，约束会截断 Width）。</summary>
-    private sealed record TextEntry(FormattedText Text, double NaturalWidth);
+    /// <summary>单元渲染缓存（按行号）：折行后的主/副文本 + 单元高度。宽度或数据变化时整体失效。</summary>
+    private sealed class UnitRenderData
+    {
+        public required FormattedText[] Primary;
+        public required FormattedText[] Secondary;
+        public required double Height;
+    }
 
-    /// <summary>
-    /// 主/副文本的 FormattedText 缓存（按行号）。FormattedText 构造开销大，
-    /// 滚动时只有当前行（粗体）每帧重建，其余行命中缓存——解决滚动卡顿。
-    /// 数据变化或尺寸变化时整体失效。
-    /// </summary>
-    private readonly Dictionary<int, TextEntry> _primaryCache = new();
-    private readonly Dictionary<int, TextEntry> _secondaryCache = new();
+    private readonly Dictionary<int, UnitRenderData> _unitCache = new();
+
+    /// <summary>当前单元（粗体+强调色）缓存：key 为行号，播放推进时每行只重建一次。</summary>
+    private readonly Dictionary<int, FormattedText[]> _currentCache = new();
+
+    /// <summary>布局缓存对应的画布宽度（变化即重排）。</summary>
+    private double _layoutWidth = double.NaN;
 
     /// <summary>缓存失效标志：Lines 或宽度变化时置 true，下一帧重建。</summary>
     private bool _cacheDirty = true;
 
-    /// <summary>当前行（粗体+强调色）缓存：key 为行号，播放推进时每行只重建一次。</summary>
-    private readonly Dictionary<int, TextEntry> _currentCache = new();
-
-    /// <summary>
-    /// 预生成的淡出画刷（按距离 0..4 对应 LineFade 五档，主文本与副文本各一套）。
-    /// 替代 PushOpacity——后者每帧做离屏渲染切换，是滚动卡顿的根源。
-    /// </summary>
-    private SolidColorBrush[] _primaryFadeBrushes = Array.Empty<SolidColorBrush>();
-    private SolidColorBrush[] _secondaryFadeBrushes = Array.Empty<SolidColorBrush>();
-    private Color _fadeBrushBase = Colors.Transparent;
-    private Color _fadeBrushSubBase = Colors.Transparent;
+    // 预生成画刷：当前单元原文/翻译、非当前单元原文/翻译
+    private SolidColorBrush? _currentBrush;
+    private SolidColorBrush? _currentSubBrush;
+    private SolidColorBrush? _normalBrush;
+    private SolidColorBrush? _normalSubBrush;
+    private Color _brushBase;
+    private Color _brushSubBase;
+    private Color _brushAccentBase;
 
     /// <summary>点击某行（参数为行号）。</summary>
     public event Action<int>? LineClicked;
@@ -141,10 +144,9 @@ public sealed class LyricCanvas : FrameworkElement
     {
         if (d is not LyricCanvas canvas) return;
 
-        // 行数据变化 → 文本缓存失效
+        // 行数据或宽度变化 → 布局缓存整体失效
         if (e.Property == LinesProperty) canvas._cacheDirty = true;
 
-        // 数据或目标变化：重绘并让滚动向目标缓动
         canvas.InvalidateVisual();
         canvas.StartAnimation();
     }
@@ -171,22 +173,32 @@ public sealed class LyricCanvas : FrameworkElement
         var dt = Math.Min(0.05, Math.Max(0.001, (nowMs - _lastFrameMs) / 1000.0));
         _lastFrameMs = nowMs;
 
-        var count = Lines?.Count ?? 0;
-        if (count == 0 || IsStatic)
+        var heights = ComputeHeights();
+        if (heights.Length == 0 || IsStatic)
         {
-            // 静态模式无跟随目标；空列表无内容
             StopAnimation();
             return;
         }
 
-        var target = LyricLayout.TargetOffsetFor(CurrentIndex, count, ActualHeight);
-
+        var target = LyricLayout.TargetOffsetForUnit(CurrentIndex, heights, ActualHeight);
         var (next, settled) = LyricLayout.EaseTowards(_offset, target, dt);
         _offset = next;
         InvalidateVisual();
 
         if (settled)
             StopAnimation();
+    }
+
+    /// <summary>所有单元的当前高度（无布局时为 -1 表示需要重排）。</summary>
+    private double[] ComputeHeights()
+    {
+        var lines = Lines;
+        if (lines is null || lines.Count == 0) return Array.Empty<double>();
+
+        var heights = new double[lines.Count];
+        for (var i = 0; i < lines.Count; i++)
+            heights[i] = _unitCache.TryGetValue(i, out var data) ? data.Height : double.NaN;
+        return heights;
     }
 
     // ---------------- 交互 ----------------
@@ -199,10 +211,10 @@ public sealed class LyricCanvas : FrameworkElement
         // 静态模式（无时间轴长歌词）：滚轮是唯一的浏览方式，保留。
         if (!IsStatic) return;
 
-        var count = Lines?.Count ?? 0;
-        if (count == 0) return;
+        var heights = ComputeHeights();
+        if (heights.Length == 0) return;
 
-        var maxOffset = Math.Max(0, count * LyricLayout.LineHeight - ActualHeight);
+        var maxOffset = Math.Max(0, LyricLayout.TotalHeight(heights) - ActualHeight);
         _offset = Math.Clamp(_offset + LyricLayout.WheelStep(e.Delta), 0, maxOffset);
         InvalidateVisual();
         e.Handled = true;
@@ -212,140 +224,21 @@ public sealed class LyricCanvas : FrameworkElement
     {
         base.OnMouseLeftButtonUp(e);
 
-        var count = Lines?.Count ?? 0;
-        if (count == 0) return;
+        var heights = ComputeHeights();
+        if (heights.Length == 0) return;
 
-        var index = LyricLayout.HitTest(e.GetPosition(this).Y, _offset, count);
+        var index = LyricLayout.HitTestUnit(e.GetPosition(this).Y, _offset, heights);
         if (index >= 0) LineClicked?.Invoke(index);
     }
 
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
     {
         base.OnRenderSizeChanged(sizeInfo);
-
-        // 宽度变化会影响 MaxTextWidth → 文本缓存失效
-        _cacheDirty = true;
+        _cacheDirty = true;   // 栏宽变化即时重排（R5 ⑥）
         StartAnimation();
     }
 
-    // ---------------- 绘制 ----------------
-
-    protected override void OnRender(DrawingContext dc)
-    {
-        var lines = Lines;
-        if (lines is null || lines.Count == 0) return;
-
-        // 数据或宽度变了 → 缓存整体失效
-        if (_cacheDirty)
-        {
-            _primaryCache.Clear();
-            _secondaryCache.Clear();
-            _currentCache.Clear();
-            _cacheDirty = false;
-        }
-
-        var dpi = VisualTreeHelper.GetDpi(this);
-        var pixelsPerDip = dpi.PixelsPerDip;
-
-        var accent = AccentBrush ?? Brushes.White;
-        var baseText = TextBrush ?? Brushes.White;
-        var subText = SubTextBrush ?? Brushes.White;
-        var maxWidth = Math.Max(0, ActualWidth - 16);
-
-        EnsureFadeBrushes(baseText, subText);
-
-        var (first, last) = LyricLayout.VisibleRange(_offset, ActualHeight, lines.Count);
-        if (first < 0) return;
-
-        // 防御：范围钳制到实际行数（曾偶发 ArgumentOutOfRangeException）
-        last = Math.Min(last, lines.Count - 1);
-
-        for (var i = first; i <= last; i++)
-        {
-            // 防御：索引越界直接跳过（数据变化与渲染交错时的兜底）
-            if (i < 0 || i >= lines.Count) continue;
-
-            var line = lines[i];
-            var y = i * LyricLayout.LineHeight - _offset;
-            var isCurrent = !IsStatic && i == CurrentIndex;
-            var fade = IsStatic ? 1.0 : LyricLayout.LineFade(i - CurrentIndex);
-
-            var textY = y + 9;
-
-            // ---- 主文本 ----
-            if (isCurrent)
-            {
-                // 当前行：粗体+强调色，完整文本不省略（窄栏时宁可减少句数也要整句完整；
-                // 超宽时自适应缩小字号，保证整句都看得见）
-                if (!_currentCache.TryGetValue(i, out var current))
-                {
-                    var ft = new FormattedText(
-                        line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                        CurrentTypeface, LyricLayout.PrimaryFontSize, accent, pixelsPerDip);
-                    var natural = ft.Width;
-                    if (natural > maxWidth && maxWidth > 60)
-                    {
-                        var fitSize = Math.Max(11, LyricLayout.PrimaryFontSize * maxWidth / natural);
-                        ft = new FormattedText(
-                            line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                            CurrentTypeface, fitSize, accent, pixelsPerDip);
-                    }
-                    ft.MaxLineCount = 1;
-                    current = new TextEntry(ft, natural);
-                    _currentCache[i] = current;
-                }
-
-                dc.DrawText(current.Text, new Point(8, textY));
-            }
-            else
-            {
-                if (!_primaryCache.TryGetValue(i, out var primary))
-                {
-                    // 先建无约束文本测自然宽度，再设单行约束（约束会让 Width 截断，判断会失真）
-                    var ft = new FormattedText(
-                        line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                        PrimaryTypeface, LyricLayout.PrimaryFontSize, baseText, pixelsPerDip);
-                    var natural = ft.Width;
-                    ft.MaxTextWidth = maxWidth;
-                    ft.MaxLineCount = 1;
-                    primary = new TextEntry(ft, natural);
-                    _primaryCache[i] = primary;
-                }
-
-                // 窄栏放不下整句 → 这一句不显示（减少句数，代替省略号截断）
-                if (primary.NaturalWidth > maxWidth + 0.5) continue;
-
-                // 淡出画刷预生成（无离屏渲染、无分配）
-                var distance = Math.Min(4, Math.Abs(i - CurrentIndex));
-                if (_primaryFadeBrushes.Length == 5)
-                    primary.Text.SetForegroundBrush(_primaryFadeBrushes[distance]);
-                dc.DrawText(primary.Text, new Point(8, textY));
-            }
-
-            // ---- 副文本（走缓存；放不下整句则不显示） ----
-            if (!string.IsNullOrWhiteSpace(line.Secondary))
-            {
-                if (!_secondaryCache.TryGetValue(i, out var secondary))
-                {
-                    var ft = new FormattedText(
-                        line.Secondary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
-                        PrimaryTypeface, LyricLayout.SecondaryFontSize, subText, pixelsPerDip);
-                    var natural = ft.Width;
-                    ft.MaxTextWidth = maxWidth;
-                    ft.MaxLineCount = 1;
-                    secondary = new TextEntry(ft, natural);
-                    _secondaryCache[i] = secondary;
-                }
-
-                if (secondary.NaturalWidth > maxWidth + 0.5) continue;
-
-                var distance = Math.Min(4, Math.Abs(i - CurrentIndex));
-                if (_secondaryFadeBrushes.Length == 5)
-                    secondary.Text.SetForegroundBrush(_secondaryFadeBrushes[distance]);
-                dc.DrawText(secondary.Text, new Point(8, textY + LyricLayout.PrimaryFontSize + LyricLayout.PrimaryToSecondaryGap + 1));
-            }
-        }
-    }
+    // ---------------- 布局与绘制 ----------------
 
     private static readonly Typeface PrimaryTypeface =
         new(UiFont, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
@@ -353,51 +246,133 @@ public sealed class LyricCanvas : FrameworkElement
     private static readonly Typeface CurrentTypeface =
         new(UiFont, FontStyles.Normal, FontWeights.SemiBold, FontStretches.Normal);
 
-    /// <summary>
-    /// 按距离 0..4 预生成主/副文本的淡出画刷（LineFade 五档）。
-    /// 绘制时用 FormattedText.SetForegroundBrush 覆盖颜色——没有离屏渲染、没有每帧分配。
-    /// </summary>
-    private void EnsureFadeBrushes(Brush baseText, Brush subText)
+    protected override void OnRender(DrawingContext dc)
     {
-        if (baseText is not SolidColorBrush primarySolid || subText is not SolidColorBrush subSolid)
-            return;
-        if (_primaryFadeBrushes.Length == 5 && _fadeBrushBase == primarySolid.Color)
-            return;
+        var lines = Lines;
+        if (lines is null || lines.Count == 0) return;
 
-        _fadeBrushBase = primarySolid.Color;
-        _fadeBrushSubBase = subSolid.Color;
+        var dpi = VisualTreeHelper.GetDpi(this);
+        var pixelsPerDip = dpi.PixelsPerDip;
+        var maxWidth = Math.Max(0, ActualWidth - 16);
 
-        _primaryFadeBrushes = new SolidColorBrush[5];
-        _secondaryFadeBrushes = new SolidColorBrush[5];
-
-        for (var d = 0; d < 5; d++)
+        // 数据或宽度变化 → 整表重排（R5 ⑥：栏宽变化即时重排）
+        if (_cacheDirty || Math.Abs(_layoutWidth - ActualWidth) > 0.5)
         {
-            var fade = LyricLayout.LineFade(d);
+            _unitCache.Clear();
+            _currentCache.Clear();
+            _layoutWidth = ActualWidth;
+            _cacheDirty = false;
 
-            var primary = new SolidColorBrush(Color.FromArgb(
-                (byte)(primarySolid.Color.A * fade),
-                primarySolid.Color.R, primarySolid.Color.G, primarySolid.Color.B));
-            primary.Freeze();
-            _primaryFadeBrushes[d] = primary;
+            for (var i = 0; i < lines.Count; i++)
+            {
+                var line = lines[i];
+                var primary = LyricLayout.WrapText(line.Primary, maxWidth, s => Measure(s, PrimaryTypeface, LyricLayout.PrimaryFontSize, pixelsPerDip));
+                var secondary = string.IsNullOrWhiteSpace(line.Secondary)
+                    ? Array.Empty<string>()
+                    : LyricLayout.WrapText(line.Secondary, maxWidth, s => Measure(s, PrimaryTypeface, LyricLayout.SecondaryFontSize, pixelsPerDip));
 
-            var secondary = new SolidColorBrush(Color.FromArgb(
-                (byte)(subSolid.Color.A * fade * 0.8),
-                subSolid.Color.R, subSolid.Color.G, subSolid.Color.B));
-            secondary.Freeze();
-            _secondaryFadeBrushes[d] = secondary;
+                var primaryFt = primary.Select(t => Build(t, PrimaryTypeface, LyricLayout.PrimaryFontSize, pixelsPerDip)).ToArray();
+                var secondaryFt = secondary.Select(t => Build(t, PrimaryTypeface, LyricLayout.SecondaryFontSize, pixelsPerDip)).ToArray();
+
+                var height = primaryFt.Length * LyricLayout.PrimaryLineHeight
+                             + (secondaryFt.Length > 0
+                                 ? secondaryFt.Length * LyricLayout.SecondaryLineHeight + LyricLayout.InnerGap
+                                 : 0);
+                _unitCache[i] = new UnitRenderData { Primary = primaryFt, Secondary = secondaryFt, Height = height };
+            }
+        }
+
+        var heights = ComputeHeights();
+        if (heights.Length == 0) return;
+
+        var accent = AccentBrush ?? Brushes.White;
+        var baseText = TextBrush ?? Brushes.White;
+        var subText = SubTextBrush ?? Brushes.White;
+        EnsureBrushes(baseText, subText, accent);
+
+        var (first, last) = LyricLayout.VisibleUnits(_offset, ActualHeight, heights);
+        if (first < 0) return;
+        last = Math.Min(last, lines.Count - 1);   // 防御（曾偶发越界）
+
+        var tops = LyricLayout.ComputeUnitTops(heights);
+
+        for (var i = first; i <= last; i++)
+        {
+            if (i < 0 || i >= lines.Count) continue;   // 防御
+            if (!_unitCache.TryGetValue(i, out var data)) continue;
+
+            var isCurrent = !IsStatic && i == CurrentIndex;
+            var y = tops[i] - _offset;
+
+            var primaryFts = isCurrent ? CurrentFts(i, lines[i].Primary, maxWidth, pixelsPerDip) : data.Primary;
+
+            // ---- 原文（全部水平居中，含折行续行） ----
+            foreach (var ft in primaryFts)
+            {
+                var x = Math.Max(0, (ActualWidth - ft.Width) / 2);
+                ft.SetForegroundBrush(isCurrent ? _currentBrush : _normalBrush);
+                dc.DrawText(ft, new Point(x, y));
+                y += LyricLayout.PrimaryLineHeight;
+            }
+
+            // ---- 翻译 / 罗马音（当前单元整对高亮） ----
+            if (data.Secondary.Length > 0)
+            {
+                y += LyricLayout.InnerGap;
+                foreach (var ft in data.Secondary)
+                {
+                    var x = Math.Max(0, (ActualWidth - ft.Width) / 2);
+                    ft.SetForegroundBrush(isCurrent ? _currentSubBrush : _normalSubBrush);
+                    dc.DrawText(ft, new Point(x, y));
+                    y += LyricLayout.SecondaryLineHeight;
+                }
+            }
         }
     }
 
-    private static Brush WithOpacity(Brush source, double opacity)
+    /// <summary>当前单元：粗体+强调色，按行号缓存（播放推进时每行只重建一次）。</summary>
+    private FormattedText[] CurrentFts(int index, string text, double maxWidth, double pixelsPerDip)
     {
-        if (opacity >= 0.999) return source;
-        if (source is SolidColorBrush solid)
-        {
-            var color = solid.Color;
-            return new SolidColorBrush(Color.FromArgb(
-                (byte)(color.A * Math.Clamp(opacity, 0, 1)),
-                color.R, color.G, color.B));
-        }
-        return source;
+        if (_currentCache.TryGetValue(index, out var cached)) return cached;
+
+        var wrapped = LyricLayout.WrapText(text, maxWidth, s => Measure(s, CurrentTypeface, LyricLayout.PrimaryFontSize, pixelsPerDip));
+        var fts = wrapped.Select(t => Build(t, CurrentTypeface, LyricLayout.PrimaryFontSize, pixelsPerDip)).ToArray();
+        _currentCache[index] = fts;
+        return fts;
+    }
+
+    private static double Measure(string text, Typeface typeface, double fontSize, double pixelsPerDip) =>
+        new FormattedText(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            typeface, fontSize, Brushes.Black, pixelsPerDip).Width;
+
+    private static FormattedText Build(string text, Typeface typeface, double fontSize, double pixelsPerDip) =>
+        new(text, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
+            typeface, fontSize, Brushes.Black, pixelsPerDip);
+
+    /// <summary>
+    /// 预生成四把画刷：当前单元 原文=强调色 / 翻译=强调色 70%；非当前 原文=次级色 / 翻译=次级色 75%。
+    /// 主题（刷子颜色）变化时自动重建。
+    /// </summary>
+    private void EnsureBrushes(Brush baseText, Brush subText, Brush accent)
+    {
+        if (baseText is not SolidColorBrush primarySolid || subText is not SolidColorBrush subSolid || accent is not SolidColorBrush accentSolid)
+            return;
+        if (_normalBrush is not null && _brushBase == primarySolid.Color && _brushSubBase == subSolid.Color && _brushAccentBase == accentSolid.Color)
+            return;
+
+        _brushBase = primarySolid.Color;
+        _brushSubBase = subSolid.Color;
+        _brushAccentBase = accentSolid.Color;
+
+        _normalBrush = Freeze(new SolidColorBrush(subSolid.Color));
+        _normalSubBrush = Freeze(new SolidColorBrush(Color.FromArgb((byte)(subSolid.Color.A * 0.75), subSolid.Color.R, subSolid.Color.G, subSolid.Color.B)));
+        _currentBrush = Freeze(new SolidColorBrush(accentSolid.Color));
+        _currentSubBrush = Freeze(new SolidColorBrush(Color.FromArgb((byte)(accentSolid.Color.A * 0.70), accentSolid.Color.R, accentSolid.Color.G, accentSolid.Color.B)));
+    }
+
+    private static SolidColorBrush Freeze(SolidColorBrush brush)
+    {
+        brush.Freeze();
+        return brush;
     }
 }
