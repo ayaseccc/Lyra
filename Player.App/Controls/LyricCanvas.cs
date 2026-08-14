@@ -40,6 +40,11 @@ public sealed class LyricCanvas : FrameworkElement
     private DateTime _freeBrowseUntil;   // 自由浏览超时点（到点自动回跟随）
     private double _freeBrowseTarget;    // 自由浏览的目标偏移（帧循环滑行到位）
 
+    // 目验八修复：左键按住拖动滚动（大歌词页习惯手势）
+    private bool _dragScrollActive;
+    private double _dragStartY;
+    private double _dragStartOffset;
+
     private static readonly FontFamily UiFont = new("Microsoft YaHei UI, Segoe UI");
 
     /// <summary>L1.1-② 字体/字重（跟随设置，右栏/大歌词页共用；桌面歌词字号独立）。缓存键变化时重建。</summary>
@@ -291,10 +296,60 @@ public sealed class LyricCanvas : FrameworkElement
         e.Handled = true;
     }
 
+    protected override void OnMouseLeftButtonDown(MouseButtonEventArgs e)
+    {
+        base.OnMouseLeftButtonDown(e);
+        // 目验八修复：记录按下起点（可能开始拖动滚动）；不标记 Handled，点击逻辑照常
+        _dragStartY = e.GetPosition(this).Y;
+        _dragStartOffset = _offset;
+        _dragScrollActive = false;
+    }
+
+    protected override void OnMouseMove(MouseEventArgs e)
+    {
+        base.OnMouseMove(e);
+        if (ClickMode != LyricClickMode.SeekOrNavigate) return;
+        if (e.LeftButton != MouseButtonState.Pressed) return;
+
+        var pos = e.GetPosition(this);
+        if (!_dragScrollActive && Math.Abs(pos.Y - _dragStartY) > 8)
+        {
+            _dragScrollActive = true;
+            CaptureMouse();
+        }
+        if (!_dragScrollActive) return;
+
+        var heights = ComputeHeights();
+        if (heights.Length == 0) return;
+        var maxOffset = Math.Max(0, LyricLayout.TotalHeight(heights) - ActualHeight);
+        // 手指上滑 = 内容上移 = 偏移增大
+        _offset = Math.Clamp(_dragStartOffset + (_dragStartY - pos.Y), 0, maxOffset);
+        _freeBrowse = true;
+        _freeBrowseTarget = _offset;
+        _freeBrowseUntil = DateTime.UtcNow.AddSeconds(2);
+        InvalidateVisual();
+        e.Handled = true;
+    }
+
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        _dragScrollActive = false;
+    }
+
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
         if (ClickMode == LyricClickMode.Disabled) return;
+
+        // 目验八修复：拖动结束=滚动完成（不触发点击动作）
+        if (_dragScrollActive)
+        {
+            _dragScrollActive = false;
+            ReleaseMouseCapture();
+            e.Handled = true;
+            return;
+        }
 
         var heights = ComputeHeights();
         if (heights.Length == 0) return;

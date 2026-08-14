@@ -396,18 +396,58 @@ public partial class MainWindow : FluentWindow
 
     private void OnBigLyricsButtonClick(object sender, RoutedEventArgs e) => ToggleBigLyrics();
 
-    /// <summary>大歌词页：点击歌词行=跳转播放（充当进度条）。</summary>
-    private void OnBigLyricClicked(int index) => Player?.Lyrics.SeekToLine(index);
+    /// <summary>大歌词页：点击歌词行=跳转播放（充当进度条）；同时取消待执行的空白切歌（目验八）。</summary>
+    private void OnBigLyricClicked(int index)
+    {
+        CancelPendingBlankNav();
+        Player?.Lyrics.SeekToLine(index);
+    }
 
     /// <summary>大歌词页：双击任意位置=退出。</summary>
     private void OnBigLyricDoubleClicked() => ToggleBigLyrics();
 
-    /// <summary>大歌词页：点击空白——左半=上一曲、右半=下一曲（目验五修复：点击判定收进 LyricCanvas，命中行与空白不再分层）。</summary>
+    /// <summary>大歌词页：点击空白——左半=上一曲、右半=下一曲（目验五修复：点击判定收进 LyricCanvas，命中行与空白不再分层）。
+    /// 目验八修复：切歌延迟 300ms 判定——窗口期内第二次空白点击=双击=取消切歌并退出；
+    /// 两次点击间隔 ≥300ms 才各自切歌。</summary>
+    private System.Windows.Threading.DispatcherTimer? _blankClickTimer;
+    private bool _pendingNavRight;
+
     private void OnBigLyricBlankClicked(double x)
     {
         if (Player is null) return;
-        if (x >= BigLyricCanvas.ActualWidth / 2) Player.NextCommand.Execute(null);
+
+        if (_blankClickTimer?.IsEnabled == true)
+        {
+            // 300ms 内第二次空白点击：双击 → 取消待执行切歌并退出
+            _blankClickTimer.Stop();
+            ToggleBigLyrics();
+            return;
+        }
+
+        _pendingNavRight = x >= BigLyricCanvas.ActualWidth / 2;
+        _blankClickTimer ??= new System.Windows.Threading.DispatcherTimer
+        {
+            Interval = TimeSpan.FromMilliseconds(300)
+        };
+        _blankClickTimer.Tick -= OnBlankClickTimerTick;
+        _blankClickTimer.Tick += OnBlankClickTimerTick;
+        _blankClickTimer.Stop();
+        _blankClickTimer.Start();
+    }
+
+    private void OnBlankClickTimerTick(object? sender, EventArgs e)
+    {
+        if (_blankClickTimer is null) return;
+        _blankClickTimer.Stop();
+        if (Player is null) return;
+        if (_pendingNavRight) Player.NextCommand.Execute(null);
         else Player.PreviousCommand.Execute(null);
+    }
+
+    /// <summary>点行跳转是即时动作；若恰在待切歌窗口内，取消待执行的切歌（用户已改主意）。</summary>
+    private void CancelPendingBlankNav()
+    {
+        if (_blankClickTimer?.IsEnabled == true) _blankClickTimer.Stop();
     }
 
     /// <summary>大歌词页键盘（目验五修复：删除 Tab/方向键焦点框控制；空格=播放/暂停；Esc 由窗口级处理）。</summary>
