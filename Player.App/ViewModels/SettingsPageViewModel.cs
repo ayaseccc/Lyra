@@ -137,6 +137,9 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         // L2 行为组：关闭到托盘（默认关闭）
         _closeToTray = ConfigService.Current.Ui.CloseToTray;
 
+        // L2 全局热键（默认全关）
+        _globalHotkeysEnabled = ConfigService.Current.Ui.GlobalHotkeysEnabled;
+
         _loading = false;
     }
 
@@ -180,7 +183,18 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         ConfigService.Save();
     }
 
-    // ================= 快捷键（L2：只读清单） =================
+    // ================= 快捷键（L2：只读清单 + 全局热键开关） =================
+
+    /// <summary>全局热键（RegisterHotKey）：默认全关；开启后任何窗口下 Ctrl+Alt+P/←/→ 控制播放。</summary>
+    [ObservableProperty]
+    private bool _globalHotkeysEnabled;
+
+    partial void OnGlobalHotkeysEnabledChanged(bool value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.GlobalHotkeysEnabled = value;
+        ConfigService.Save();
+    }
 
     public sealed record ShortcutItem(string Keys, string Description);
 

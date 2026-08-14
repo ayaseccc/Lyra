@@ -159,6 +159,9 @@ public sealed class UiConfig
 
     /// <summary>L2 托盘：关闭主窗时最小化到托盘而不是退出（默认关闭 = 关窗即退出）。</summary>
     public bool CloseToTray { get; set; }
+
+    /// <summary>L2 全局热键：默认全关；开启后 Ctrl+Alt+P 播放/暂停、Ctrl+Alt+←/→ 上下曲。</summary>
+    public bool GlobalHotkeysEnabled { get; set; }
 }
 
 /// <summary>

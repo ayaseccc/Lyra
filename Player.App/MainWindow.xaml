@@ -754,6 +754,18 @@
                                 </ItemsControl>
                                 <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,12,0,0" TextWrapping="Wrap"
                                            Text="任何输入框（搜索/Key 输入等）聚焦时快捷键一律不响应；按钮聚焦时 Space 归按钮；滑条聚焦时方向键归滑条。自定义改绑进 backlog。" />
+                                <Grid Margin="0,16,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="全局热键" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <StackPanel Grid.Column="1">
+                                        <ui:ToggleSwitch IsChecked="{Binding GlobalHotkeysEnabled}" Content="启用（默认关闭）" />
+                                        <TextBlock Style="{StaticResource SubTextStyle}" Margin="0,6,0,0" TextWrapping="Wrap"
+                                                   Text="播放/暂停 Ctrl+Alt+P · 上一曲 Ctrl+Alt+← · 下一曲 Ctrl+Alt+→。任何窗口下都生效；组合键被其他程序占用时，启用会逐条提示并跳过被占用的组合。" />
+                                    </StackPanel>
+                                </Grid>
                             </StackPanel>
                         </Border>
 

@@ -35,6 +35,9 @@ public partial class MainWindow : FluentWindow
     /// <summary>L2 托盘（菜单播放控制/桌面歌词开关/显示主窗/退出，双击还原）。</summary>
     private Player.App.SystemTray.TrayService? _tray;
 
+    /// <summary>L2 全局热键（RegisterHotKey，默认全关；占用逐条提示）。</summary>
+    private Player.App.GlobalHotkeys.GlobalHotkeyService? _globalHotkeys;
+
     /// <summary>托盘菜单「退出」置位：放行后续真实的关闭（配合"关闭到托盘"拦截）。</summary>
     private bool _exitingFromTray;
 
@@ -88,7 +91,12 @@ public partial class MainWindow : FluentWindow
 
         // L2 SMTC：窗口**显示后**初始化（GetForWindow 在窗口可见前调用会失败）；
         // 失败保持 _smtcService = null，下次事件（隐藏后再显示等）自动重试
-        Loaded += (_, _) => InitSmtc();
+        Loaded += (_, _) =>
+        {
+            InitSmtc();
+            // L2 全局热键：配置里开启过就恢复注册（失败会逐条提示）
+            if (ConfigService.Current.Ui.GlobalHotkeysEnabled) ApplyGlobalHotkeys();
+        };
 
         // 恢复上次的窗口尺寸（UI-R1.5 反馈）
         var ui = ConfigService.Current.Ui;
@@ -175,6 +183,42 @@ public partial class MainWindow : FluentWindow
         System.Windows.Application.Current.Shutdown();
     }
 
+    /// <summary>
+    /// L2 全局热键：按配置开/关注册。开启时被占用的组合不抢（其余照常生效），
+    /// 逐条列给用户明确提示，不静默。
+    /// </summary>
+    private void ApplyGlobalHotkeys()
+    {
+        if (Player is null) return;
+        var enabled = ConfigService.Current.Ui.GlobalHotkeysEnabled;
+        if (enabled && _globalHotkeys is null)
+        {
+            try
+            {
+                _globalHotkeys = new Player.App.GlobalHotkeys.GlobalHotkeyService(
+                    new WindowInteropHelper(this).Handle, Player);
+                if (_globalHotkeys.Conflicts.Count > 0)
+                {
+                    System.Windows.MessageBox.Show(this,
+                        "以下全局热键注册失败（可能已被其他程序占用）：\n\n- " +
+                        string.Join("\n- ", _globalHotkeys.Conflicts) +
+                        "\n\n其余热键已正常生效。",
+                        "全局热键", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+                }
+            }
+            catch (Exception ex)
+            {
+                Serilog.Log.Warning(ex, "全局热键初始化失败");
+                _globalHotkeys = null;
+            }
+        }
+        else if (!enabled && _globalHotkeys is not null)
+        {
+            _globalHotkeys.Dispose();
+            _globalHotkeys = null;
+        }
+    }
+
     /// <summary>关窗前记下窗口尺寸，退出时随配置落盘。</summary>
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
@@ -189,6 +233,8 @@ public partial class MainWindow : FluentWindow
 
         _tray?.Dispose();
         _tray = null;
+        _globalHotkeys?.Dispose();
+        _globalHotkeys = null;
         _smtcService?.Dispose();
         _smtcService = null;
         var bounds = RestoreBounds;
@@ -547,6 +593,11 @@ public partial class MainWindow : FluentWindow
                     case nameof(SettingsPageViewModel.SelectedDesktopLyricsBgOpacity):
                     case nameof(SettingsPageViewModel.SelectedDesktopLyricsTextColor):
                         _desktopLyrics?.ApplySettings();
+                        break;
+
+                    // L2 全局热键：开关即时生效（占用冲突逐条提示）
+                    case nameof(SettingsPageViewModel.GlobalHotkeysEnabled):
+                        ApplyGlobalHotkeys();
                         break;
                 }
             };
