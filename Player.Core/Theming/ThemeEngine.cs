@@ -244,13 +244,13 @@ public static class ThemeDeriver
     /// <summary>深色基底 + 封面染色：深 tint 背景 + 浅色文字 + 高亮强调色。</summary>
     private static ThemePalette DeriveDarkCore(RgbColor main)
     {
-        // 背景：主色向黑混合 86%，保证足够深（对比度保底的前提）
-        var background = Mix(main, Black, 0.86);
+        // 背景：主色向黑混合 78%，保留明显色相又保证足够深（对比度保底的前提）
+        var background = Mix(main, Black, 0.78);
         while (RelativeLuminance(background) > 0.12)
             background = Mix(background, Black, 0.5);
 
-        var surface = Mix(main, Black, 0.80);
-        var surfaceStrong = Mix(main, Black, 0.88);
+        var surface = Mix(main, Black, 0.70);
+        var surfaceStrong = Mix(main, Black, 0.82);
 
         // 强调色：同色相最大饱和度，再向白混合直到 vs 背景 ≥ 3.0
         var accent = Saturate(main);

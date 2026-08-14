@@ -121,9 +121,12 @@ public static class ThemeService
         _lastCoverHash = coverHash;
         if (!Tint) return;
 
-        AnimateTo(coverHash is null
+        var palette = coverHash is null
             ? (DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback())
-            : DeriveFromCover(coverHash));
+            : DeriveFromCover(coverHash);
+        Serilog.Log.Information("主题：深色={Dark} 封面 {Hash} → 背景 {Bg} 表面 {Surface} 强调 {Accent} 文字 {Text}",
+            DarkBase, coverHash ?? "(无)", palette.Background, palette.Surface, palette.Accent, palette.TextPrimary);
+        AnimateTo(palette);
     }
 
     private static ThemePalette DeriveFromCover(string coverHash)
