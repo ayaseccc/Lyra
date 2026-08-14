@@ -375,6 +375,20 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(PlayMode));
     }
 
+    /// <summary>左键点击：按 顺序 → 列表循环 → 单曲循环 → 随机 循环切换（UI-R1.5 反馈）。</summary>
+    [RelayCommand]
+    private void CyclePlayMode()
+    {
+        PlayMode = PlayMode switch
+        {
+            PlayMode.Sequential => PlayMode.RepeatAll,
+            PlayMode.RepeatAll => PlayMode.RepeatOne,
+            PlayMode.RepeatOne => PlayMode.Shuffle,
+            _ => PlayMode.Sequential
+        };
+        OnPropertyChanged(nameof(PlayMode));
+    }
+
     /// <summary>音量是 UI → 引擎的单向写入，定时器不回写（P0.1）。</summary>
     partial void OnVolumeChanged(double value)
     {

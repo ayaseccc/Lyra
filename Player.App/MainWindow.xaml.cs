@@ -63,13 +63,6 @@ public partial class MainWindow : FluentWindow
             menu.IsOpen = true;
         };
 
-        // 播放模式按钮：左键单击展开模式选择菜单
-        ModeButton.Click += (_, _) =>
-        {
-            if (ModeButton.ContextMenu is not { } menu) return;
-            menu.PlacementTarget = ModeButton;
-            menu.IsOpen = true;
-        };
 
         // DataContext 是构造后由 App 赋值的，定位事件在这里挂才挂得上
         DataContextChanged += (_, _) =>
