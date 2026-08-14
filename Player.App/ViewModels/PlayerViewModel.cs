@@ -1,3 +1,4 @@
+using System.Collections.ObjectModel;
 using System.IO;
 using System.Windows;
 using System.Windows.Media;
@@ -64,7 +65,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
         // 输出设置在这里只是"记下"，真正开设备要等第一次播放（见 PlaybackEngine 注释）
         _engine.ApplyOutputSettings(ConfigService.Current.Output.ToSettings());
-        RefreshOutputInfo();
+        RefreshOutputState();
 
         _timer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
         {
@@ -158,15 +159,73 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             ? "音量不是 100%，输出经过了软件衰减"
             : "输出经过重采样（采样率与源文件不一致）";
 
+    /// <summary>播放条上的小徽章文案，如「WASAPI 96k」（UI-R1.5 ⑫）。</summary>
+    public string OutputBadgeText
+    {
+        get
+        {
+            var backend = _engine.ActiveBackend switch
+            {
+                OutputBackendKind.Asio => "ASIO",
+                OutputBackendKind.Wasapi => "WASAPI",
+                _ => "系统输出"
+            };
+            var rate = _engine.OutputSampleRate;
+            return rate > 0
+                ? $"{backend} {(rate / 1000.0).ToString("0.#", System.Globalization.CultureInfo.InvariantCulture)}k"
+                : backend;
+        }
+    }
+
+    /// <summary>输出设备切换菜单的条目（UI-R1.5 ⑫）。</summary>
+    public sealed record OutputDeviceItem(string Name, bool IsCurrent);
+
+    public ObservableCollection<OutputDeviceItem> OutputDevices { get; } = new();
+
+    private void RefreshOutputState()
+    {
+        RefreshOutputInfo();
+        RefreshOutputDevices();
+    }
+
     private void RefreshOutputInfo()
     {
         OutputDescription = _engine.OutputDescription;
         IsBitPerfect = _engine.IsBitPerfect;
         OnPropertyChanged(nameof(OutputHint));
+        OnPropertyChanged(nameof(OutputBadgeText));
+    }
+
+    private void RefreshOutputDevices()
+    {
+        var current = _engine.OutputSettings.DeviceName;
+        OutputDevices.Clear();
+        foreach (var device in _engine.EnumerateDevices(_engine.ActiveBackend))
+        {
+            OutputDevices.Add(new OutputDeviceItem(
+                device.Name,
+                string.Equals(device.Name, current, StringComparison.OrdinalIgnoreCase)));
+        }
+    }
+
+    /// <summary>从徽章菜单直接切换输出设备（UI-R1.5 ⑫）。</summary>
+    [RelayCommand]
+    private void SwitchOutputDevice(OutputDeviceItem? device)
+    {
+        if (device is null) return;
+
+        var settings = _engine.OutputSettings.Clone();
+        settings.DeviceName = device.Name;
+        if (!_engine.ApplyOutputSettings(settings)) return;
+
+        ConfigService.Current.Output.CopyFrom(settings);
+        ConfigService.Save();
+        RefreshOutputState();
+        StatusText = "输出设备：" + device.Name;
     }
 
     private void OnOutputChanged(object? sender, EventArgs e) =>
-        _dispatcher.BeginInvoke(RefreshOutputInfo);
+        _dispatcher.BeginInvoke(RefreshOutputState);
 
     /// <summary>无缝衔接已经发生：引擎自己换到了预载好的下一曲，这里把列表游标和界面追上去。</summary>
     private void OnTrackTransitioned(object? sender, string path) => _dispatcher.BeginInvoke(() =>
@@ -361,6 +420,14 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         StatusText = PlayModeText;
     }
 
+    // ---------------- 定位正在播放（UI-R1.5 ⑪） ----------------
+
+    /// <summary>请求当前曲目列表滚动到正在播放的曲目（Shell 转发给页面 VM）。</summary>
+    public event Action? LocateRequested;
+
+    [RelayCommand]
+    private void LocateCurrentTrack() => LocateRequested?.Invoke();
+
     // ---------------- 进度条（P0.1 修复后的时序） ----------------
 
     /// <summary>
@@ -437,6 +504,13 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _ = Lyrics.LoadForTrackAsync(track);
     }
 
+    /// <summary>码率格式化（UI-R1.5）：小于 1000 显示 "3072 kbps"，更大显示 "3.0 Mbps"。</summary>
+    private static string FormatBitrate(int kbps)
+    {
+        if (kbps < 1000) return kbps + " kbps";
+        return (kbps / 1000.0).ToString("0.0") + " Mbps";
+    }
+
     /// <summary>窗口标题（UI-R1）：标题 - 艺术家 | 格式 | 位深 | 码率 | 采样率。</summary>
     private void RefreshWindowTitle()
     {
@@ -450,7 +524,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         var parts = new List<string>(4);
         if (!string.IsNullOrEmpty(info?.Format)) parts.Add(info.Format);
         if (info?.BitDepth is > 0) parts.Add(info.BitDepth + "bit");
-        if (info?.Bitrate is > 0) parts.Add((info.Bitrate / 1000.0).ToString("0") + "k");
+        if (info?.Bitrate is > 0) parts.Add(FormatBitrate(info.Bitrate));
         if (info?.SampleRate is > 0) parts.Add((info.SampleRate / 1000.0).ToString("0.#") + "kHz");
 
         var suffix = parts.Count > 0 ? " | " + string.Join(" | ", parts) : string.Empty;

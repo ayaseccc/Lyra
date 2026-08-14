@@ -49,6 +49,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         _library.ScanCompleted += OnScanCompleted;
         _playlists.PlaylistsChanged += OnPlaylistsChanged;
         Player.PropertyChanged += OnPlayerPropertyChanged;
+        Player.LocateRequested += OnPlayerLocateRequested;
     }
 
     public PlayerViewModel Player { get; }
@@ -72,6 +73,37 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     private bool _hasRoots;
+
+    /// <summary>状态行有内容（UI-R1.5 ⑨：扫描统计不常驻，提示自动消失）。</summary>
+    public bool HasStatus => !string.IsNullOrEmpty(ScanStatus);
+
+    /// <summary>状态行可见：有内容且不在扫描中（扫描中只留细进度条）。</summary>
+    public bool ShowStatusText => HasStatus && !IsScanning;
+
+    private DispatcherTimer? _statusTimer;
+
+    partial void OnScanStatusChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasStatus));
+        OnPropertyChanged(nameof(ShowStatusText));
+
+        _statusTimer?.Stop();
+        if (string.IsNullOrEmpty(value)) return;
+
+        // 状态提示 4 秒后自动消失，不再常驻（UI-R1.5 ⑨）
+        _statusTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
+        {
+            Interval = TimeSpan.FromSeconds(4)
+        };
+        _statusTimer.Tick += (_, _) =>
+        {
+            _statusTimer.Stop();
+            ScanStatus = string.Empty;
+        };
+        _statusTimer.Start();
+    }
+
+    partial void OnIsScanningChanged(bool value) => OnPropertyChanged(nameof(ShowStatusText));
 
     /// <summary>
     /// 左侧栏顶部搜索框（UI-R0：搜索从主区移到侧栏）。中转给当前曲目列表页；
@@ -149,7 +181,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         _suppressNavigation = true;
         NavItems.Clear();
 
-        NavItems.Add(new NavItemViewModel { Kind = NavKind.Header, Title = "媒体库" });
+        NavItems.Add(new NavItemViewModel
+        {
+            Kind = NavKind.Header,
+            Title = "媒体库",
+            ShowAddButton = true,
+            AddToolTip = "添加音乐文件夹",
+            Command = new AsyncRelayCommand(AddLibraryFolderAsync)
+        });
         NavItems.Add(new NavItemViewModel
         {
             Kind = NavKind.AllTracks, Title = "全部歌曲", Icon = SymbolRegular.MusicNote224,
@@ -167,12 +206,21 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         });
 
         var manual = _playlists.Playlists;
-        NavItems.Add(new NavItemViewModel { Kind = NavKind.Header, Title = "歌单" });
+        NavItems.Add(new NavItemViewModel
+        {
+            Kind = NavKind.Header,
+            Title = "歌单",
+            ShowAddButton = true,
+            AddToolTip = "新建歌单",
+            Command = CreatePlaylistCommand
+        });
         if (manual.Count == 0)
         {
             NavItems.Add(new NavItemViewModel
             {
-                Kind = NavKind.Header, Title = "（还没有歌单）"
+                Kind = NavKind.Header,
+                Title = "＋ 新建歌单",
+                Command = CreatePlaylistCommand
             });
         }
         foreach (var playlist in manual)
@@ -432,6 +480,29 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     private void OnPlaylistsChanged(object? sender, EventArgs e) =>
         _dispatcher.BeginInvoke(() => QueueRebuild(libraryChanged: false));
+
+    // ---------------- 定位正在播放（UI-R1.5 ⑪） ----------------
+
+    /// <summary>播放条「定位正在播放」：选中并滚动到当前曲目后触发，窗口代码负责滚动。</summary>
+    public event Action? TrackLocateRequested;
+
+    private void OnPlayerLocateRequested()
+    {
+        if (CurrentPage is not TrackListPageViewModel page)
+        {
+            ScanStatus = "当前页面不是曲目列表";
+            return;
+        }
+
+        if (Player.CurrentTrack is not { } track)
+        {
+            ScanStatus = "当前没有正在播放的曲目";
+            return;
+        }
+
+        page.LocateTrack(track);
+        TrackLocateRequested?.Invoke();
+    }
 
     // ---------------- 命令 ----------------
 

@@ -53,7 +53,44 @@ public partial class MainWindow : FluentWindow
         SeekSlider.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler(OnSeekDragStarted));
         SeekSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(OnSeekDragCompleted));
 
+        // 播放条输出徽章：左键单击也弹出设备切换菜单（UI-R1.5 ⑫）
+        OutputBadgeButton.Click += (_, _) =>
+        {
+            if (OutputBadgeButton.ContextMenu is not { } menu) return;
+            menu.PlacementTarget = OutputBadgeButton;
+            menu.IsOpen = true;
+        };
 
+        // DataContext 是构造后由 App 赋值的，定位事件在这里挂才挂得上
+        DataContextChanged += (_, _) =>
+        {
+            if (Shell is not null)
+                Shell.TrackLocateRequested += ScrollToCurrentTrack;
+        };
+    }
+
+    /// <summary>定位正在播放：把当前曲目列表滚动到选中的那一行（UI-R1.5 ⑪）。</summary>
+    private void ScrollToCurrentTrack()
+    {
+        _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
+        {
+            var list = FindVisualChild<System.Windows.Controls.ListView>(
+                this, lv => lv.DataContext is TrackListPageViewModel);
+            if (list?.SelectedItem is not { } item) return;
+            list.ScrollIntoView(item);
+        });
+    }
+
+    /// <summary>按条件在可视树里找第一个后代（DataTemplate 里的控件不在窗口 namescope，只能这样找）。</summary>
+    private static T? FindVisualChild<T>(DependencyObject root, Func<T, bool> predicate) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match && predicate(match)) return match;
+            if (FindVisualChild(child, predicate) is { } nested) return nested;
+        }
+        return null;
     }
 
 

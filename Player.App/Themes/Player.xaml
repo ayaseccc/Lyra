@@ -11,6 +11,7 @@
     <conv:NullToVisibleConverter x:Key="NullToVisible" />
     <conv:NonEmptyToVisibilityConverter x:Key="NonEmptyToVis" />
     <conv:BoolToAccentConverter x:Key="BoolToAccent" />
+    <conv:BoolToTintBrushConverter x:Key="BoolToTintBrush" />
     <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
     <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
@@ -231,10 +232,10 @@
             </Setter.Value>
         </Setter>
         <Style.Triggers>
-            <!-- 分组标题：只显示不可选 -->
+            <!-- 分组标题：只显示不可选（UI-R1.5 ⑧：标题上的 + 按钮和「＋ 新建歌单」要可点，不能再挡命中） -->
             <DataTrigger Binding="{Binding IsHeader}" Value="True">
-                <Setter Property="IsHitTestVisible" Value="False" />
                 <Setter Property="Focusable" Value="False" />
+                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                 <Setter Property="Template">
                     <Setter.Value>
                         <ControlTemplate TargetType="ListBoxItem">
@@ -256,6 +257,57 @@
                 </Setter>
             </DataTrigger>
         </Style.Triggers>
+    </Style>
+
+    <!-- = 左侧栏分组标题上的操作（UI-R1.5 ⑧/⑩）：悬浮 + 按钮、可点击的「＋ 新建歌单」 = -->
+    <Style x:Key="HeaderAddButtonStyle" TargetType="Button">
+        <Setter Property="Width" Value="24" />
+        <Setter Property="Height" Value="22" />
+        <Setter Property="Padding" Value="4,2" />
+        <Setter Property="Margin" Value="0,10,8,0" />
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Opacity" Value="0.4" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                            CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Opacity" Value="1" />
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style x:Key="HeaderActionStyle" TargetType="Button">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Padding" Value="12,4" />
+        <Setter Property="Margin" Value="12,10,0,2" />
+        <Setter Property="HorizontalAlignment" Value="Left" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="Button">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}"
+                            CornerRadius="4" Padding="{TemplateBinding Padding}">
+                        <ContentPresenter HorizontalAlignment="Left" VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
     <!-- = 曲目列表（紧凑 28px 行高，PLAN 第 8 节） = -->

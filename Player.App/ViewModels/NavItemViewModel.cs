@@ -45,6 +45,19 @@ public sealed partial class NavItemViewModel : ObservableObject
     /// <summary>导出 m3u8（歌单/文件夹右键菜单，UI-R0）。</summary>
     public IRelayCommand? ExportCommand { get; init; }
 
+    /// <summary>分组标题上的操作命令（UI-R1.5 ⑧/⑩）：媒体库标题的 + 添加文件夹、
+    /// 歌单标题的 + 新建歌单、空歌单提示行「＋ 新建歌单」。</summary>
+    public IRelayCommand? Command { get; init; }
+
+    /// <summary>标题行右侧显示悬浮 + 按钮（UI-R1.5 ⑧）。</summary>
+    public bool ShowAddButton { get; init; }
+
+    /// <summary>悬浮 + 按钮的提示文案。</summary>
+    public string AddToolTip { get; init; } = string.Empty;
+
+    /// <summary>可点击的操作行（区别于普通标题）：有命令且不是「标题 + 按钮」形态。</summary>
+    public bool IsAction => Command is not null && !ShowAddButton;
+
     [ObservableProperty]
     private string _countText = string.Empty;
 }

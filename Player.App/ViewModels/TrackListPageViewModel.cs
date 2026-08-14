@@ -214,6 +214,24 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         _playRequested(ordered, index, SourceName);
     }
 
+    /// <summary>定位正在播放的曲目：清掉过滤、按路径找到同一条并选中（UI-R1.5 ⑪）。</summary>
+    public void LocateTrack(TrackRecord track)
+    {
+        _filterDebounce.Stop();
+        if (_appliedFilter.Length > 0)
+        {
+            _appliedFilter = string.Empty;
+            FilterText = string.Empty;
+            View.Refresh();
+        }
+
+        var match = View.Cast<TrackRecord>().FirstOrDefault(t =>
+            string.Equals(t.Path, track.Path, StringComparison.OrdinalIgnoreCase));
+        if (match is null) return;
+
+        SelectedTrack = match;
+    }
+
     // ---------------- 歌单编辑 ----------------
 
     [RelayCommand]

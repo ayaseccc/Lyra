@@ -65,3 +65,20 @@ public sealed class BoolToAccentConverter : IValueConverter
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();
 }
+
+/// <summary>bool → 强调色/次级文字色（UI-R1.5 ⑬：激活态用强调色着色，不用实心填充）。</summary>
+public sealed class BoolToTintBrushConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var app = System.Windows.Application.Current;
+        if (value is true)
+            return app?.TryFindResource("AccentBrush") as SolidColorBrush
+                   ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x60, 0xCD, 0xFF));
+        return app?.TryFindResource("TextSecondaryBrush") as SolidColorBrush
+               ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0xB6, 0xB6, 0xB6));
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}

@@ -218,13 +218,22 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     {
         if (_track is null) return;
 
-        var matched = _lyrics.GetNeteaseId(_track.Path);
-        var matchText = matched is { } id ? $" · 已匹配网易云 {id}" : string.Empty;
-
-        SourceText = result.IsEmpty
-            ? string.Empty
-            : $"{result.SourceText}{matchText}";
+        _lastSource = result.Source;
+        OnPropertyChanged(nameof(SourceDisplayText));
+        SourceText = result.SourceText;
     }
+
+    private LyricSource _lastSource = LyricSource.None;
+
+    /// <summary>右键菜单里的只读来源行（UI-R1.5 ⑥）：「来源：网易云 · 缓存」，不带数字 ID。</summary>
+    public string SourceDisplayText => _lastSource switch
+    {
+        LyricSource.LocalFile => "来源：本地 .lrc",
+        LyricSource.Embedded => "来源：内嵌标签",
+        LyricSource.Cache => "来源：网易云 · 缓存",
+        LyricSource.Online => "来源：网易云",
+        _ => string.Empty
+    };
 
     private string SubTextFor(LyricLine line) => DisplayMode switch
     {
