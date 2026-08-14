@@ -257,10 +257,19 @@ public partial class MainWindow : FluentWindow
     }
 
     /// <summary>Esc：先退大歌词页，再退设置页（UI-R2 bug 修复）。
-    /// 目验六修复：大歌词页打开时 Tab/方向键一律吞掉（窗口级，任何焦点位置都生效，无焦点框）。</summary>
+    /// 目验九修复：Tab 全局绑定「平铺/封面模式切换」并始终吞掉——任何位置按 Tab 不再移动焦点（选框物理消灭），
+    /// 同时切换当前曲目列表的平铺/分组模式（与列表右上角按钮同命令，持久化）。
+    /// 大歌词页打开时方向键仍吞掉（无焦点框）。</summary>
     private void Window_OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
-        if (_bigLyricsVisible && (e.Key == Key.Tab || e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down))
+        if (e.Key == Key.Tab)
+        {
+            if (CurrentTrackPage is { } page && page.ToggleViewModeCommand.CanExecute(null))
+                page.ToggleViewModeCommand.Execute(null);
+            e.Handled = true;
+            return;
+        }
+        if (_bigLyricsVisible && (e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down))
         {
             e.Handled = true;
             return;
