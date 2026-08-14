@@ -866,6 +866,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
             SampleRate = sampleRate,
             Channels = channels,
             BitDepth = bitDepth,
+            Bitrate = seconds > 0 && fileSize > 0 ? (int)(fileSize * 8.0 / seconds / 1000.0) : 0,
             Format = Path.GetExtension(path).TrimStart('.').ToUpperInvariant(),
             FileSize = fileSize
         };

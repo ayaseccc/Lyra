@@ -79,6 +79,18 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     /// <summary>歌词覆盖层（点击底部封面展开）。</summary>
     public LyricsViewModel Lyrics { get; private set; } = null!;
 
+    /// <summary>右侧信息栏/歌词栏可见（UI-R1 可折叠）。</summary>
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SidePaneWidth))]
+    private bool _isSidePaneVisible = true;
+
+    [RelayCommand]
+    private void ToggleSidePane() => IsSidePaneVisible = !IsSidePaneVisible;
+
+    /// <summary>右侧栏列宽：折叠时归零（UI-R1）。</summary>
+    public System.Windows.GridLength SidePaneWidth =>
+        IsSidePaneVisible ? new System.Windows.GridLength(280) : new System.Windows.GridLength(0);
+
     /// <summary>当前播放的曲目，供列表页高亮用。</summary>
     public TrackRecord? CurrentTrack => _list.Current;
 
@@ -136,6 +148,10 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isBitPerfect;
 
+    /// <summary>窗口标题栏（UI-R1）：「标题 - 艺术家 | 格式 | 位深 | 码率 | 采样率」。</summary>
+    [ObservableProperty]
+    private string _windowTitle = "Player";
+
     public string OutputHint => IsBitPerfect
         ? "位完美输出（音量 100%，未重采样）"
         : Math.Abs(Volume - 1.0) > 0.0001
@@ -187,6 +203,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         PositionSeconds = 0;
         DurationSeconds = _engine.Duration.TotalSeconds > 0 ? _engine.Duration.TotalSeconds : 1;
         RefreshOutputInfo();
+        RefreshWindowTitle();
         OnPropertyChanged(nameof(CurrentTrack));
         StatusText = "无缝衔接：" + (track?.DisplayTitle ?? Path.GetFileNameWithoutExtension(path));
     });
@@ -208,6 +225,23 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         PlayMode.Shuffle => "随机播放",
         _ => "列表循环"
     };
+
+    // ---------------- 播放模式图标组（UI-R1：四键直接选） ----------------
+
+    public bool IsSequentialMode => PlayMode == PlayMode.Sequential;
+
+    public bool IsRepeatAllMode => PlayMode == PlayMode.RepeatAll;
+
+    public bool IsRepeatOneMode => PlayMode == PlayMode.RepeatOne;
+
+    public bool IsShuffleMode => PlayMode == PlayMode.Shuffle;
+
+    [RelayCommand]
+    private void SetPlayMode(PlayMode mode)
+    {
+        PlayMode = mode;
+        StatusText = PlayModeText;
+    }
 
     /// <summary>音量是 UI → 引擎的单向写入，定时器不回写（P0.1）。</summary>
     partial void OnVolumeChanged(double value)
@@ -397,9 +431,32 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         Title = track.DisplayTitle;
         Artist = track.DisplayArtist;
         CoverImage = CoverImageCache.Get(track.CoverHash);
+        RefreshWindowTitle();
 
         // P3：切歌即异步加载歌词（.lrc > 缓存 > 在线匹配），失败不影响播放
         _ = Lyrics.LoadForTrackAsync(track);
+    }
+
+    /// <summary>窗口标题（UI-R1）：标题 - 艺术家 | 格式 | 位深 | 码率 | 采样率。</summary>
+    private void RefreshWindowTitle()
+    {
+        if (!HasTrack)
+        {
+            WindowTitle = "Player";
+            return;
+        }
+
+        var info = _engine.CurrentTrack;
+        var parts = new List<string>(4);
+        if (!string.IsNullOrEmpty(info?.Format)) parts.Add(info.Format);
+        if (info?.BitDepth is > 0) parts.Add(info.BitDepth + "bit");
+        if (info?.Bitrate is > 0) parts.Add((info.Bitrate / 1000.0).ToString("0") + "k");
+        if (info?.SampleRate is > 0) parts.Add((info.SampleRate / 1000.0).ToString("0.#") + "kHz");
+
+        var suffix = parts.Count > 0 ? " | " + string.Join(" | ", parts) : string.Empty;
+        WindowTitle = Artist.Length > 0
+            ? $"{Title} - {Artist}{suffix}"
+            : $"{Title}{suffix}";
     }
 
     private static void BumpPlayCount(TrackRecord track)
@@ -458,6 +515,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         HasTrack = true;
         _pendingSeekTarget = null;
         RefreshOutputInfo();
+        RefreshWindowTitle();
     });
 
     private void OnStateChanged(object? sender, PlayerState state) => _dispatcher.BeginInvoke(() =>
@@ -474,6 +532,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             Artist = string.Empty;
             TechnicalInfo = string.Empty;
             CoverImage = null;
+            RefreshWindowTitle();
             Lyrics.Reset();
         }
     });

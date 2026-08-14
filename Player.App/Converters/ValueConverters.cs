@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows;
 using System.Windows.Data;
+using System.Windows.Media;
 using Player.App.Infra;
 
 namespace Player.App.Converters;
@@ -40,6 +41,26 @@ public sealed class NonEmptyToVisibilityConverter : IValueConverter
 {
     public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
         => value is string s && s.Length > 0 ? Visibility.Visible : Visibility.Collapsed;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+
+/// <summary>bool → 强调色/半透明画刷（播放模式按钮、歌词开关的选中高亮，UI-R1）。</summary>
+public sealed class BoolToAccentConverter : IValueConverter
+{
+    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        if (value is true)
+        {
+            var accent = System.Windows.Application.Current?.TryFindResource("AccentBrush") as SolidColorBrush
+                         ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x60, 0xCD, 0xFF));
+            return accent;
+        }
+
+        return new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
+    }
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();

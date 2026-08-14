@@ -23,6 +23,9 @@ public sealed record TrackInfo
     /// <summary>源文件的原始位深；BASS 拿不到时为 0。</summary>
     public int BitDepth { get; init; }
 
+    /// <summary>码率（kbps）；BASS 不直接提供，由引擎按 文件大小/时长 估算，拿不到为 0。</summary>
+    public int Bitrate { get; init; }
+
     /// <summary>大写扩展名，如 FLAC。</summary>
     public string Format { get; init; } = string.Empty;
 
