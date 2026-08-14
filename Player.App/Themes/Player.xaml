@@ -478,7 +478,7 @@
         <Setter Property="Width" Value="30" />
         <Setter Property="Height" Value="28" />
         <Setter Property="Padding" Value="0" />
-        <Setter Property="Background" Value="#1AFFFFFF" />
+        <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">

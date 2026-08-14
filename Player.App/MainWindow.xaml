@@ -74,7 +74,7 @@
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
                                             <StackPanel VerticalAlignment="Top" Margin="0,4,0,0">
-                                                <TextBlock Text="{Binding DisplayAlbum}" FontSize="12.5"
+                                                <TextBlock Text="{Binding DisplayAlbum}" FontSize="12.5" LineHeight="18"
                                                            Foreground="{StaticResource TextSecondaryBrush}"
                                                            TextTrimming="CharacterEllipsis" MaxWidth="82" />
                                                 <Border Width="84" Height="84" CornerRadius="2" Margin="0,3,0,0"
@@ -95,7 +95,7 @@
                                     <GridViewColumn.CellTemplate>
                                         <DataTemplate>
                                             <TextBlock Text="{Binding DisplayTitle}" TextTrimming="CharacterEllipsis"
-                                                       FontSize="12" VerticalAlignment="Top" Margin="12,24,0,0"
+                                                       FontSize="12" VerticalAlignment="Top" Margin="12,25,0,0"
                                                        Foreground="{StaticResource TextPrimaryBrush}" />
                                         </DataTemplate>
                                     </GridViewColumn.CellTemplate>
@@ -738,7 +738,7 @@
                     </Grid.ColumnDefinitions>
                     <TextBlock Text="{Binding PositionText}" Style="{StaticResource SubTextStyle}"
                                Width="46" VerticalAlignment="Center" />
-                    <Slider Grid.Column="1" x:Name="SeekSlider" Margin="10,0" VerticalAlignment="Center"
+                    <Slider Grid.Column="1" x:Name="SeekSlider" Margin="4,0" VerticalAlignment="Center"
                             Style="{StaticResource SeekSliderStyle}"
                             Maximum="{Binding DurationSeconds}"
                             Value="{Binding PositionSeconds, Mode=TwoWay}"
@@ -762,9 +762,12 @@
                                 Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}">
                             <ui:SymbolIcon Symbol="Settings24" FontSize="16" />
                         </Button>
-                        <Button Style="{StaticResource ModeButtonStyle}" Margin="6,0,0,0" Opacity="0.22" ToolTip="预留功能位" />
-                        <Button Style="{StaticResource ModeButtonStyle}" Margin="6,0,0,0" Opacity="0.22" ToolTip="预留功能位" />
-                        <Button Style="{StaticResource ModeButtonStyle}" Margin="6,0,0,0" Opacity="0.22" ToolTip="预留功能位" />
+                        <Button Style="{StaticResource ModeButtonStyle}" Margin="6,0,0,0" Opacity="0.22"
+                                Background="{StaticResource HoverBrush}" ToolTip="预留功能位" />
+                        <Button Style="{StaticResource ModeButtonStyle}" Margin="6,0,0,0" Opacity="0.22"
+                                Background="{StaticResource HoverBrush}" ToolTip="预留功能位" />
+                        <Button Style="{StaticResource ModeButtonStyle}" Margin="6,0,0,0" Opacity="0.22"
+                                Background="{StaticResource HoverBrush}" ToolTip="预留功能位" />
                     </StackPanel>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
