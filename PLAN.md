@@ -479,6 +479,12 @@ ChkszClient（四端点封装、令牌桶 18 次/分、额度响应头解析、�
 4. **全局热键**：RegisterHotKey 实现，默认全关；注册失败（被占用）逐条明确提示，不静默。
 5. **设置页**：新增「快捷键」（只读清单）「行为」（关闭行为/启动恢复策略）「关于」（版本、BASS 非商业授权提示、开源组件、GD/ChKSz 接口署名）；在线组 Key 输入框改密文（尾 4 位回显+眼睛按钮）——L2 内完成，不再顺延。
 
+**L2 实施记录（2026-08-15，实测回写）**：
+- step1 SMTC 预研 ✔（TFM 升级 + GetForWindow 选型，见上）。
+- step2 应用内快捷键 ✔：Player.Core/Hotkeys/ShortcutPolicy 统一裁决（文本输入聚焦一律不响应；按钮聚焦 Space 归按钮；滑条聚焦方向键归滑条；列表 Enter/Delete 放行），Window_OnPreviewKeyDown 单入口 + 大歌词页规则合并；harness 新增 shortcuts 模式 13 项全过；设置「快捷键」页只读清单。
+- step3 SMTC 集成 ✔：SmtcService（GetForWindow 绑定主窗；媒体键 Play/Pause/Next/Previous；标题/艺术家/专辑/封面/播放状态/进度实时推送，进度 1s 节流）。实测发现并修复：GetForWindow 在窗口显示前调用会失败（初版在 DataContextChanged 提前初始化，日志 NRE 包 HRESULT，且失败实例非 null 堵死重试）——改为窗口 Loaded 后初始化、失败保持 null 可重试，实测日志「SMTC 已就绪」。预研探针 SmtcProbe 初版缺 StartupUri 根本没调 GetForWindow，已补上并回显 HResult（窗口显示后调用实测成功）。
+- step4 托盘 ✔：WinForms NotifyIcon（UseWindowsForms，SDK 自带无新依赖；隐式 using 与 WPF 冲突已剔除）；菜单 播放/暂停（随状态改字）、上一曲、下一曲、桌面歌词（勾选与播放条按钮双向同步）、显示主窗、退出；双击还原；行为页「关闭时最小化到托盘」默认关（UiConfig.CloseToTray）；开启后 OnClosing 拦截为隐藏、进程存活（SMTC 不断），退出唯一路径=托盘菜单，B4 ShutdownMode=OnMainWindowClose 保持兼容。冒烟验证：默认 WM_CLOSE 正常退出 / 开启后 WM_CLOSE 隐藏且进程存活、窗口不可见。多尺寸 app.ico（16/24/32/48，Assets/app.ico，兼作 ApplicationIcon）。
+
 **UI-R4 目验结论（2026-08-14）：通过（用户「没发现问题」）**。交付：①大封面高清解码（CoverImageCache.GetLarge 760px，修复 160px 放大模糊）；②艺术家|专辑行；③制作信息区块——CreditReader 从标签读作词/作曲/编曲（Vorbis LYRICIST/ARRANGER + ID3v2 TXXX + Composers，实测曲库 150 首中 25 首有标签），LRC 头部元数据捕获补位（[词:]/[曲:]/[编曲:] 等），有才显示；④侧栏折叠状态持久化（UiConfig.SidePaneOpen）；harness lyrics 扩至 101 项全过。
 
 **UI-R 阶段全部完成（R0 歌词渲染重做 / R1 布局骨架 / R1.5 细节打磨 / R2 专辑分组 / R3 封面取色染色 / R4 右侧信息栏），遗留两个歌词已知问题（窄栏省略号截断、LyricCanvas.OnRender 偶发异常）作为待办，随后续歌词相关修改处理。**
