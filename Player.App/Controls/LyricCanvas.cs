@@ -254,8 +254,14 @@ public sealed class LyricCanvas : FrameworkElement
         var (first, last) = LyricLayout.VisibleRange(_offset, ActualHeight, lines.Count);
         if (first < 0) return;
 
+        // 防御：范围钳制到实际行数（曾偶发 ArgumentOutOfRangeException）
+        last = Math.Min(last, lines.Count - 1);
+
         for (var i = first; i <= last; i++)
         {
+            // 防御：索引越界直接跳过（数据变化与渲染交错时的兜底）
+            if (i < 0 || i >= lines.Count) continue;
+
             var line = lines[i];
             var y = i * LyricLayout.LineHeight - _offset;
             var isCurrent = !IsStatic && i == CurrentIndex;
@@ -263,18 +269,16 @@ public sealed class LyricCanvas : FrameworkElement
 
             var textY = y + 9;
 
-            // ---- 主文本（单行省略） ----
+            // ---- 主文本 ----
             if (isCurrent)
             {
-                // 当前行：粗体+强调色，按行号缓存（播放推进时每行只重建一次）
+                // 当前行：粗体+强调色，完整文本不省略（窄栏时宁可减少句数也要整句完整）
                 if (!_currentCache.TryGetValue(i, out var current))
                 {
                     current = new FormattedText(
                         line.Primary, CultureInfo.CurrentUICulture, FlowDirection.LeftToRight,
                         CurrentTypeface, LyricLayout.PrimaryFontSize, accent, pixelsPerDip);
-                    current.MaxTextWidth = maxWidth;
                     current.MaxLineCount = 1;
-                    current.Trimming = TextTrimming.CharacterEllipsis;
                     _currentCache[i] = current;
                 }
 
@@ -289,9 +293,11 @@ public sealed class LyricCanvas : FrameworkElement
                         PrimaryTypeface, LyricLayout.PrimaryFontSize, baseText, pixelsPerDip);
                     primary.MaxTextWidth = maxWidth;
                     primary.MaxLineCount = 1;
-                    primary.Trimming = TextTrimming.CharacterEllipsis;
                     _primaryCache[i] = primary;
                 }
+
+                // 窄栏放不下整句 → 这一句不显示（减少句数，代替省略号截断）
+                if (primary.Width > maxWidth + 0.5) continue;
 
                 // 淡出画刷预生成（无离屏渲染、无分配）
                 var distance = Math.Min(4, Math.Abs(i - CurrentIndex));
@@ -300,7 +306,7 @@ public sealed class LyricCanvas : FrameworkElement
                 dc.DrawText(primary, new Point(8, textY));
             }
 
-            // ---- 副文本（单行省略，走缓存；当前行不淡出） ----
+            // ---- 副文本（走缓存；放不下整句则不显示） ----
             if (!string.IsNullOrWhiteSpace(line.Secondary))
             {
                 if (!_secondaryCache.TryGetValue(i, out var secondary))
@@ -310,9 +316,10 @@ public sealed class LyricCanvas : FrameworkElement
                         PrimaryTypeface, LyricLayout.SecondaryFontSize, subText, pixelsPerDip);
                     secondary.MaxTextWidth = maxWidth;
                     secondary.MaxLineCount = 1;
-                    secondary.Trimming = TextTrimming.CharacterEllipsis;
                     _secondaryCache[i] = secondary;
                 }
+
+                if (secondary.Width > maxWidth + 0.5) continue;
 
                 var distance = Math.Min(4, Math.Abs(i - CurrentIndex));
                 if (_secondaryFadeBrushes.Length == 5)
