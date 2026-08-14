@@ -36,6 +36,8 @@ public sealed class LyricCanvas : FrameworkElement
 
     private double _offset;
     private bool _animating;
+    private bool _freeBrowse;          // 大页滚轮自由浏览中
+    private int _browseFrozenIndex = -1;
 
     private static readonly FontFamily UiFont = new("Microsoft YaHei UI, Segoe UI");
 
@@ -76,11 +78,25 @@ public sealed class LyricCanvas : FrameworkElement
     private Color _brushSubBase;
     private Color _brushAccentBase;
 
-    /// <summary>点击某行（参数为行号）。ClicksEnabled=false 时（大歌词页）不触发。</summary>
+    /// <summary>点击某行（参数为行号）。</summary>
     public event Action<int>? LineClicked;
 
-    /// <summary>大歌词页终版：点击交给宿主（左/右半区=上一曲/下一曲），本控件不再处理点击（避免与宿主导航冲突）。</summary>
-    public bool ClicksEnabled { get; set; } = true;
+    /// <summary>大歌词页：双击空白/歌词任意处=退出（由宿主处理）。</summary>
+    public event Action? DoubleClicked;
+
+    /// <summary>大歌词页：点击未命中歌词行的空白（参数为画布内 x），宿主按左/右半区切曲。</summary>
+    public event Action<double>? BlankClicked;
+
+    /// <summary>
+    /// 大歌词页点击模式（目验五修复：跳转+分区导航合一）：
+    /// Seek=右栏默认（点行跳转）；SeekOrNavigate=大页（点行=跳转，点空白=左/右半区切曲，双击=退出）；Disabled=不处理点击。
+    /// </summary>
+    public enum LyricClickMode { Seek, SeekOrNavigate, Disabled }
+
+    public LyricClickMode ClickMode { get; set; } = LyricClickMode.Seek;
+
+    /// <summary>大歌词页滚轮自由浏览（目验五修复）：滚轮临时滚动，播放推进到新行时自动回到跟随。</summary>
+    public bool WheelBrowsing { get; set; }
 
     /// <summary>字号缩放（大歌词页用，默认 1.0；同时缩放行高/间距/折行宽度判断）。</summary>
     public double FontScale
@@ -96,7 +112,7 @@ public sealed class LyricCanvas : FrameworkElement
     public LyricCanvas()
     {
         ClipToBounds = true;
-        Focusable = true;
+        // 目验五修复：不再自设 Focusable（Tab 焦点框问题），需要键盘时由宿主统一管理
         Cursor = Cursors.Hand;
     }
 
@@ -203,6 +219,15 @@ public sealed class LyricCanvas : FrameworkElement
             return;
         }
 
+        // 目验五修复：大页滚轮自由浏览——播放推进到新行时自动回到跟随
+        if (_freeBrowse && CurrentIndex != _browseFrozenIndex)
+            _freeBrowse = false;
+        if (_freeBrowse)
+        {
+            InvalidateVisual();
+            return;
+        }
+
         var target = LyricLayout.TargetOffsetForUnit(CurrentIndex, heights, ActualHeight);
         var (next, settled) = LyricLayout.EaseTowards(_offset, target, dt);
         _offset = next;
@@ -230,29 +255,48 @@ public sealed class LyricCanvas : FrameworkElement
     {
         base.OnMouseWheel(e);
 
-        // 跟随模式（有时间轴）：滚轮不介入，避免手动滚动破坏跟随（用户要求）。
         // 静态模式（无时间轴长歌词）：滚轮是唯一的浏览方式，保留。
-        if (!IsStatic) return;
+        // 大歌词页（WheelBrowsing）：滚轮临时自由浏览，播放推进到新行自动回跟随（目验五修复）。
+        if (!IsStatic && !WheelBrowsing) return;
 
         var heights = ComputeHeights();
         if (heights.Length == 0) return;
 
         var maxOffset = Math.Max(0, LyricLayout.TotalHeight(heights) - ActualHeight);
         _offset = Math.Clamp(_offset + LyricLayout.WheelStep(e.Delta), 0, maxOffset);
+        if (WheelBrowsing && !IsStatic)
+        {
+            _freeBrowse = true;
+            _browseFrozenIndex = CurrentIndex;
+        }
         InvalidateVisual();
+        StartAnimation();   // 保持渲染循环（自由浏览期间也要重绘）
         e.Handled = true;
     }
 
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
-        if (!ClicksEnabled) return;   // 大歌词页：导航由宿主统一处理
+        if (ClickMode == LyricClickMode.Disabled) return;
 
         var heights = ComputeHeights();
         if (heights.Length == 0) return;
 
-        var index = LyricLayout.HitTestUnit(e.GetPosition(this).Y, _offset, heights);
-        if (index >= 0) LineClicked?.Invoke(index);
+        var pos = e.GetPosition(this);
+        if (ClickMode == LyricClickMode.SeekOrNavigate && e.ClickCount >= 2)
+        {
+            DoubleClicked?.Invoke();
+            return;
+        }
+
+        var index = LyricLayout.HitTestUnit(pos.Y, _offset, heights);
+        if (index >= 0)
+        {
+            LineClicked?.Invoke(index);
+            return;
+        }
+        if (ClickMode == LyricClickMode.SeekOrNavigate)
+            BlankClicked?.Invoke(pos.X);
     }
 
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)

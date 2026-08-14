@@ -390,20 +390,33 @@ public partial class MainWindow : FluentWindow
 
     private void OnBigLyricsButtonClick(object sender, RoutedEventArgs e) => ToggleBigLyrics();
 
-    /// <summary>大歌词页终版：歌词区点击——左半=上一曲、右半=下一曲；双击=退出（Esc 与按钮①同样可退）。</summary>
-    private void OnBigLyricAreaMouseDown(object sender, MouseButtonEventArgs e)
+    /// <summary>大歌词页：点击歌词行=跳转播放（充当进度条）。</summary>
+    private void OnBigLyricClicked(int index) => Player?.Lyrics.SeekToLine(index);
+
+    /// <summary>大歌词页：双击任意位置=退出。</summary>
+    private void OnBigLyricDoubleClicked() => ToggleBigLyrics();
+
+    /// <summary>大歌词页：点击空白——左半=上一曲、右半=下一曲（目验五修复：点击判定收进 LyricCanvas，命中行与空白不再分层）。</summary>
+    private void OnBigLyricBlankClicked(double x)
     {
-        if (e.ClickCount >= 2)
+        if (Player is null) return;
+        if (x >= BigLyricCanvas.ActualWidth / 2) Player.NextCommand.Execute(null);
+        else Player.PreviousCommand.Execute(null);
+    }
+
+    /// <summary>大歌词页键盘（目验五修复：删除 Tab/方向键焦点框控制；空格=播放/暂停；Esc 由窗口级处理）。</summary>
+    private void OnBigLyricsPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Tab || e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down)
         {
-            ToggleBigLyrics();
-            e.Handled = true;
+            e.Handled = true;   // 不做焦点移动（无焦点框）
             return;
         }
-        if (sender is not Grid grid || Player is null) return;
-        var right = e.GetPosition(grid).X >= grid.ActualWidth / 2;
-        if (right) Player.NextCommand.Execute(null);
-        else Player.PreviousCommand.Execute(null);
-        e.Handled = true;
+        if (e.Key == Key.Space)
+        {
+            Player?.PlayPauseCommand.Execute(null);
+            e.Handled = true;
+        }
     }
 
     private void ToggleBigLyrics()
@@ -414,6 +427,8 @@ public partial class MainWindow : FluentWindow
             // 目验修复④：覆盖层打开前关闭按钮 ToolTip（其弹出层是独立置顶窗口，否则会悬浮在覆盖层上）
             BigLyricsButtonTip.IsOpen = false;
             BigLyricsOverlay.Visibility = Visibility.Visible;
+            // 目验五修复：覆盖层取得键盘焦点（空格/方向键等只在大页内生效；FocusVisualStyle 已置空无焦点框）
+            BigLyricsOverlay.Focus();
             BigLyricsOverlay.BeginAnimation(OpacityProperty,
                 new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
         }

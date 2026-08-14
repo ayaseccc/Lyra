@@ -1157,9 +1157,11 @@
 
 
 
-            <!-- ============ 大歌词页（L1 第二步 + 终版形态：无控制条/无×/无进度；Esc 或双击退出；点击左半=上一曲 右半=下一曲） ============ -->
+            <!-- ============ 大歌词页（终版：无控制条/无×/无进度；Esc/双击退出；点行=跳转、点空白左/右半=上一曲/下一曲、滚轮浏览、空格=暂停） ============ -->
             <Grid x:Name="BigLyricsOverlay" Grid.RowSpan="3" Visibility="Collapsed" Opacity="0"
-                  Background="{DynamicResource SurfaceStrongBrush}" ClipToBounds="True">
+                  Background="{DynamicResource SurfaceStrongBrush}" ClipToBounds="True"
+                  Focusable="True" FocusVisualStyle="{x:Null}"
+                  PreviewKeyDown="OnBigLyricsPreviewKeyDown">
                 <!-- 背景：放大模糊封面 + 遮罩保证可读 -->
                 <Image x:Name="BigLyricsBgImage" Source="{Binding Player.CoverImage}"
                        Stretch="UniformToFill" RenderTransformOrigin="0.5,0.5">
@@ -1180,15 +1182,19 @@
                     </Border.Background>
                 </Border>
 
-                <!-- 中央大字号歌词（复用 R5 引擎，1.8 倍）；点击左半=上一曲、右半=下一曲，双击=退出 -->
-                <Grid Margin="60,0,60,60" PreviewMouseLeftButtonDown="OnBigLyricAreaMouseDown">
-                    <ctrl:LyricCanvas x:Name="BigLyricCanvas" FontScale="1.8" ClicksEnabled="False"
+                <!-- 中央大字号歌词（复用 R5 引擎，1.8 倍） -->
+                <Grid Margin="60,0,60,60">
+                    <ctrl:LyricCanvas x:Name="BigLyricCanvas" FontScale="1.8"
+                                      ClickMode="SeekOrNavigate" WheelBrowsing="True"
                                       Lines="{Binding Player.Lyrics.RenderLines}"
                                       CurrentIndex="{Binding Player.Lyrics.CurrentIndex}"
                                       IsStatic="{Binding Player.Lyrics.IsStatic}"
                                       AccentBrush="{DynamicResource AccentBrush}"
                                       TextBrush="{DynamicResource TextPrimaryBrush}"
-                                      SubTextBrush="{DynamicResource TextSecondaryBrush}" />
+                                      SubTextBrush="{DynamicResource TextSecondaryBrush}"
+                                      LineClicked="OnBigLyricClicked"
+                                      DoubleClicked="OnBigLyricDoubleClicked"
+                                      BlankClicked="OnBigLyricBlankClicked" />
                 </Grid>
             </Grid>
             </Grid>
