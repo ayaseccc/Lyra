@@ -91,6 +91,8 @@ public partial class MainWindow : FluentWindow
     private void OnVolumeMouseDown(object sender, MouseButtonEventArgs e)
     {
         _volumeDragging = true;
+        // 捕获鼠标：拖到控件外松手也能收到抬起事件，dB 文字才能按时消失
+        Mouse.Capture(VolumeSquares);
         UpdateVolumeFromMouse(e.GetPosition(VolumeSquares));
         e.Handled = true;
     }
@@ -106,6 +108,7 @@ public partial class MainWindow : FluentWindow
     {
         if (!_volumeDragging) return;
         _volumeDragging = false;
+        if (ReferenceEquals(Mouse.Captured, VolumeSquares)) Mouse.Capture(null);
         Player?.EndVolumeDrag();
         e.Handled = true;
     }
