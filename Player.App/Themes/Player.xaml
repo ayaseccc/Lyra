@@ -35,26 +35,26 @@
 
     <!-- = 文本 = -->
     <Style x:Key="TitleTextStyle" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="FontSize" Value="13" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
     <Style x:Key="SubTextStyle" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="FontSize" Value="11" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
     <Style x:Key="PageTitleStyle" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="FontSize" Value="20" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="TextTrimming" Value="CharacterEllipsis" />
     </Style>
 
     <Style x:Key="SectionHeaderStyle" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
         <Setter Property="FontSize" Value="11" />
         <Setter Property="FontWeight" Value="SemiBold" />
         <Setter Property="Margin" Value="12,14,0,4" />
@@ -65,7 +65,7 @@
         <Setter Property="Width" Value="32" />
         <Setter Property="Height" Value="32" />
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Focusable" Value="False" />
         <Setter Property="Template">
@@ -76,7 +76,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                         </Trigger>
                         <Trigger Property="IsEnabled" Value="False">
                             <Setter Property="Opacity" Value="0.35" />
@@ -114,7 +114,7 @@
                                             <Border x:Name="ThumbHit" Background="Transparent" MinHeight="24" Margin="0,2">
                                                 <Border x:Name="ThumbBd" CornerRadius="4" HorizontalAlignment="Right"
                                                         Width="3" Opacity="0.6"
-                                                        Background="{StaticResource TextTertiaryBrush}" />
+                                                        Background="{DynamicResource TextTertiaryBrush}" />
                                             </Border>
                                             <ControlTemplate.Triggers>
                                                 <Trigger Property="IsMouseOver" Value="True">
@@ -138,7 +138,7 @@
                                                     </Trigger.ExitActions>
                                                 </Trigger>
                                                 <Trigger Property="IsDragging" Value="True">
-                                                    <Setter TargetName="ThumbBd" Property="Background" Value="{StaticResource TextPrimaryBrush}" />
+                                                    <Setter TargetName="ThumbBd" Property="Background" Value="{DynamicResource TextPrimaryBrush}" />
                                                     <Setter TargetName="ThumbBd" Property="Width" Value="7" />
                                                     <Setter TargetName="ThumbBd" Property="Opacity" Value="1" />
                                                 </Trigger>
@@ -158,7 +158,7 @@
         <Setter Property="Width" Value="42" />
         <Setter Property="Height" Value="42" />
         <Setter Property="Foreground" Value="#FF10131A" />
-        <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
@@ -200,7 +200,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
-                    <Ellipse Width="12" Height="12" Fill="{StaticResource TextPrimaryBrush}" />
+                    <Ellipse Width="12" Height="12" Fill="{DynamicResource TextPrimaryBrush}" />
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -210,7 +210,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Thumb">
-                    <Ellipse Width="10" Height="10" Fill="{StaticResource TextPrimaryBrush}" />
+                    <Ellipse Width="10" Height="10" Fill="{DynamicResource TextPrimaryBrush}" />
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -228,12 +228,12 @@
                         <Track x:Name="PART_Track">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Style="{StaticResource SliderBarStyle}"
-                                              Background="{StaticResource AccentBrush}"
+                                              Background="{DynamicResource AccentBrush}"
                                               Command="Slider.DecreaseLarge" />
                             </Track.DecreaseRepeatButton>
                             <Track.IncreaseRepeatButton>
                                 <RepeatButton Style="{StaticResource SliderBarStyle}"
-                                              Background="{StaticResource TrackEmptyBrush}"
+                                              Background="{DynamicResource TrackEmptyBrush}"
                                               Command="Slider.IncreaseLarge" />
                             </Track.IncreaseRepeatButton>
                             <Track.Thumb>
@@ -259,12 +259,12 @@
                         <Track x:Name="PART_Track">
                             <Track.DecreaseRepeatButton>
                                 <RepeatButton Style="{StaticResource SliderBarStyle}"
-                                              Background="{StaticResource TextSecondaryBrush}"
+                                              Background="{DynamicResource TextSecondaryBrush}"
                                               Command="Slider.DecreaseLarge" />
                             </Track.DecreaseRepeatButton>
                             <Track.IncreaseRepeatButton>
                                 <RepeatButton Style="{StaticResource SliderBarStyle}"
-                                              Background="{StaticResource TrackEmptyBrush}"
+                                              Background="{DynamicResource TrackEmptyBrush}"
                                               Command="Slider.IncreaseLarge" />
                             </Track.IncreaseRepeatButton>
                             <Track.Thumb>
@@ -294,11 +294,11 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
-                            <Setter TargetName="Indicator" Property="Background" Value="{StaticResource AccentBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SelectedBrush}" />
+                            <Setter TargetName="Indicator" Property="Background" Value="{DynamicResource AccentBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -339,7 +339,7 @@
         <Setter Property="Padding" Value="4,2" />
         <Setter Property="Margin" Value="0,10,8,0" />
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Opacity" Value="0.4" />
         <Setter Property="Template">
@@ -352,7 +352,7 @@
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
                             <Setter Property="Opacity" Value="1" />
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -375,7 +375,7 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -386,7 +386,7 @@
     <!-- = 曲目列表（UI-R2：分组 112px 一页约 6 曲 / 平铺 56px 紧凑，互不影响） = -->
     <Style x:Key="TrackRowStyle" TargetType="ListBoxItem">
         <Setter Property="Height" Value="84" />
-        <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Template">
@@ -397,11 +397,11 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
-                            <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SelectedBrush}" />
+                            <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
                         </Trigger>
                         <!-- 组头行：细行 32px -->
                         <DataTrigger Binding="{Binding IsGroupHeader}" Value="True">
@@ -420,7 +420,7 @@
                                              RelativeSource="{RelativeSource AncestorType=Window}" />
                                 </MultiBinding>
                             </DataTrigger.Binding>
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SelectedBrush}" />
                         </DataTrigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -430,7 +430,7 @@
 
     <!-- 静态列头（UI-R2 分组视图用，平铺视图也用它，替代 GridView 表头） -->
     <Style x:Key="TrackHeaderLabelStyle" TargetType="TextBlock">
-        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
         <Setter Property="FontSize" Value="11" />
         <Setter Property="Height" Value="28" />
         <Setter Property="VerticalAlignment" Value="Center" />
@@ -440,7 +440,7 @@
 
     <!-- 自带模板，不依赖系统主题：否则深色背景上会出现一条浅灰的 Aero 表头 -->
     <Style x:Key="TrackHeaderStyle" TargetType="GridViewColumnHeader">
-        <Setter Property="Foreground" Value="{StaticResource TextTertiaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextTertiaryBrush}" />
         <Setter Property="FontSize" Value="11" />
         <Setter Property="Height" Value="28" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
@@ -450,7 +450,7 @@
                 <ControlTemplate TargetType="GridViewColumnHeader">
                     <Grid>
                         <Border x:Name="Bd" Background="Transparent" Padding="6,0"
-                                BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="0,0,0,1">
+                                BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="0,0,0,1">
                             <ContentPresenter VerticalAlignment="Center" HorizontalAlignment="Left" />
                         </Border>
                         <!-- 保留列宽拖拽手柄 -->
@@ -464,7 +464,7 @@
                     </Grid>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -484,10 +484,10 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SelectedBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -508,10 +508,10 @@
                     </Border>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsMouseOver" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource HoverBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource HoverBrush}" />
                         </Trigger>
                         <Trigger Property="IsSelected" Value="True">
-                            <Setter TargetName="Bd" Property="Background" Value="{StaticResource SelectedBrush}" />
+                            <Setter TargetName="Bd" Property="Background" Value="{DynamicResource SelectedBrush}" />
                         </Trigger>
                     </ControlTemplate.Triggers>
                 </ControlTemplate>
@@ -531,7 +531,7 @@
         <Setter Property="Height" Value="28" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Background" Value="Transparent" />
-        <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
+        <Setter Property="Foreground" Value="{DynamicResource TextPrimaryBrush}" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">
             <Setter.Value>
@@ -557,7 +557,7 @@
     <Style x:Key="PrimaryPlayButtonStyle" TargetType="Button">
         <Setter Property="Width" Value="40" />
         <Setter Property="Height" Value="40" />
-        <Setter Property="Background" Value="{StaticResource AccentBrush}" />
+        <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
         <Setter Property="Foreground" Value="#FF101418" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="Template">

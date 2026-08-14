@@ -3,6 +3,7 @@ using Player.Core.Infra;
 using Player.Core.Library;
 using Player.Core.Lyrics;
 using Player.Core.Online;
+using Player.Core.Theming;
 
 namespace Player.Harness;
 
@@ -53,8 +54,12 @@ public static class Program
                 RunGroupingChecks();
                 break;
 
+            case "theme":
+                RunThemeChecks();
+                break;
+
             default:
-                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping）");
+                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme）");
                 return 2;
         }
 
@@ -769,5 +774,76 @@ public static class Program
         };
         Check("组内顺序与输入顺序无关（按曲号重排）",
             TrackGrouper.Group(shuffled)[0].Tracks.Select(t => t.Title).SequenceEqual(new[] { "一", "二", "三" }));
+    }
+
+    // ================= 封面取色主题引擎（UI-R3） =================
+
+    private static void RunThemeChecks()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 封面取色与主题派生（ThemeEngine） ===");
+
+        // ---- 取色 ----
+        var solidRed = Enumerable.Repeat(new RgbColor(0xD0, 0x20, 0x18), 1024).ToList();
+        Check("纯色封面取主色 = 该色",
+            CoverColorExtractor.ExtractDominant(solidRed) == new RgbColor(0xD0, 0x20, 0x18));
+
+        var mixed = new List<RgbColor>(1024);
+        for (var i = 0; i < 1024; i++) mixed.Add(i % 4 == 0 ? new RgbColor(0x10, 0x30, 0x90) : new RgbColor(0xE0, 0x40, 0x30));
+        var dom = CoverColorExtractor.ExtractDominant(mixed);
+        Check("红蓝混合封面主色偏红（多数桶）", dom.R > dom.B && dom.R > 0xC0);
+
+        var accent = CoverColorExtractor.ExtractAccent(mixed);
+        Check("强调色取高饱和桶", ThemeDeriver.Hsl(accent).S > 0.5);
+
+        var darkCover = Enumerable.Repeat(new RgbColor(0x18, 0x1A, 0x1C), 1024).ToList();
+        Check("暗色封面可提取", CoverColorExtractor.ExtractDominant(darkCover) == new RgbColor(0x18, 0x1A, 0x1C));
+
+        Check("空输入取色有兜底", CoverColorExtractor.ExtractDominant(Array.Empty<RgbColor>()) == new RgbColor(0x40, 0x40, 0x40));
+
+        // ---- 派生与对比度保底 ----
+        Check("纯红封面 → 浅 tint 背景（亮度 ≥ 0.78）",
+            ThemeDeriver.RelativeLuminance(ThemeDeriver.Derive(new RgbColor(0xD0, 0x20, 0x18)).Background) >= 0.78);
+        Check("纯蓝封面 → 浅 tint 背景（亮度 ≥ 0.78）",
+            ThemeDeriver.RelativeLuminance(ThemeDeriver.Derive(new RgbColor(0x20, 0x50, 0xD0)).Background) >= 0.78);
+        Check("黄色封面 → 浅 tint 背景（亮度 ≥ 0.78）",
+            ThemeDeriver.RelativeLuminance(ThemeDeriver.Derive(new RgbColor(0xE0, 0xC0, 0x20)).Background) >= 0.78);
+
+        // 对比度断言：一组代表性输入（亮/中/暗/灰）
+        RgbColor[] inputs =
+        {
+            new(0xD0, 0x20, 0x18), new(0x20, 0x50, 0xD0), new(0x2E, 0xA0, 0x3A),
+            new(0xE0, 0xC0, 0x20), new(0xC0, 0x50, 0xA0), new(0x70, 0x80, 0x90),
+            new(0x10, 0x10, 0x10), new(0xF0, 0xF0, 0xF0), new(0x88, 0x88, 0x88),
+            new(0x20, 0x20, 0x20), new(0x40, 0x60, 0x80)
+        };
+        var allContrastsOk = true;
+        foreach (var input in inputs)
+        {
+            var palette = ThemeDeriver.Derive(input);
+            var bg = palette.Background;
+            if (ThemeDeriver.ContrastRatio(palette.TextPrimary, bg) < ThemeDeriver.MinTextPrimaryContrast) allContrastsOk = false;
+            if (ThemeDeriver.ContrastRatio(palette.TextSecondary, bg) < ThemeDeriver.MinTextSecondaryContrast) allContrastsOk = false;
+            if (ThemeDeriver.ContrastRatio(palette.TextTertiary, bg) < ThemeDeriver.MinTextTertiaryContrast) allContrastsOk = false;
+            if (ThemeDeriver.ContrastRatio(palette.Accent, bg) < ThemeDeriver.MinAccentContrast) allContrastsOk = false;
+        }
+        Check($"对比度保底（{inputs.Length} 组输入：主/次/三级文字 ≥ 7/4.5/3、强调色 ≥ 3）", allContrastsOk);
+
+        // 过暗/过灰 → 回退中性浅灰
+        var darkPalette = ThemeDeriver.Derive(new RgbColor(0x10, 0x10, 0x10));
+        Check("过暗封面回退中性浅灰（背景为浅色）",
+            ThemeDeriver.RelativeLuminance(darkPalette.Background) >= 0.78);
+        Check("过灰封面回退中性浅灰（背景为浅色）",
+            ThemeDeriver.RelativeLuminance(ThemeDeriver.Derive(new RgbColor(0x88, 0x88, 0x88)).Background) >= 0.78);
+
+        // 强调色饱和度：彩色输入下强调色应保持高饱和
+        var redAccent = ThemeDeriver.Derive(new RgbColor(0xD0, 0x20, 0x18)).Accent;
+        Check("强调色高饱和（红色输入）", ThemeDeriver.Hsl(redAccent).S > 0.7);
+
+        // 中性回退与固定深色均为有效调色板
+        Check("固定深色调色板存在", ThemePalette.FixedDark.Background == new RgbColor(0x20, 0x20, 0x20));
+        Check("中性回退与固定深色不同", ThemeDeriver.NeutralFallback().Background != ThemePalette.FixedDark.Background);
+
+        Console.WriteLine();
     }
 }

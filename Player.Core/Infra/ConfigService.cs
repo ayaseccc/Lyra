@@ -115,6 +115,9 @@ public sealed class UiConfig
 
     /// <summary>曲目列表显示模式（UI-R2）：true = 专辑分组，false = 平铺。</summary>
     public bool ListGrouped { get; set; }
+
+    /// <summary>主题模式（UI-R3）：FollowCover = 跟随封面整体染色（默认），FixedDark = 固定深色（逃生口）。</summary>
+    public string ThemeMode { get; set; } = "FollowCover";
 }
 
 /// <summary>

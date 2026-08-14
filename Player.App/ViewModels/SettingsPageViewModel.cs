@@ -106,6 +106,10 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
         OutputStatus = _engine.OutputDescription;
 
+        // UI-R3 主题组：跟随封面（默认）/ 固定深色（逃生口）
+        _selectedThemeMode = ThemeModes.FirstOrDefault(t =>
+            t.Key.Equals(ConfigService.Current.Ui.ThemeMode, StringComparison.OrdinalIgnoreCase)) ?? ThemeModes[0];
+
         // P3 在线组：Key 只从 data/config.json 读
         ApiKey = ConfigService.Current.ApiKey;
         RefreshKeyStatus();
@@ -116,6 +120,28 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     public string Title => "设置";
 
     public string Subtitle => "输出与媒体库";
+
+    // ================= 主题（UI-R3） =================
+
+    public sealed record ThemeOption(string Key, string Name)
+    {
+        public override string ToString() => Name;
+    }
+
+    public IReadOnlyList<ThemeOption> ThemeModes { get; } = new[]
+    {
+        new ThemeOption("FollowCover", "跟随封面（默认）"),
+        new ThemeOption("FixedDark", "固定深色")
+    };
+
+    [ObservableProperty]
+    private ThemeOption _selectedThemeMode;
+
+    partial void OnSelectedThemeModeChanged(ThemeOption value)
+    {
+        if (_loading) return;
+        Player.App.Theming.ThemeService.SetMode(value.Key.Equals("FollowCover", StringComparison.OrdinalIgnoreCase));
+    }
 
     // ================= 输出 =================
 

@@ -6,6 +6,7 @@ using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Player.App.Infra;
+using Player.App.Theming;
 using Player.Core.Audio;
 using Player.Core.Infra;
 using Player.Core.Library;
@@ -579,6 +580,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         Title = track.DisplayTitle;
         Artist = track.DisplayArtist;
         CoverImage = CoverImageCache.Get(track.CoverHash);
+        ThemeService.OnTrackChanged(track.CoverHash);   // UI-R3：封面取色整体染色
         RefreshWindowTitle();
 
         // 记住上次播放的曲目（退出时随配置落盘，下次启动恢复，UI-R1.5 反馈）
