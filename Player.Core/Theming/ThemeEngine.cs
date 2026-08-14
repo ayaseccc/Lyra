@@ -151,9 +151,10 @@ public static class CoverColorExtractor
 }
 
 /// <summary>
-/// 主题派生（UI-R3）：主色 → 浅 tint 背景 + 深色文字 + 高饱和强调色。
+/// 主题派生（UI-R3）：浅色/深色两套基底，各自可随封面染色。
+/// 浅色：浅 tint 背景 + 深色文字；深色：深 tint 背景 + 浅色文字。
 /// 对比度保底（WCAG）：主/次/三级文字 vs 背景 ≥ 7/4.5/3，强调色 vs 背景 ≥ 3。
-/// 过暗或过灰的主色 → 中性浅灰回退。
+/// 过暗或过灰的主色 → 各自的中性回退（浅→中性浅灰，深→固定深色）。
 /// </summary>
 public static class ThemeDeriver
 {
@@ -169,18 +170,34 @@ public static class ThemeDeriver
     /// <summary>过暗/过灰回退用的中性基色（浅暖灰）。</summary>
     private static readonly RgbColor NeutralBase = new(0xC9, 0xC4, 0xBA);
 
-    public static ThemePalette Derive(RgbColor main)
+    /// <summary>浅色基底 + 封面染色。</summary>
+    public static ThemePalette DeriveLight(RgbColor main)
     {
         var (_, s, l) = Hsl(main);
         if (l < DarkFallbackLuminance || s < SaturationFallback)
             return NeutralFallback();
-        return DeriveCore(main);
+        return DeriveLightCore(main);
     }
 
-    /// <summary>中性浅灰回退调色板（过暗/过灰封面）。</summary>
-    public static ThemePalette NeutralFallback() => DeriveCore(NeutralBase);
+    /// <summary>深色基底 + 封面染色。</summary>
+    public static ThemePalette DeriveDark(RgbColor main)
+    {
+        var (_, s, l) = Hsl(main);
+        if (l < 0.18 || s < SaturationFallback)
+            return ThemePalette.FixedDark;
+        return DeriveDarkCore(main);
+    }
 
-    private static ThemePalette DeriveCore(RgbColor main)
+    /// <summary>浅色不染色的中性浅灰（固定浅色）。</summary>
+    public static ThemePalette NeutralFallback() => DeriveLightCore(NeutralBase);
+
+    /// <summary>深色不染色的固定深色（固定深色）。</summary>
+    public static ThemePalette FixedDarkPalette() => ThemePalette.FixedDark;
+
+    /// <summary>旧 API 兼容：默认浅色派生。</summary>
+    public static ThemePalette Derive(RgbColor main) => DeriveLight(main);
+
+    private static ThemePalette DeriveLightCore(RgbColor main)
     {
         // 背景：主色向白混合 82%，保证足够浅（对比度保底的前提）
         var background = Mix(main, White, 0.82);
@@ -222,6 +239,51 @@ public static class ThemeDeriver
             Mix(background, Black, 0.28),
             Mix(background, Black, 0.72),
             Mix(background, Black, 0.26));
+    }
+
+    /// <summary>深色基底 + 封面染色：深 tint 背景 + 浅色文字 + 高亮强调色。</summary>
+    private static ThemePalette DeriveDarkCore(RgbColor main)
+    {
+        // 背景：主色向黑混合 86%，保证足够深（对比度保底的前提）
+        var background = Mix(main, Black, 0.86);
+        while (RelativeLuminance(background) > 0.12)
+            background = Mix(background, Black, 0.5);
+
+        var surface = Mix(main, Black, 0.80);
+        var surfaceStrong = Mix(main, Black, 0.88);
+
+        // 强调色：同色相最大饱和度，再向白混合直到 vs 背景 ≥ 3.0
+        var accent = Saturate(main);
+        while (ContrastRatio(accent, background) < MinAccentContrast)
+            accent = Mix(accent, White, 0.15);
+
+        // 文字：浅色；逐档保证对比度
+        var textPrimary = new RgbColor(0xF2, 0xF2, 0xF0);
+        while (ContrastRatio(textPrimary, background) < MinTextPrimaryContrast)
+            textPrimary = Mix(textPrimary, White, 0.5);
+
+        var textSecondary = Mix(textPrimary, background, 0.45);
+        while (ContrastRatio(textSecondary, background) < MinTextSecondaryContrast)
+            textSecondary = Mix(textSecondary, textPrimary, 0.25);
+
+        var textTertiary = Mix(textPrimary, background, 0.62);
+        while (ContrastRatio(textTertiary, background) < MinTextTertiaryContrast)
+            textTertiary = Mix(textTertiary, textPrimary, 0.25);
+
+        return new ThemePalette(
+            background,
+            surface,
+            surfaceStrong,
+            textPrimary,
+            textSecondary,
+            textTertiary,
+            accent,
+            Mix(background, White, 0.08),
+            Mix(background, White, 0.14),
+            Mix(background, White, 0.18),
+            Mix(background, White, 0.30),
+            Mix(background, White, 0.20),
+            Mix(background, White, 0.45));
     }
 
     // ---------- 颜色工具 ----------

@@ -844,6 +844,24 @@ public static class Program
         Check("固定深色调色板存在", ThemePalette.FixedDark.Background == new RgbColor(0x20, 0x20, 0x20));
         Check("中性回退与固定深色不同", ThemeDeriver.NeutralFallback().Background != ThemePalette.FixedDark.Background);
 
+        // ---- 深色基底派生（UI-R3 反馈：深色/浅色分别适配） ----
+        var allDarkContrastsOk = true;
+        foreach (var input in inputs)
+        {
+            var palette = ThemeDeriver.DeriveDark(input);
+            var bg = palette.Background;
+            if (ThemeDeriver.RelativeLuminance(bg) > 0.14) allDarkContrastsOk = false;
+            if (ThemeDeriver.ContrastRatio(palette.TextPrimary, bg) < ThemeDeriver.MinTextPrimaryContrast) allDarkContrastsOk = false;
+            if (ThemeDeriver.ContrastRatio(palette.TextSecondary, bg) < ThemeDeriver.MinTextSecondaryContrast) allDarkContrastsOk = false;
+            if (ThemeDeriver.ContrastRatio(palette.TextTertiary, bg) < ThemeDeriver.MinTextTertiaryContrast) allDarkContrastsOk = false;
+            if (ThemeDeriver.ContrastRatio(palette.Accent, bg) < ThemeDeriver.MinAccentContrast) allDarkContrastsOk = false;
+        }
+        Check($"深色基底对比度保底（{inputs.Length} 组输入：背景亮度≤0.14、文字≥7/4.5/3、强调色≥3）", allDarkContrastsOk);
+        Check("深色基底染红色 → 深红背景（带色相）",
+            ThemeDeriver.Hsl(ThemeDeriver.DeriveDark(new RgbColor(0xD0, 0x20, 0x18)).Background).H < 0.1);
+        Check("过暗封面深色派生回退固定深色",
+            ThemeDeriver.DeriveDark(new RgbColor(0x10, 0x10, 0x10)) == ThemePalette.FixedDark);
+
         Console.WriteLine();
     }
 }

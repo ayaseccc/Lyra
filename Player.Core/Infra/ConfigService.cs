@@ -116,8 +116,14 @@ public sealed class UiConfig
     /// <summary>曲目列表显示模式（UI-R2）：true = 专辑分组，false = 平铺。</summary>
     public bool ListGrouped { get; set; }
 
-    /// <summary>主题模式（UI-R3）：FollowCover = 跟随封面整体染色（默认），FixedDark = 固定深色（逃生口）。</summary>
+    /// <summary>旧主题模式字段（UI-R3 迁移用）：FollowCover / FixedDark。新配置见 ThemeBase + ThemeTint。</summary>
     public string ThemeMode { get; set; } = "FollowCover";
+
+    /// <summary>主题底色（UI-R3 反馈）：Dark = 深色，Light = 浅色。默认浅色。</summary>
+    public string ThemeBase { get; set; } = "Light";
+
+    /// <summary>是否随封面染色（UI-R3 反馈）：true = 染色（默认），false = 不染色。</summary>
+    public bool ThemeTint { get; set; } = true;
 }
 
 /// <summary>

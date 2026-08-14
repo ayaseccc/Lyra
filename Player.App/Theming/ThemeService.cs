@@ -11,69 +11,107 @@ using Wpf.Ui.Controls;
 namespace Player.App.Theming;
 
 /// <summary>
-/// UI-R3 封面取色主题引擎（应用侧）：切歌 → 取封面主色 → 派生调色板 →
-/// 300ms 平滑过渡到界面。设置页两挡：跟随封面（默认）/ 固定深色（逃生口）。
-/// 主题色通过 Application 资源的 DynamicResource 刷子即时生效。
+/// UI-R3 封面取色主题引擎（应用侧）：
+/// 底色两挡（深色/浅色）× 染色开关（是否随封面），四组合统一适配全部页面；
+/// WPF-UI 控件主题（Light/Dark）与 Accent 强调色随模式联动，保证整窗统一。
+/// 切歌/切模式 300ms 缓动过渡。
 /// </summary>
 public static class ThemeService
 {
-    private const int SampleSize = 32;             // 缩样尺寸（定稿：~32×32）
-    private const double TransitionMs = 300;       // 切歌过渡时长（定稿）
-    private const double TickMs = 30;              // 过渡步长
+    private const int SampleSize = 32;
+    private const double TransitionMs = 300;
+    private const double TickMs = 30;
 
-    // 窗口背景为 Mica 材质（系统主题跟随），面板/侧栏/播放条用 Surface 系浅 tint；
-    // 窗口内容区不设独立背景刷子，Mica 本身就是“浅 tint 背景”。
-    private static DispatcherTimer? _timer;
+    // WPF-UI 控件强调色资源键（染色时覆盖，让按钮/选中态跟随封面强调色）
+    private static readonly string[] AccentKeys =
+    {
+        "AccentFillColorDefaultBrush",
+        "AccentFillColorSecondaryBrush",
+        "AccentFillColorTertiaryBrush",
+        "AccentTextFillColorPrimaryBrush"
+    };
+
+    private static DispatcherTimer _timer = null!;
     private static ThemePalette _current = ThemePalette.FixedDark;
     private static ThemePalette _target = ThemePalette.FixedDark;
     private static double _progress = 1.0;
     private static bool _initialized;
     private static string? _lastCoverHash;
 
-    public static bool FollowCover { get; private set; } = true;
+    /// <summary>深色 / 浅色基底。</summary>
+    public static bool DarkBase { get; private set; }
 
-    /// <summary>启动时调用：按配置应用主题（跟随封面时先维持深色，取到封面后再过渡）。</summary>
+    /// <summary>是否随封面染色。</summary>
+    public static bool Tint { get; private set; }
+
+    static ThemeService()
+    {
+        _timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(TickMs) };
+        _timer.Tick += OnTick;
+    }
+
+    /// <summary>启动时调用：按配置应用主题。跟随染色时先维持默认，取到封面后再过渡。</summary>
     public static void Initialize()
     {
         if (_initialized) return;
         _initialized = true;
 
-        FollowCover = !string.Equals(ConfigService.Current.Ui.ThemeMode, "FixedDark", StringComparison.OrdinalIgnoreCase);
-        // WPF-UI 控件主题与染色模式联动：跟随封面=浅色控件（浅底深字），固定深色=深色控件
+        var ui = ConfigService.Current.Ui;
+        // 迁移：旧 ThemeMode（FollowCover/FixedDark）→ 新双字段
+        if (string.IsNullOrEmpty(ui.ThemeBase))
+        {
+            if (string.Equals(ui.ThemeMode, "FixedDark", StringComparison.OrdinalIgnoreCase))
+            {
+                ui.ThemeBase = "Dark";
+                ui.ThemeTint = false;
+            }
+            else
+            {
+                ui.ThemeBase = "Light";
+                ui.ThemeTint = true;
+            }
+        }
+
+        DarkBase = string.Equals(ui.ThemeBase, "Dark", StringComparison.OrdinalIgnoreCase);
+        Tint = ui.ThemeTint;
+
         ApplicationThemeManager.Apply(
-            FollowCover ? ApplicationTheme.Light : ApplicationTheme.Dark,
+            DarkBase ? ApplicationTheme.Dark : ApplicationTheme.Light,
             WindowBackdropType.Mica,
             updateAccent: false);
-        if (!FollowCover)
+
+        if (!Tint)
         {
-            ApplyPalette(ThemePalette.FixedDark);
-            _current = ThemePalette.FixedDark;
-            _target = ThemePalette.FixedDark;
+            var palette = DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback();
+            ApplyPalette(palette);
+            _current = palette;
+            _target = palette;
         }
     }
 
-    /// <summary>设置页切换主题模式（跟随封面 / 固定深色）。</summary>
-    public static void SetMode(bool followCover)
+    /// <summary>设置页切换：底色（深/浅）× 染色（开/关）。</summary>
+    public static void SetMode(bool darkBase, bool tint)
     {
-        FollowCover = followCover;
-        ConfigService.Current.Ui.ThemeMode = followCover ? "FollowCover" : "FixedDark";
+        Initialize();
+
+        DarkBase = darkBase;
+        Tint = tint;
+        ConfigService.Current.Ui.ThemeBase = darkBase ? "Dark" : "Light";
+        ConfigService.Current.Ui.ThemeTint = tint;
         ConfigService.Save();
 
         ApplicationThemeManager.Apply(
-            followCover ? ApplicationTheme.Light : ApplicationTheme.Dark,
+            darkBase ? ApplicationTheme.Dark : ApplicationTheme.Light,
             WindowBackdropType.Mica,
             updateAccent: false);
 
-        if (followCover)
-        {
-            // 跟随封面：用当前曲目封面重新取色
-            var palette = _lastCoverHash is null ? ThemeDeriver.NeutralFallback() : DeriveFromCover(_lastCoverHash);
-            AnimateTo(palette);
-        }
-        else
-        {
-            AnimateTo(ThemePalette.FixedDark);
-        }
+        var palette = tint
+            ? (_lastCoverHash is null
+                ? (darkBase ? ThemeDeriver.DeriveDark(new RgbColor(0x30, 0x40, 0x60)) : ThemeDeriver.NeutralFallback())
+                : DeriveFromCover(_lastCoverHash))
+            : (darkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback());
+
+        AnimateTo(palette);
     }
 
     /// <summary>切歌钩子（PlayerViewModel.ApplyTrackDisplay 调用）。</summary>
@@ -81,12 +119,11 @@ public static class ThemeService
     {
         if (!_initialized) Initialize();
         _lastCoverHash = coverHash;
-        if (!FollowCover) return;
+        if (!Tint) return;
 
-        var palette = coverHash is null ? ThemeDeriver.NeutralFallback() : DeriveFromCover(coverHash);
-        Serilog.Log.Information("主题：封面 {Hash} → 背景 {Bg} 表面 {Surface} 强调 {Accent} 文字 {Text}",
-            coverHash ?? "(无)", palette.Background, palette.Surface, palette.Accent, palette.TextPrimary);
-        AnimateTo(palette);
+        AnimateTo(coverHash is null
+            ? (DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback())
+            : DeriveFromCover(coverHash));
     }
 
     private static ThemePalette DeriveFromCover(string coverHash)
@@ -94,17 +131,16 @@ public static class ThemeService
         try
         {
             var pixels = LoadSamplePixels(coverHash);
-            if (pixels.Count == 0) return ThemeDeriver.NeutralFallback();
+            if (pixels.Count == 0) return DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback();
             var colors = CoverColorExtractor.Extract(pixels);
-            return ThemeDeriver.Derive(colors.Main);
+            return DarkBase ? ThemeDeriver.DeriveDark(colors.Main) : ThemeDeriver.DeriveLight(colors.Main);
         }
         catch
         {
-            return ThemeDeriver.NeutralFallback();
+            return DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback();
         }
     }
 
-    /// <summary>封面文件 → 32×32 Bgra32 像素 → 纯函数取色。</summary>
     private static IReadOnlyList<RgbColor> LoadSamplePixels(string coverHash)
     {
         var path = Path.Combine(AppPaths.CoversDir, coverHash + ".jpg");
@@ -133,14 +169,10 @@ public static class ThemeService
         return pixels;
     }
 
-    /// <summary>300ms 缓动过渡到目标调色板。</summary>
     public static void AnimateTo(ThemePalette target)
     {
-        if (!_initialized) Initialize();
         _target = target;
         _progress = 0.0;
-
-        _timer ??= new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(TickMs) };
         if (!_timer.IsEnabled) _timer.Start();
     }
 
@@ -153,7 +185,7 @@ public static class ThemeService
         if (_progress >= 1.0)
         {
             _current = _target;
-            _timer!.Stop();
+            _timer.Stop();
         }
     }
 
@@ -196,6 +228,24 @@ public static class ThemeService
         Set(resources, "TrackEmptyBrush", p.TrackEmpty);
         Set(resources, "VolumeReachedBrush", p.VolumeReached);
         Set(resources, "VolumeSlotBrush", p.VolumeSlot);
+
+        // 染色时覆盖 WPF-UI 控件强调色，保证按钮/选中态与整体一致
+        if (Tint)
+        {
+            var accentBrush = new SolidColorBrush(Color.FromArgb(p.Accent.A, p.Accent.R, p.Accent.G, p.Accent.B));
+            accentBrush.Freeze();
+            var accentTextBrush = new SolidColorBrush(Color.FromArgb(p.TextPrimary.A, p.TextPrimary.R, p.TextPrimary.G, p.TextPrimary.B));
+            accentTextBrush.Freeze();
+            resources["AccentFillColorDefaultBrush"] = accentBrush;
+            resources["AccentFillColorSecondaryBrush"] = accentBrush;
+            resources["AccentFillColorTertiaryBrush"] = accentBrush;
+            resources["AccentTextFillColorPrimaryBrush"] = accentTextBrush;
+        }
+        else
+        {
+            foreach (var key in AccentKeys)
+                resources.Remove(key);
+        }
     }
 
     private static void Set(ResourceDictionary resources, string key, RgbColor c)
@@ -203,13 +253,5 @@ public static class ThemeService
         var brush = new SolidColorBrush(Color.FromArgb(c.A, c.R, c.G, c.B));
         brush.Freeze();
         resources[key] = brush;
-    }
-
-    /// <summary>静态构造挂上计时器。</summary>
-    static ThemeService()
-    {
-        var timer = new DispatcherTimer { Interval = TimeSpan.FromMilliseconds(TickMs) };
-        timer.Tick += OnTick;
-        _timer = timer;
     }
 }

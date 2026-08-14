@@ -106,9 +106,10 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
         OutputStatus = _engine.OutputDescription;
 
-        // UI-R3 主题组：跟随封面（默认）/ 固定深色（逃生口）
-        _selectedThemeMode = ThemeModes.FirstOrDefault(t =>
-            t.Key.Equals(ConfigService.Current.Ui.ThemeMode, StringComparison.OrdinalIgnoreCase)) ?? ThemeModes[0];
+        // UI-R3 主题组：底色（深/浅）× 染色（开/关）
+        _selectedThemeBase = ThemeBases.FirstOrDefault(t =>
+            t.Key.Equals(ConfigService.Current.Ui.ThemeBase, StringComparison.OrdinalIgnoreCase)) ?? ThemeBases[0];
+        _themeTint = ConfigService.Current.Ui.ThemeTint;
 
         // P3 在线组：Key 只从 data/config.json 读
         ApiKey = ConfigService.Current.ApiKey;
@@ -121,26 +122,55 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
     public string Subtitle => "输出与媒体库";
 
+    // ================= 分页（UI-R3 反馈） =================
+
+    [ObservableProperty]
+    private bool _isThemeTab = true;
+
+    [ObservableProperty]
+    private bool _isOutputTab;
+
+    [ObservableProperty]
+    private bool _isLibraryTab;
+
+    [ObservableProperty]
+    private bool _isOnlineTab;
+
     // ================= 主题（UI-R3） =================
 
-    public sealed record ThemeOption(string Key, string Name)
+    public sealed record ThemeBaseOption(string Key, string Name)
     {
         public override string ToString() => Name;
     }
 
-    public IReadOnlyList<ThemeOption> ThemeModes { get; } = new[]
+    public IReadOnlyList<ThemeBaseOption> ThemeBases { get; } = new[]
     {
-        new ThemeOption("FollowCover", "跟随封面（默认）"),
-        new ThemeOption("FixedDark", "固定深色")
+        new ThemeBaseOption("Light", "浅色"),
+        new ThemeBaseOption("Dark", "深色")
     };
 
     [ObservableProperty]
-    private ThemeOption _selectedThemeMode;
+    private ThemeBaseOption _selectedThemeBase;
 
-    partial void OnSelectedThemeModeChanged(ThemeOption value)
+    [ObservableProperty]
+    private bool _themeTint;
+
+    partial void OnSelectedThemeBaseChanged(ThemeBaseOption value)
     {
         if (_loading) return;
-        Player.App.Theming.ThemeService.SetMode(value.Key.Equals("FollowCover", StringComparison.OrdinalIgnoreCase));
+        ApplyTheme();
+    }
+
+    partial void OnThemeTintChanged(bool value)
+    {
+        if (_loading) return;
+        ApplyTheme();
+    }
+
+    private void ApplyTheme()
+    {
+        var dark = SelectedThemeBase.Key.Equals("Dark", StringComparison.OrdinalIgnoreCase);
+        Player.App.Theming.ThemeService.SetMode(dark, ThemeTint);
     }
 
     // ================= 输出 =================
