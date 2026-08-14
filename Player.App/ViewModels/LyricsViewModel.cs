@@ -306,6 +306,8 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(IsStatic));
         OnPropertyChanged(nameof(HasLyrics));
         OnPropertyChanged(nameof(LyricCreditsText));
+        OnPropertyChanged(nameof(CurrentPrimary));
+        OnPropertyChanged(nameof(CurrentSecondary));
     }
 
     // ================= 当前行跟随播放进度 =================
@@ -344,7 +346,17 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
 
         if (found == CurrentIndex) return;
         CurrentIndex = found;
+        OnPropertyChanged(nameof(CurrentPrimary));
+        OnPropertyChanged(nameof(CurrentSecondary));
     }
+
+    /// <summary>当前句原文（桌面歌词/大歌词页用；无当前行时为空）。</summary>
+    public string CurrentPrimary =>
+        CurrentIndex >= 0 && CurrentIndex < RenderLines.Count ? RenderLines[CurrentIndex].Primary : string.Empty;
+
+    /// <summary>当前句翻译/罗马音。</summary>
+    public string CurrentSecondary =>
+        CurrentIndex >= 0 && CurrentIndex < RenderLines.Count ? RenderLines[CurrentIndex].Secondary : string.Empty;
 
     /// <summary>自绘控件点击某一行：跳到对应时间点。</summary>
     public void SeekToLine(int index)

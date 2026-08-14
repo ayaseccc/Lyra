@@ -127,6 +127,17 @@ public sealed class UiConfig
 
     /// <summary>右侧信息栏折叠状态（UI-R4）：true = 展开（默认）。</summary>
     public bool SidePaneOpen { get; set; } = true;
+
+    /// <summary>桌面歌词（L1 第三步）：开关 / 锁定 / 单双行 / 字号 / 宽度。</summary>
+    public bool DesktopLyricsEnabled { get; set; }
+
+    public bool DesktopLyricsLocked { get; set; } = true;
+
+    public bool DesktopLyricsTwoLines { get; set; } = true;
+
+    public double DesktopLyricsFontSize { get; set; } = 20;
+
+    public double DesktopLyricsWidth { get; set; } = 560;
 }
 
 /// <summary>

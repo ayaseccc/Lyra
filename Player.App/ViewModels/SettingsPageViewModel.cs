@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Linq;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
@@ -111,6 +112,11 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             t.Key.Equals(ConfigService.Current.Ui.ThemeBase, StringComparison.OrdinalIgnoreCase)) ?? ThemeBases[0];
         _themeTint = ConfigService.Current.Ui.ThemeTint;
 
+        // L1 第三步：歌词组（桌面歌词）
+        var fs = (int)ConfigService.Current.Ui.DesktopLyricsFontSize;
+        _selectedLyricFontSize = Array.IndexOf((LyricFontSizes as int[])!, fs) >= 0 ? fs : 20;
+        _desktopLyricsTwoLines = ConfigService.Current.Ui.DesktopLyricsTwoLines;
+
         // P3 在线组：Key 只从 data/config.json 读
         ApiKey = ConfigService.Current.ApiKey;
         RefreshKeyStatus();
@@ -135,6 +141,33 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
     [ObservableProperty]
     private bool _isOnlineTab;
+
+    [ObservableProperty]
+    private bool _isLyricTab;
+
+    // ================= 歌词（L1 第三步：桌面歌词设置） =================
+
+    public IReadOnlyList<int> LyricFontSizes { get; } = new[] { 16, 20, 24 };
+
+    [ObservableProperty]
+    private int _selectedLyricFontSize;
+
+    [ObservableProperty]
+    private bool _desktopLyricsTwoLines;
+
+    partial void OnSelectedLyricFontSizeChanged(int value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.DesktopLyricsFontSize = value;
+        ConfigService.Save();
+    }
+
+    partial void OnDesktopLyricsTwoLinesChanged(bool value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.DesktopLyricsTwoLines = value;
+        ConfigService.Save();
+    }
 
     // ================= 主题（UI-R3） =================
 

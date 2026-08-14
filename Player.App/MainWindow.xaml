@@ -437,6 +437,8 @@
                                  Margin="6,0,0,0" IsChecked="{Binding IsLibraryTab}" />
                     <RadioButton GroupName="SettingsTab" Content="在线" Style="{StaticResource TabRadioStyle}"
                                  Margin="6,0,0,0" IsChecked="{Binding IsOnlineTab}" />
+                    <RadioButton GroupName="SettingsTab" Content="歌词" Style="{StaticResource TabRadioStyle}"
+                                 Margin="6,0,0,0" IsChecked="{Binding IsLyricTab}" />
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
@@ -656,6 +658,35 @@
 
                                 <TextBlock Margin="0,8,0,0" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
                                            Text="Key 只保存在本地 data/config.json（不会出现在日志里）。歌词自动匹配、在线搜索、歌单同步都依赖它；今日免费额度以服务端响应头为准，见上方今日额度。" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ===== 歌词页（L1 第三步） ===== -->
+                        <Border Visibility="{Binding IsLyricTab, Converter={StaticResource BoolToVis}}"
+                                CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="桌面歌词字号" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding LyricFontSizes}"
+                                              SelectedItem="{Binding SelectedLyricFontSize}" />
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="桌面歌词" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <StackPanel Grid.Column="1">
+                                        <ui:ToggleSwitch IsChecked="{Binding DesktopLyricsTwoLines}" Content="显示翻译（双行）" />
+                                    </StackPanel>
+                                </Grid>
+                                <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,10,0,0" TextWrapping="Wrap"
+                                           Text="桌面歌词开关在播放条（第二个预留按钮），锁定=鼠标穿透（点击右上小柄解锁后可拖动/调宽）；颜色跟随取色主题；无时间轴歌词显示曲名。" />
                             </StackPanel>
                         </Border>
 
@@ -938,8 +969,10 @@
                                 ToolTip="大歌词页">
                             <ui:SymbolIcon Symbol="ReadingList24" FontSize="16" />
                         </Button>
-                        <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Opacity="0.22"
-                                Background="{DynamicResource HoverBrush}" ToolTip="预留功能位" />
+                        <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnDesktopLyricsButtonClick"
+                                ToolTip="桌面歌词">
+                            <ui:SymbolIcon Symbol="ClosedCaption24" FontSize="16" />
+                        </Button>
                         <Button Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Opacity="0.22"
                                 Background="{DynamicResource HoverBrush}" ToolTip="预留功能位" />
                     </StackPanel>

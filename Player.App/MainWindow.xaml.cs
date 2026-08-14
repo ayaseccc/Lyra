@@ -62,7 +62,18 @@ public partial class MainWindow : FluentWindow
         DataContextChanged += (_, _) =>
         {
             if (Shell is not null)
+            {
                 Shell.TrackLocateRequested += ScrollToCurrentTrack;
+                HookDesktopLyricsUpdates();
+                HookSettingsLyricsUpdates();
+                // 恢复桌面歌词（L1 第三步：开关持久化）
+                if (ConfigService.Current.Ui.DesktopLyricsEnabled && _desktopLyrics is null)
+                {
+                    _desktopLyrics = new DesktopLyricsWindow();
+                    _desktopLyrics.Show();
+                    _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, UpdateDesktopLyrics);
+                }
+            }
         };
 
         // 音量方块：点击/拖动设置音量（UI-R1.5 反馈）
@@ -270,6 +281,83 @@ public partial class MainWindow : FluentWindow
             Shell.LeaveSettings();
             e.Handled = true;
         }
+    }
+
+    // ================= 桌面歌词（L1 第三步） =================
+
+    private DesktopLyricsWindow? _desktopLyrics;
+
+    private void OnDesktopLyricsButtonClick(object sender, RoutedEventArgs e) => ToggleDesktopLyrics();
+
+    private void ToggleDesktopLyrics()
+    {
+        if (_desktopLyrics is null)
+        {
+            _desktopLyrics = new DesktopLyricsWindow();
+            _desktopLyrics.Show();
+        }
+        else if (_desktopLyrics.IsVisible)
+        {
+            _desktopLyrics.Hide();
+        }
+        else
+        {
+            _desktopLyrics.Show();
+            _desktopLyrics.ApplySettings();
+            UpdateDesktopLyrics();
+        }
+        ConfigService.Current.Ui.DesktopLyricsEnabled = _desktopLyrics.IsVisible;
+        ConfigService.Save();
+    }
+
+    private void UpdateDesktopLyrics()
+    {
+        if (_desktopLyrics is null || !_desktopLyrics.IsVisible) return;
+        var lyrics = Player?.Lyrics;
+        if (lyrics is null) return;
+
+        // 无时间轴歌词 → 显示曲名
+        if (lyrics.HasLyrics && lyrics.IsStatic)
+        {
+            _desktopLyrics.UpdateLyrics(Player?.Title ?? string.Empty, Player?.Artist ?? string.Empty, hasTimeline: false);
+        }
+        else
+        {
+            _desktopLyrics.UpdateLyrics(lyrics.CurrentPrimary, lyrics.CurrentSecondary, lyrics.HasLyrics);
+        }
+    }
+
+    /// <summary>设置页「歌词」组：字号 / 单双行改动即时作用到已打开的桌面歌词窗。</summary>
+    private void HookSettingsLyricsUpdates()
+    {
+        if (Shell is null) return;
+        Shell.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName != nameof(ShellViewModel.CurrentPage)) return;
+            if (Shell.CurrentPage is not SettingsPageViewModel settings) return;
+            settings.PropertyChanged += (_, se) =>
+            {
+                if (se.PropertyName is nameof(SettingsPageViewModel.SelectedLyricFontSize)
+                    or nameof(SettingsPageViewModel.DesktopLyricsTwoLines))
+                    _desktopLyrics?.ApplySettings();
+            };
+        };
+    }
+
+    private void HookDesktopLyricsUpdates()
+    {
+        if (Player is null) return;
+        Player.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(PlayerViewModel.Title) or nameof(PlayerViewModel.CoverImage))
+                UpdateDesktopLyrics();
+        };
+        Player.Lyrics.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(LyricsViewModel.CurrentPrimary) or nameof(LyricsViewModel.CurrentSecondary)
+                or nameof(LyricsViewModel.HasLyrics) or nameof(LyricsViewModel.IsStatic))
+                UpdateDesktopLyrics();
+        };
     }
 
     // ================= 大歌词页（L1 第二步） =================
