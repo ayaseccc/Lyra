@@ -2,7 +2,8 @@
 
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
-    <TargetFramework>net8.0-windows</TargetFramework>
+    <!-- L2 SMTC：Windows 桌面 API（SystemMediaTransportControls）需要 Windows SDK 投影，TFM 升到 10.0.17763（探针 SmtcProbe 已验证编译+交叉发布） -->
+    <TargetFramework>net8.0-windows10.0.17763.0</TargetFramework>
     <UseWPF>true</UseWPF>
     <RootNamespace>Player.App</RootNamespace>
     <!-- 产物即 PLAN 第 9 节的 Player.exe -->

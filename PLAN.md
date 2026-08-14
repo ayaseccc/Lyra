@@ -470,6 +470,15 @@ ChkszClient（四端点封装、令牌桶 18 次/分、额度响应头解析、�
 - **设置页补全**：新增「歌词」「快捷键」「行为」（关闭行为、启动恢复策略）「关于」（版本、BASS 非商业授权提示、开源组件清单）；**在线组 API Key 输入框改密文显示**（眼睛按钮临时明文，回显只保留尾 4 位）。
 - 原 P6 的 SMTC/托盘由本阶段提前完成，P6 只剩文件关联、发布打包与性能收尾。
 
+**L2 开工约束（2026-08-15 规划方追记，任务清单须覆盖）**：
+1. **SMTC 技术预研先行**：WPF 下接 SystemMediaTransportControls 可能需要把 App 的 TFM 从 net8.0-windows 升到 net8.0-windows10.0.17763+（或走 Interop/隐藏 MediaPlayer 方案）——按既有探针工程方法先编译验证选型，确认对交叉发布（EnableWindowsTargeting）无破坏后再动主工程；TFM 若变更，构建/发布命令回写 PLAN。
+
+> **L2 SMTC 预研结论（2026-08-15，探针 tools/SmtcProbe 验证通过）**：选型 = TFM 升级 + SystemMediaTransportControlsInterop.GetForWindow（绑定窗口，桌面直连，无隐藏 MediaPlayer）。Player.App TFM 已从 net8.0-windows 升到 net8.0-windows10.0.17763.0（Windows SDK 投影包 microsoft.windows.sdk.net.ref 10.0.17763.56，已补入 tools/nuget-offline 离线 fallback）；探针与主工程均验证 编译 + -r win-x64 --self-contained 发布 + 运行 全通过。构建/发布命令不变。
+2. **键位统筹**：L1 已占用 Space（大歌词页暂停）与 Tab（全局平铺/封面切换）。L2 的应用内快捷键要与之统一：Space=全局播放/暂停（与大歌词页行为合并为一条规则）；**任何文本输入框（搜索、重命名、Key 输入）聚焦时快捷键一律不响应**——这条进 harness 或子代理专项检查。
+3. **托盘**：含顺延项"桌面歌词开关"；"关闭到托盘"默认关闭、设置里可开；开启后注意与 B4 的 ShutdownMode 语义兼容（托盘存活时关主窗不退出属预期，需显式退出路径：托盘菜单-退出）。
+4. **全局热键**：RegisterHotKey 实现，默认全关；注册失败（被占用）逐条明确提示，不静默。
+5. **设置页**：新增「快捷键」（只读清单）「行为」（关闭行为/启动恢复策略）「关于」（版本、BASS 非商业授权提示、开源组件、GD/ChKSz 接口署名）；在线组 Key 输入框改密文（尾 4 位回显+眼睛按钮）——L2 内完成，不再顺延。
+
 **UI-R4 目验结论（2026-08-14）：通过（用户「没发现问题」）**。交付：①大封面高清解码（CoverImageCache.GetLarge 760px，修复 160px 放大模糊）；②艺术家|专辑行；③制作信息区块——CreditReader 从标签读作词/作曲/编曲（Vorbis LYRICIST/ARRANGER + ID3v2 TXXX + Composers，实测曲库 150 首中 25 首有标签），LRC 头部元数据捕获补位（[词:]/[曲:]/[编曲:] 等），有才显示；④侧栏折叠状态持久化（UiConfig.SidePaneOpen）；harness lyrics 扩至 101 项全过。
 
 **UI-R 阶段全部完成（R0 歌词渲染重做 / R1 布局骨架 / R1.5 细节打磨 / R2 专辑分组 / R3 封面取色染色 / R4 右侧信息栏），遗留两个歌词已知问题（窄栏省略号截断、LyricCanvas.OnRender 偶发异常）作为待办，随后续歌词相关修改处理。**

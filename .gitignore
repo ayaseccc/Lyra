@@ -24,3 +24,8 @@ tools/fix-wpfui-id.ps1
 tools/fix-wpfui-id2.ps1
 tools/fix-wpfui-dep.ps1
 nuget.config
+
+# L2 SMTC 探针工程构建产物
+/tools/SmtcProbe/bin/
+/tools/SmtcProbe/obj/
+/tools/SmtcProbe/pub/
