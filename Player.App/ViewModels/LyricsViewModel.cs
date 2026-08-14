@@ -98,6 +98,12 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     private bool _isOpen;
 
+    /// <summary>打开歌词页立即定位当前行（不等到下一个 400ms tick）。</summary>
+    partial void OnIsOpenChanged(bool value)
+    {
+        if (value) UpdateCurrentLine();
+    }
+
     [ObservableProperty]
     private string _statusText = string.Empty;
 

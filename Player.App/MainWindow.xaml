@@ -72,9 +72,7 @@
                               MouseMove="OnTrackListMouseMove"
                               DragOver="OnTrackListDragOver"
                               Drop="OnTrackListDrop"
-                              VirtualizingPanel.IsVirtualizing="True"
-                              VirtualizingPanel.VirtualizationMode="Recycling"
-                              ScrollViewer.HorizontalScrollBarVisibility="Auto">
+                                ScrollViewer.HorizontalScrollBarVisibility="Auto">
                         <ListView.View>
                             <GridView ColumnHeaderContainerStyle="{StaticResource TrackHeaderStyle}">
                                 <GridViewColumn Header="标题" Width="300" DisplayMemberBinding="{Binding DisplayTitle}" />
@@ -571,8 +569,6 @@
                              Background="Transparent" BorderThickness="0"
                              ItemContainerStyle="{StaticResource LyricRowStyle}"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled"
-                             VirtualizingPanel.IsVirtualizing="True"
-                             VirtualizingPanel.VirtualizationMode="Recycling"
                              MouseLeftButtonUp="OnLyricListClick">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
