@@ -66,15 +66,6 @@ public partial class MainWindow : FluentWindow
             }
         };
 
-        // 大歌词页：鼠标活动淡入控制条，3 秒无操作淡出（L1.1-④）
-        BigLyricsOverlay.MouseMove += OnBigLyricsMouseMove;
-        _bigLyricsIdle.Tick += (_, _) =>
-        {
-            // 目验修复：淡出同时关闭命中——隐形控制条不再拦截底部点击/误触隐藏滑条
-            BigLyricsControlBar.IsHitTestVisible = false;
-            BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200)));
-        };
-
         // 音量方块：点击/拖动设置音量（UI-R1.5 反馈）
         VolumeSquares.AddHandler(PreviewMouseLeftButtonDownEvent,
             new MouseButtonEventHandler(OnVolumeMouseDown), handledEventsToo: true);
@@ -127,7 +118,6 @@ public partial class MainWindow : FluentWindow
     /// <summary>关窗前记下窗口尺寸，退出时随配置落盘。</summary>
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
-        _bigLyricsIdle.Stop();   // 复查修复：大歌词页计时器随窗口关闭收敛
         var bounds = RestoreBounds;
         var ui = ConfigService.Current.Ui;
         if (bounds.Width > 0 && bounds.Height > 0)
@@ -398,43 +388,22 @@ public partial class MainWindow : FluentWindow
 
     private bool _bigLyricsVisible;
 
-    private readonly System.Windows.Threading.DispatcherTimer _bigLyricsIdle = new()
-    {
-        Interval = TimeSpan.FromSeconds(3)
-    };
-
     private void OnBigLyricsButtonClick(object sender, RoutedEventArgs e) => ToggleBigLyrics();
 
-    private void OnBigLyricsCloseClick(object sender, RoutedEventArgs e) => ToggleBigLyrics();
-
-    private void OnBigLyricClicked(int index) => Player?.Lyrics.SeekToLine(index);
-
-    /// <summary>点击空白（非歌词画布/滑条/按钮）退出（L1.1-④：顺带恢复"再点按钮①退出"——按钮①位于覆盖层下方，
-    /// 其落点即空白，走同一路径）。</summary>
-    private void OnBigLyricsOverlayMouseDown(object sender, MouseButtonEventArgs e)
+    /// <summary>大歌词页终版：歌词区点击——左半=上一曲、右半=下一曲；双击=退出（Esc 与按钮①同样可退）。</summary>
+    private void OnBigLyricAreaMouseDown(object sender, MouseButtonEventArgs e)
     {
-        var source = e.OriginalSource as DependencyObject;
-        while (source is not null)
+        if (e.ClickCount >= 2)
         {
-            if (source is System.Windows.Controls.Button or Slider or LyricCanvas) return;
-            source = source is Visual or System.Windows.Media.Media3D.Visual3D
-                ? VisualTreeHelper.GetParent(source)
-                : LogicalTreeHelper.GetParent(source);
+            ToggleBigLyrics();
+            e.Handled = true;
+            return;
         }
-        ToggleBigLyrics();
-    }
-
-    /// <summary>鼠标活动：淡入完整控制条并重启 3 秒无操作计时。</summary>
-    private void OnBigLyricsMouseMove(object sender, MouseEventArgs e)
-    {
-        if (!_bigLyricsVisible) return;
-        if (BigLyricsControlBar.Opacity < 0.99)
-        {
-            BigLyricsControlBar.IsHitTestVisible = true;
-            BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
-        }
-        _bigLyricsIdle.Stop();
-        _bigLyricsIdle.Start();
+        if (sender is not Grid grid || Player is null) return;
+        var right = e.GetPosition(grid).X >= grid.ActualWidth / 2;
+        if (right) Player.NextCommand.Execute(null);
+        else Player.PreviousCommand.Execute(null);
+        e.Handled = true;
     }
 
     private void ToggleBigLyrics()
@@ -447,17 +416,9 @@ public partial class MainWindow : FluentWindow
             BigLyricsOverlay.Visibility = Visibility.Visible;
             BigLyricsOverlay.BeginAnimation(OpacityProperty,
                 new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(200)));
-            // 进场先显示完整控制，3 秒无操作后自动收敛为细进度线
-            BigLyricsControlBar.IsHitTestVisible = true;
-            BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(150)));
-            _bigLyricsIdle.Stop();
-            _bigLyricsIdle.Start();
         }
         else
         {
-            _bigLyricsIdle.Stop();
-            BigLyricsControlBar.IsHitTestVisible = false;
-            BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(150)));
             var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200));
             // 复查修复：重入守卫——关闭淡出期间若已重新打开，旧回调不得把覆盖层拉回 Collapsed
             fade.Completed += (_, _) =>

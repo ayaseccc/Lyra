@@ -1157,10 +1157,9 @@
 
 
 
-            <!-- ============ 大歌词页（L1 第二步 + L1.1-④ 收尾：点击空白/右上关闭退出、底部控制条自动收敛） ============ -->
+            <!-- ============ 大歌词页（L1 第二步 + 终版形态：无控制条/无×/无进度；Esc 或双击退出；点击左半=上一曲 右半=下一曲） ============ -->
             <Grid x:Name="BigLyricsOverlay" Grid.RowSpan="3" Visibility="Collapsed" Opacity="0"
-                  Background="{DynamicResource SurfaceStrongBrush}" ClipToBounds="True"
-                  PreviewMouseLeftButtonDown="OnBigLyricsOverlayMouseDown">
+                  Background="{DynamicResource SurfaceStrongBrush}" ClipToBounds="True">
                 <!-- 背景：放大模糊封面 + 遮罩保证可读 -->
                 <Image x:Name="BigLyricsBgImage" Source="{Binding Player.CoverImage}"
                        Stretch="UniformToFill" RenderTransformOrigin="0.5,0.5">
@@ -1181,71 +1180,16 @@
                     </Border.Background>
                 </Border>
 
-                <!-- 中央大字号歌词（复用 R5 引擎，1.8 倍） -->
-                <Grid Margin="60,0,60,84">
-                    <ctrl:LyricCanvas x:Name="BigLyricCanvas" FontScale="1.8"
+                <!-- 中央大字号歌词（复用 R5 引擎，1.8 倍）；点击左半=上一曲、右半=下一曲，双击=退出 -->
+                <Grid Margin="60,0,60,60" PreviewMouseLeftButtonDown="OnBigLyricAreaMouseDown">
+                    <ctrl:LyricCanvas x:Name="BigLyricCanvas" FontScale="1.8" ClicksEnabled="False"
                                       Lines="{Binding Player.Lyrics.RenderLines}"
                                       CurrentIndex="{Binding Player.Lyrics.CurrentIndex}"
                                       IsStatic="{Binding Player.Lyrics.IsStatic}"
                                       AccentBrush="{DynamicResource AccentBrush}"
                                       TextBrush="{DynamicResource TextPrimaryBrush}"
-                                      SubTextBrush="{DynamicResource TextSecondaryBrush}"
-                                      LineClicked="OnBigLyricClicked" />
+                                      SubTextBrush="{DynamicResource TextSecondaryBrush}" />
                 </Grid>
-
-                <!-- 目验四修复：细进度线整体移除（左下角填充块被目验为「小框」）；进度只在控制条可见时展示 -->
-                <!-- 完整控制条（目验修复⑥：为大歌词页重设——无底色、细滑条+圆钮、幽灵按钮，与页面融合） -->
-                <Border x:Name="BigLyricsControlBar" VerticalAlignment="Bottom" Opacity="0">
-                    <Grid Margin="0,0,0,16" DataContext="{Binding Player}">
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <Grid Margin="70,0,70,0">
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Text="{Binding PositionText}" Style="{StaticResource SubTextStyle}" Width="46"
-                                       Opacity="0.85" VerticalAlignment="Center" />
-                            <Slider x:Name="BigLyricsSeekSlider" Grid.Column="1" Margin="8,0" VerticalAlignment="Center"
-                                    ctrl:SeekSliderBehavior.Enable="True"
-                                    Style="{StaticResource BigLyricsSeekStyle}"
-                                    Maximum="{Binding DurationSeconds}"
-                                    Value="{Binding PositionSeconds, Mode=TwoWay}"
-                                    IsEnabled="{Binding HasTrack}" LargeChange="5" SmallChange="1" />
-                            <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource SubTextStyle}"
-                                       Width="46" Opacity="0.85" TextAlignment="Right" VerticalAlignment="Center" />
-                            <!-- 目验四修复：× 收进控制条（随控制条显隐，不再悬浮在覆盖层顶部） -->
-                            <Button Grid.Column="3" x:Name="BigLyricsCloseButton" Margin="16,0,0,0"
-                                    Width="30" Height="30" Style="{StaticResource BigLyricsGhostButtonStyle}"
-                                    Click="OnBigLyricsCloseClick">
-                                <ui:SymbolIcon Symbol="Dismiss24" FontSize="14" Foreground="{DynamicResource TextPrimaryBrush}" />
-                            </Button>
-                        </Grid>
-                        <StackPanel Grid.Row="1" Orientation="Horizontal" HorizontalAlignment="Center" Margin="0,10,0,0">
-                            <Button Style="{StaticResource BigLyricsGhostButtonStyle}" ToolTip="上一首"
-                                    Command="{Binding PreviousCommand}">
-                                <ui:SymbolIcon Symbol="Previous24" FontSize="20" />
-                            </Button>
-                            <Button Style="{StaticResource PrimaryPlayButtonStyle}" Width="46" Height="46" Margin="14,0"
-                                    Command="{Binding PlayPauseCommand}" ToolTip="播放 / 暂停">
-                                <Grid>
-                                    <ui:SymbolIcon Symbol="Play24" FontSize="22"
-                                                   Visibility="{Binding IsPlaying, Converter={StaticResource InverseBoolToVisibility}}" />
-                                    <ui:SymbolIcon Symbol="Pause24" FontSize="22"
-                                                   Visibility="{Binding IsPlaying, Converter={StaticResource BoolToVis}}" />
-                                </Grid>
-                            </Button>
-                            <Button Style="{StaticResource BigLyricsGhostButtonStyle}" ToolTip="下一首"
-                                    Command="{Binding NextCommand}">
-                                <ui:SymbolIcon Symbol="Next24" FontSize="20" />
-                            </Button>
-                        </StackPanel>
-                    </Grid>
-                </Border>
             </Grid>
             </Grid>
 </ui:FluentWindow>

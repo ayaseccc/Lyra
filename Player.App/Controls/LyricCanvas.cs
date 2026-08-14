@@ -76,8 +76,11 @@ public sealed class LyricCanvas : FrameworkElement
     private Color _brushSubBase;
     private Color _brushAccentBase;
 
-    /// <summary>点击某行（参数为行号）。</summary>
+    /// <summary>点击某行（参数为行号）。ClicksEnabled=false 时（大歌词页）不触发。</summary>
     public event Action<int>? LineClicked;
+
+    /// <summary>大歌词页终版：点击交给宿主（左/右半区=上一曲/下一曲），本控件不再处理点击（避免与宿主导航冲突）。</summary>
+    public bool ClicksEnabled { get; set; } = true;
 
     /// <summary>字号缩放（大歌词页用，默认 1.0；同时缩放行高/间距/折行宽度判断）。</summary>
     public double FontScale
@@ -243,6 +246,7 @@ public sealed class LyricCanvas : FrameworkElement
     protected override void OnMouseLeftButtonUp(MouseButtonEventArgs e)
     {
         base.OnMouseLeftButtonUp(e);
+        if (!ClicksEnabled) return;   // 大歌词页：导航由宿主统一处理
 
         var heights = ComputeHeights();
         if (heights.Length == 0) return;
