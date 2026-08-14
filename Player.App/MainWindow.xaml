@@ -676,7 +676,8 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="{Binding Player.WindowTitle}" Icon="{ui:SymbolIcon MusicNote224}" />
+        <ui:TitleBar Grid.Row="0" Title="{Binding Player.WindowTitle}" Icon="{ui:SymbolIcon MusicNote224}"
+                     Background="{DynamicResource SurfaceStrongBrush}" />
 
         <!-- ============ 三栏主体：左侧栏 + 内容 ============ -->
         <Grid Grid.Row="1">

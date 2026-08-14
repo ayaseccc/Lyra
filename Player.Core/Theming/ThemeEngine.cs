@@ -250,7 +250,7 @@ public static class ThemeDeriver
             background = Mix(background, Black, 0.5);
 
         var surface = Mix(main, Black, 0.70);
-        var surfaceStrong = Mix(main, Black, 0.82);
+        var surfaceStrong = Mix(main, Black, 0.72);
 
         // 强调色：同色相最大饱和度，再向白混合直到 vs 背景 ≥ 3.0
         var accent = Saturate(main);
