@@ -53,7 +53,8 @@ public partial class DesktopLyricsWindow : Window
 
     private void ApplyLockedStyle()
     {
-        _locked = !Player.Core.Infra.ConfigService.Current.Ui.DesktopLyricsLocked;
+        // B1：锁定语义 = 配置值本体（此前取反导致锁定/解锁颠倒）
+        _locked = Player.Core.Infra.ConfigService.Current.Ui.DesktopLyricsLocked;
         if (_locked)
         {
             UnlockHandle.Visibility = Visibility.Visible;
@@ -73,8 +74,10 @@ public partial class DesktopLyricsWindow : Window
         var hwnd = new WindowInteropHelper(this).Handle;
         if (hwnd == IntPtr.Zero) return;
         var style = GetWindowLong(hwnd, GwlExStyle);
-        if (transparent) style |= WsExTransparent | WsExLayered;
-        else style &= ~(WsExTransparent | WsExLayered);
+        // B2：只切换 WS_EX_TRANSPARENT。WS_EX_LAYERED 是 WPF AllowsTransparency 的基石，
+        // 清除它会让窗口失去逐像素透明（黑底实心块），绝不能动。
+        if (transparent) style |= WsExTransparent;
+        else style &= ~WsExTransparent;
         SetWindowLong(hwnd, GwlExStyle, style);
     }
 

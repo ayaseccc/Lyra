@@ -25,25 +25,14 @@ public partial class MainWindow : FluentWindow
     private Point _dragStartPoint;
     private TrackRecord? _draggingTrack;
     private TrackRecord[] _dragPayload = Array.Empty<TrackRecord>();
-    private bool _seekPressedOnSlider;
     private bool _volumeDragging;
 
     public MainWindow()
     {
         InitializeComponent();
 
-        // 进度条的接管必须用 AddHandler(..., handledEventsToo: true)：
-        // Slider 的类处理器会在 IsMoveToPointEnabled 时把 PreviewMouseLeftButtonDown 标记为已处理，
-        // XAML 上挂的实例处理器默认收不到已处理事件 —— 这正是 P1.1-② 里"点击后弹回"的根因
-        // （BeginSeek 没跑 → EndSeek 被门禁挡掉 → 定时器把位置拉回去）。
-        SeekSlider.AddHandler(PreviewMouseLeftButtonDownEvent,
-            new MouseButtonEventHandler(OnSeekPressed), handledEventsToo: true);
-        SeekSlider.AddHandler(PreviewMouseLeftButtonUpEvent,
-            new MouseButtonEventHandler(OnSeekReleased), handledEventsToo: true);
-
-        // 拖动结束也走同一条释放路径（鼠标在窗口外松开时靠它兜底）
-        SeekSlider.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler(OnSeekDragStarted));
-        SeekSlider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(OnSeekDragCompleted));
+        // 播放位置滑条接管统一走 SeekSliderBehavior（工程铁律：禁止散装复制，
+        // 见 XAML 中 SeekSlider 与 BigLyricsSeekSlider 的 ctrl:SeekSliderBehavior.Enable="True"）。
 
         // 播放条输出徽章：左键单击也弹出设备切换菜单（UI-R1.5 ⑫）
         OutputBadgeButton.Click += (_, _) =>
@@ -316,14 +305,14 @@ public partial class MainWindow : FluentWindow
         var lyrics = Player?.Lyrics;
         if (lyrics is null) return;
 
-        // 无时间轴歌词 → 显示曲名
-        if (lyrics.HasLyrics && lyrics.IsStatic)
+        // 无歌词 / 无时间轴 → 显示曲名（W1：完全无歌词时也显示曲名，避免空条）
+        if (!lyrics.HasLyrics || lyrics.IsStatic)
         {
             _desktopLyrics.UpdateLyrics(Player?.Title ?? string.Empty, Player?.Artist ?? string.Empty, hasTimeline: false);
         }
         else
         {
-            _desktopLyrics.UpdateLyrics(lyrics.CurrentPrimary, lyrics.CurrentSecondary, lyrics.HasLyrics);
+            _desktopLyrics.UpdateLyrics(lyrics.CurrentPrimary, lyrics.CurrentSecondary, hasTimeline: true);
         }
     }
 
@@ -541,34 +530,6 @@ public partial class MainWindow : FluentWindow
 
     /// <summary>右侧栏歌词：点击某行跳转（UI-R0）。</summary>
     private void OnSideLyricClicked(int index) => Player?.Lyrics.SeekToLine(index);
-
-    private void OnSeekPressed(object sender, MouseButtonEventArgs e)
-    {
-        _seekPressedOnSlider = true;
-        Player?.BeginSeek();
-    }
-
-    /// <summary>释放即 seek —— 点击和拖动都走这里，且必然执行一次。</summary>
-    private void OnSeekReleased(object sender, MouseButtonEventArgs e)
-    {
-        // 按下不在滑条上（只是抬手时正好经过）就不该产生跳转
-        if (!_seekPressedOnSlider) return;
-
-        _seekPressedOnSlider = false;
-        Player?.EndSeek(SeekSlider.Value);
-    }
-
-    private void OnSeekDragStarted(object sender, DragStartedEventArgs e)
-    {
-        _seekPressedOnSlider = true;
-        Player?.BeginSeek();
-    }
-
-    private void OnSeekDragCompleted(object sender, DragCompletedEventArgs e)
-    {
-        _seekPressedOnSlider = false;
-        Player?.EndSeek(SeekSlider.Value);
-    }
 
     // ================= 工具 =================
 

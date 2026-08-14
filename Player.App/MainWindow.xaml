@@ -940,6 +940,7 @@
                     <TextBlock Text="{Binding PositionText}" Style="{StaticResource SubTextStyle}"
                                Width="46" VerticalAlignment="Center" />
                     <Slider Grid.Column="1" x:Name="SeekSlider" Margin="2,0" VerticalAlignment="Center"
+                            ctrl:SeekSliderBehavior.Enable="True"
                             Style="{StaticResource SeekSliderStyle}"
                             Maximum="{Binding DurationSeconds}"
                             Value="{Binding PositionSeconds, Mode=TwoWay}"
@@ -1158,7 +1159,8 @@
                             </Grid.ColumnDefinitions>
                             <TextBlock Text="{Binding PositionText}" Style="{StaticResource SubTextStyle}" Width="46"
                                        VerticalAlignment="Center" />
-                            <Slider Grid.Column="1" Margin="2,0" VerticalAlignment="Center"
+                            <Slider x:Name="BigLyricsSeekSlider" Grid.Column="1" Margin="2,0" VerticalAlignment="Center"
+                                    ctrl:SeekSliderBehavior.Enable="True"
                                     Style="{StaticResource SeekSliderStyle}"
                                     Maximum="{Binding DurationSeconds}"
                                     Value="{Binding PositionSeconds, Mode=TwoWay}"
