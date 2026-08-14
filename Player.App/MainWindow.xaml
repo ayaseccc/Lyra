@@ -272,7 +272,190 @@
 
         <!-- ============ 设置页 ============ -->
         <DataTemplate DataType="{x:Type vm:SettingsPageViewModel}">
+            <ScrollViewer VerticalScrollBarVisibility="Auto" Margin="18,8,18,0">
+                <StackPanel MaxWidth="720" HorizontalAlignment="Left">
 
+                    <StackPanel Margin="0,0,0,6">
+                        <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleStyle}" />
+                        <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
+                    </StackPanel>
+
+                    <!-- ===== 输出组（P2） ===== -->
+                    <TextBlock Text="输出" Style="{StaticResource SectionHeaderStyle}" Margin="0,10,0,4" />
+                    <Border CornerRadius="8" Padding="16" Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1">
+                        <StackPanel>
+
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="后端" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                <StackPanel Grid.Column="1">
+                                    <ComboBox ItemsSource="{Binding Backends}" SelectedItem="{Binding SelectedBackend}" />
+                                    <TextBlock Text="{Binding BackendHint}" Style="{StaticResource SubTextStyle}"
+                                               Margin="2,6,0,0" TextWrapping="Wrap" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="设备" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding Devices}"
+                                          SelectedItem="{Binding SelectedDevice}" DisplayMemberPath="Name" />
+                                <ui:Button Grid.Column="2" Margin="8,0,0,0" Content="刷新"
+                                           Icon="{ui:SymbolIcon ArrowSync24}" Command="{Binding RefreshDevicesCommand}" />
+                            </Grid>
+
+                            <Grid Margin="0,0,0,10" Visibility="{Binding IsWasapi, Converter={StaticResource BoolToVis}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="独占模式" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                <StackPanel Grid.Column="1">
+                                    <ui:ToggleSwitch IsChecked="{Binding Exclusive}" Content="独占设备（可位完美，其它程序将无声）" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Grid Margin="0,0,0,10">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="采样率" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding RateModes}"
+                                          SelectedItem="{Binding SelectedRateMode}" />
+                                <ComboBox Grid.Column="2" Margin="8,0,0,0" Width="120"
+                                          ItemsSource="{Binding FixedRates}" SelectedItem="{Binding SelectedFixedRate}"
+                                          Visibility="{Binding IsFixedRate, Converter={StaticResource BoolToVis}}" />
+                            </Grid>
+
+                            <Grid Margin="0,0,0,10" Visibility="{Binding IsAsio, Converter={StaticResource BoolToVis}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="ASIO" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding AsioBuffers}"
+                                          SelectedItem="{Binding SelectedAsioBuffer}" ToolTip="缓冲区。爆音或断续时先往大了调" />
+                                <ComboBox Grid.Column="2" Margin="8,0,0,0" ItemsSource="{Binding AsioChannels}"
+                                          SelectedItem="{Binding SelectedAsioChannel}" ToolTip="输出到设备的哪一对通道" />
+                            </Grid>
+
+                            <Grid Margin="0,0,0,10" Visibility="{Binding IsWasapi, Converter={StaticResource BoolToVis}}">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="缓冲区" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                <ComboBox Grid.Column="1" ItemsSource="{Binding WasapiBuffers}"
+                                          SelectedItem="{Binding SelectedWasapiBuffer}" />
+                            </Grid>
+
+                            <Border Background="{StaticResource HoverBrush}" CornerRadius="6" Padding="10,8" Margin="0,4,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Speaker224" FontSize="14" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource AccentBrush}" />
+                                    <TextBlock Text="{Binding OutputStatus}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                               TextWrapping="Wrap" Style="{StaticResource SubTextStyle}" />
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ===== 媒体库组 ===== -->
+                    <TextBlock Text="媒体库" Style="{StaticResource SectionHeaderStyle}" Margin="0,18,0,4" />
+                    <Border CornerRadius="8" Padding="16" Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1">
+                        <StackPanel>
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                                <ui:Button Content="添加文件夹" Appearance="Primary"
+                                           Icon="{ui:SymbolIcon FolderOpen24}" Command="{Binding AddFolderCommand}" />
+                                <ui:Button Content="移除所选" Margin="8,0,0,0"
+                                           Icon="{ui:SymbolIcon Delete24}" Command="{Binding RemoveFolderCommand}" />
+                                <ui:Button Content="重新扫描（全量）" Margin="8,0,0,0"
+                                           Icon="{ui:SymbolIcon ArrowSync24}" Command="{Binding RescanCommand}" />
+                                <ui:Button Content="检查更新" Margin="8,0,0,0"
+                                           Command="{Binding IncrementalScanCommand}" />
+                                <ui:Button Content="停止扫描" Margin="8,0,0,0"
+                                           Icon="{ui:SymbolIcon Dismiss24}" Command="{Binding CancelScanCommand}" />
+                            </StackPanel>
+
+                            <Border CornerRadius="6" Padding="4" MinHeight="80" MaxHeight="260"
+                                    Background="{StaticResource HoverBrush}">
+                                <ListBox ItemsSource="{Binding Folders}" SelectedItem="{Binding SelectedFolder}"
+                                         Background="Transparent" BorderThickness="0"
+                                         ItemContainerStyle="{StaticResource SimpleRowStyle}">
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal">
+                                                <ui:SymbolIcon Symbol="Folder24" FontSize="14" VerticalAlignment="Center"
+                                                               Foreground="{StaticResource TextTertiaryBrush}" />
+                                                <TextBlock Text="{Binding}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                                           Foreground="{StaticResource TextPrimaryBrush}" FontSize="12" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <!-- ===== 在线组（P3） ===== -->
+                    <TextBlock Text="在线" Style="{StaticResource SectionHeaderStyle}" Margin="0,18,0,4" />
+                    <Border CornerRadius="8" Padding="16" Background="{StaticResource SurfaceBrush}"
+                            BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1">
+                        <StackPanel>
+                            <Grid Margin="0,0,0,8">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="110" />
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="Auto" />
+                                </Grid.ColumnDefinitions>
+                                <TextBlock Text="API Key" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                <ui:TextBox Grid.Column="1" PlaceholderText="在 api.chksz.com 后台生成的 Key"
+                                            Text="{Binding ApiKey, UpdateSourceTrigger=PropertyChanged}" />
+                                <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
+                                    <ui:Button Content="保存" Appearance="Primary"
+                                               Command="{Binding SaveApiKeyCommand}" />
+                                    <ui:Button Content="测试连接" Margin="8,0,0,0"
+                                               Command="{Binding TestApiKeyCommand}" />
+                                </StackPanel>
+                            </Grid>
+
+                            <Border Background="{StaticResource HoverBrush}" CornerRadius="6" Padding="10,8">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Key24" FontSize="14" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource AccentBrush}" />
+                                    <TextBlock Text="{Binding KeyStatus}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                               TextWrapping="Wrap" Style="{StaticResource SubTextStyle}" />
+                                </StackPanel>
+                            </Border>
+<Border Background="{StaticResource HoverBrush}" CornerRadius="6" Padding="10,8" Margin="0,8,0,0">
+                                <StackPanel Orientation="Horizontal">
+                                    <ui:SymbolIcon Symbol="Cloud24" FontSize="14" VerticalAlignment="Center"
+                                                   Foreground="{StaticResource AccentBrush}" />
+                                    <TextBlock Text="{Binding QuotaDisplay}" Margin="8,0,0,0" VerticalAlignment="Center"
+                                               TextWrapping="Wrap" Style="{StaticResource SubTextStyle}" />
+                                </StackPanel>
+                            </Border>
+
+                            <TextBlock Margin="0,8,0,0" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
+                                       Text="Key 只保存在本地 data/config.json（不会出现在日志里）。歌词自动匹配、在线搜索、歌单同步都依赖它；今日免费额度以服务端响应头为准，见上方今日额度。" />
+                        </StackPanel>
+                    </Border>
+
+                    <Border Height="20" />
+                </StackPanel>
+            </ScrollViewer>
         </DataTemplate>
 
 
@@ -401,14 +584,16 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
-                    <!-- 大封面（UI-R0 用户要求：右侧栏最上方） -->
-                    <Border Height="170" CornerRadius="10" Margin="0,0,0,10"
+                    <!-- 大封面（正方形：高度跟随列宽，完整显示保持比例） -->
+                    <Border CornerRadius="10" Margin="0,0,0,10"
+                            Height="{Binding ActualWidth, RelativeSource={RelativeSource Self}}"
+                            MaxHeight="420"
                             Background="{StaticResource HoverBrush}"
                             BorderBrush="{StaticResource BorderSoftBrush}" BorderThickness="1">
                         <Grid>
                             <ui:SymbolIcon Symbol="MusicNote224" FontSize="44" HorizontalAlignment="Center"
                                            VerticalAlignment="Center" Foreground="{StaticResource TextTertiaryBrush}" />
-                            <Image Source="{Binding Player.CoverImage}" Stretch="UniformToFill" />
+                            <Image Source="{Binding Player.CoverImage}" Stretch="Uniform" />
                         </Grid>
                     </Border>
                     <StackPanel Grid.Row="1">
