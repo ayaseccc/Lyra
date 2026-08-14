@@ -158,6 +158,28 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     [ObservableProperty]
     private bool _isLyricTab;
 
+    [ObservableProperty]
+    private bool _isShortcutTab;
+
+    // ================= 快捷键（L2：只读清单） =================
+
+    public sealed record ShortcutItem(string Keys, string Description);
+
+    public IReadOnlyList<ShortcutItem> ShortcutItems { get; } = new[]
+    {
+        new ShortcutItem("Space", "播放 / 暂停（全局；大歌词页内同样生效）"),
+        new ShortcutItem("← / →", "后退 / 前进 5 秒"),
+        new ShortcutItem("Ctrl+← / Ctrl+→", "上一曲 / 下一曲"),
+        new ShortcutItem("Ctrl+F", "聚焦搜索框"),
+        new ShortcutItem("Enter", "播放选中曲目（列表聚焦时）"),
+        new ShortcutItem("Delete", "从歌单移除（歌单页）"),
+        new ShortcutItem("Ctrl+L", "定位正在播放的曲目"),
+        new ShortcutItem("F5", "重扫媒体库"),
+        new ShortcutItem("Tab", "平铺 / 专辑分组切换（L1 已占用）"),
+        new ShortcutItem("Esc", "退出大歌词页 / 设置页"),
+        new ShortcutItem("大歌词页", "双击或 Esc 退出；空格暂停；滚轮/拖动浏览；点歌词行跳转；点空白左/右半切曲")
+    };
+
     // ================= 歌词（L1 第三步 + L1.1 打磨） =================
 
     /// <summary>L1.1-②：系统字体（置顶中日文友好项）+ 字重，作用于右栏/大歌词页/桌面歌词。</summary>

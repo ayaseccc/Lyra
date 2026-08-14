@@ -8,6 +8,7 @@ using System.Windows.Media;
 using Player.App.Controls;
 using Player.App.ViewModels;
 using Player.Core.Audio;
+using Player.Core.Hotkeys;
 using Player.Core.Infra;
 using Player.Core.Library;
 using Wpf.Ui.Controls;
@@ -256,10 +257,14 @@ public partial class MainWindow : FluentWindow
         Shell?.PlayFolderPlaylist(nav);
     }
 
-    /// <summary>Esc：先退大歌词页，再退设置页（UI-R2 bug 修复）。
-    /// 目验九修复：Tab 全局绑定「平铺/封面模式切换」并始终吞掉——任何位置按 Tab 不再移动焦点（选框物理消灭），
-    /// 同时切换当前曲目列表的平铺/分组模式（与列表右上角按钮同命令，持久化）。
-    /// 大歌词页打开时方向键仍吞掉（无焦点框）。</summary>
+    /// <summary>
+    /// 窗口级键盘统一入口（L1 保留项 + L2 应用内快捷键，一条规则链）：
+    /// - Tab：全局吞掉并切换平铺/封面模式（L1 目验九）；
+    /// - 大歌词页打开时方向键吞掉（无焦点框，L1）；
+    /// - Esc：先退大歌词页，再退设置页（L1）；
+    /// - L2 快捷键（Space/←→/Ctrl+←→/Ctrl+F/Enter/Delete/Ctrl+L/F5）走 ShortcutPolicy——
+    ///   任何文本输入框/下拉框聚焦时一律不响应（L2 约束②），按钮聚焦 Space 归按钮、滑条聚焦方向键归滑条。
+    /// </summary>
     private void Window_OnPreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Tab)
@@ -274,18 +279,109 @@ public partial class MainWindow : FluentWindow
             e.Handled = true;
             return;
         }
-        if (e.Key != Key.Escape) return;
-        if (_bigLyricsVisible)
+        if (e.Key == Key.Escape)
         {
-            ToggleBigLyrics();
-            e.Handled = true;
+            if (_bigLyricsVisible)
+            {
+                ToggleBigLyrics();
+                e.Handled = true;
+                return;
+            }
+            if (Shell?.CurrentPage is SettingsPageViewModel)
+            {
+                Shell.LeaveSettings();
+                e.Handled = true;
+            }
             return;
         }
-        if (Shell?.CurrentPage is SettingsPageViewModel)
+
+        // ===== L2 应用内快捷键 =====
+        var shortcut = e.Key switch
         {
-            Shell.LeaveSettings();
-            e.Handled = true;
+            Key.Space => ShortcutKey.Space,
+            Key.Left => (Keyboard.Modifiers & ModifierKeys.Control) != 0 ? ShortcutKey.PrevTrack : ShortcutKey.SeekBack,
+            Key.Right => (Keyboard.Modifiers & ModifierKeys.Control) != 0 ? ShortcutKey.NextTrack : ShortcutKey.SeekForward,
+            Key.F when (Keyboard.Modifiers & ModifierKeys.Control) != 0 => ShortcutKey.FocusSearch,
+            Key.Enter => ShortcutKey.Enter,
+            Key.Delete => ShortcutKey.Delete,
+            Key.L when (Keyboard.Modifiers & ModifierKeys.Control) != 0 => ShortcutKey.Locate,
+            Key.F5 => ShortcutKey.Rescan,
+            _ => (ShortcutKey?)null
+        };
+        if (shortcut is not { } key) return;
+
+        // 焦点策略：文本框/下拉框聚焦一律放行（不响应）；按钮 Space、滑条方向键归控件
+        if (!ShortcutPolicy.ShouldHandle(CurrentFocusKind(), key)) return;
+
+        e.Handled = true;
+        switch (key)
+        {
+            case ShortcutKey.Space:
+                Player?.PlayPauseCommand.Execute(null);   // 全局播放/暂停（与大歌词页同一条规则）
+                break;
+            case ShortcutKey.SeekBack:
+                SeekRelative(-5);
+                break;
+            case ShortcutKey.SeekForward:
+                SeekRelative(+5);
+                break;
+            case ShortcutKey.PrevTrack:
+                Player?.PreviousCommand.Execute(null);
+                break;
+            case ShortcutKey.NextTrack:
+                Player?.NextCommand.Execute(null);
+                break;
+            case ShortcutKey.FocusSearch:
+                FilterBox?.Focus();
+                break;
+            case ShortcutKey.Enter:
+                if (CurrentTrackPage is { } page && page.SelectedTrack is { } track) page.Play(track);
+                break;
+            case ShortcutKey.Delete:
+                if (CurrentTrackPage is { } editPage && editPage.CanEdit)
+                    editPage.RemoveSelectedCommand.Execute(null);
+                break;
+            case ShortcutKey.Locate:
+                Player?.LocateCurrentTrackCommand.Execute(null);
+                break;
+            case ShortcutKey.Rescan:
+                if (Shell is { } shell) _ = shell.ScanAsync(fullRescan: false);
+                break;
         }
+    }
+
+    /// <summary>相对当前播放位置 seek（±5 秒快捷键）。</summary>
+    private void SeekRelative(double seconds)
+    {
+        if (Player is null || !Player.HasTrack) return;
+        var target = Math.Clamp(Player.PositionSeconds + seconds, 0, Math.Max(1, Player.DurationSeconds));
+        Player.EndSeek(target);
+    }
+
+    /// <summary>当前键盘焦点类别（沿可视树向上归类；文本框/下拉/按钮/滑条/列表优先于普通区）。</summary>
+    private static FocusKind CurrentFocusKind()
+    {
+        var f = Keyboard.FocusedElement as DependencyObject;
+        while (f is not null)
+        {
+            switch (f)
+            {
+                case System.Windows.Controls.Primitives.TextBoxBase or System.Windows.Controls.PasswordBox:
+                    return FocusKind.TextInput;
+                case ComboBox:
+                    return FocusKind.ComboBox;
+                case Slider:
+                    return FocusKind.Slider;
+                case System.Windows.Controls.Primitives.ButtonBase:
+                    return FocusKind.ButtonBase;
+                case System.Windows.Controls.ListBox:
+                    return FocusKind.ListBox;
+            }
+            f = f is Visual or System.Windows.Media.Media3D.Visual3D
+                ? VisualTreeHelper.GetParent(f)
+                : LogicalTreeHelper.GetParent(f);
+        }
+        return FocusKind.None;
     }
 
     // ================= 桌面歌词（L1 第三步） =================
@@ -459,18 +555,12 @@ public partial class MainWindow : FluentWindow
         if (_blankClickTimer?.IsEnabled == true) _blankClickTimer.Stop();
     }
 
-    /// <summary>大歌词页键盘（目验五修复：删除 Tab/方向键焦点框控制；空格=播放/暂停；Esc 由窗口级处理）。</summary>
+    /// <summary>大歌词页键盘（L2 统一：空格已并入窗口级全局播放/暂停规则，这里只吞掉焦点键）。</summary>
     private void OnBigLyricsPreviewKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Tab || e.Key == Key.Left || e.Key == Key.Right || e.Key == Key.Up || e.Key == Key.Down)
         {
             e.Handled = true;   // 不做焦点移动（无焦点框）
-            return;
-        }
-        if (e.Key == Key.Space)
-        {
-            Player?.PlayPauseCommand.Execute(null);
-            e.Handled = true;
         }
     }
 

@@ -1,4 +1,5 @@
 using Player.Core.Audio;
+using Player.Core.Hotkeys;
 using Player.Core.Infra;
 using Player.Core.Library;
 using Player.Core.Lyrics;
@@ -58,8 +59,12 @@ public static class Program
                 RunThemeChecks();
                 break;
 
+            case "shortcuts":
+                RunShortcutChecks();
+                break;
+
             default:
-                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme）");
+                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme / shortcuts）");
                 return 2;
         }
 
@@ -908,6 +913,45 @@ public static class Program
         Check("固定深色：已到达=白、未到达=深灰",
             ThemePalette.FixedDark.VolumeReached == new RgbColor(0xFF, 0xFF, 0xFF)
             && ThemePalette.FixedDark.VolumeSlot == new RgbColor(0x3A, 0x3A, 0x3A));
+
+        Console.WriteLine();
+    }
+
+    // ================= 应用内快捷键策略（L2） =================
+
+    private static void RunShortcutChecks()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 快捷键响应策略（ShortcutPolicy） ===");
+
+        var keys = Enum.GetValues<ShortcutKey>();
+        var allKeys = keys.ToArray();
+
+        // ---- 文本输入聚焦：一律不响应（L2 约束②核心规则） ----
+        var textInputBlocked = allKeys.All(k => !ShortcutPolicy.ShouldHandle(FocusKind.TextInput, k));
+        Check("文本输入框聚焦：全部快捷键不响应", textInputBlocked);
+        Check("下拉框聚焦：全部快捷键不响应", allKeys.All(k => !ShortcutPolicy.ShouldHandle(FocusKind.ComboBox, k)));
+
+        // ---- 按钮聚焦：Space 归按钮 ----
+        Check("按钮聚焦：Space 不抢（归按钮激活）", !ShortcutPolicy.ShouldHandle(FocusKind.ButtonBase, ShortcutKey.Space));
+        Check("按钮聚焦：F5 重扫仍响应", ShortcutPolicy.ShouldHandle(FocusKind.ButtonBase, ShortcutKey.Rescan));
+        Check("按钮聚焦：Ctrl+F 仍响应", ShortcutPolicy.ShouldHandle(FocusKind.ButtonBase, ShortcutKey.FocusSearch));
+
+        // ---- 滑条聚焦：方向键归滑条 ----
+        Check("滑条聚焦：←/→ 不抢（归滑条）", !ShortcutPolicy.ShouldHandle(FocusKind.Slider, ShortcutKey.SeekBack)
+              && !ShortcutPolicy.ShouldHandle(FocusKind.Slider, ShortcutKey.SeekForward));
+        Check("滑条聚焦：Ctrl+←/→ 不抢", !ShortcutPolicy.ShouldHandle(FocusKind.Slider, ShortcutKey.PrevTrack)
+              && !ShortcutPolicy.ShouldHandle(FocusKind.Slider, ShortcutKey.NextTrack));
+        Check("滑条聚焦：Space 仍响应", ShortcutPolicy.ShouldHandle(FocusKind.Slider, ShortcutKey.Space));
+
+        // ---- 列表聚焦：Enter/Delete 生效 ----
+        Check("列表聚焦：Enter 播放选中", ShortcutPolicy.ShouldHandle(FocusKind.ListBox, ShortcutKey.Enter));
+        Check("列表聚焦：Delete 歌单移除", ShortcutPolicy.ShouldHandle(FocusKind.ListBox, ShortcutKey.Delete));
+        Check("列表聚焦：Space 仍响应", ShortcutPolicy.ShouldHandle(FocusKind.ListBox, ShortcutKey.Space));
+
+        // ---- 普通区域：全部响应 ----
+        Check("无焦点/普通区：全部快捷键响应", allKeys.All(k => ShortcutPolicy.ShouldHandle(FocusKind.None, k)));
+        Check("无焦点/普通区：Space 响应", ShortcutPolicy.ShouldHandle(FocusKind.None, ShortcutKey.Space));
 
         Console.WriteLine();
     }

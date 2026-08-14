@@ -439,6 +439,8 @@
                                  Margin="6,0,0,0" IsChecked="{Binding IsOnlineTab}" />
                     <RadioButton GroupName="SettingsTab" Content="歌词" Style="{StaticResource TabRadioStyle}"
                                  Margin="6,0,0,0" IsChecked="{Binding IsLyricTab}" />
+                    <RadioButton GroupName="SettingsTab" Content="快捷键" Style="{StaticResource TabRadioStyle}"
+                                 Margin="6,0,0,0" IsChecked="{Binding IsShortcutTab}" />
                 </StackPanel>
 
                 <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
@@ -727,6 +729,32 @@
                             </StackPanel>
                         </Border>
 
+                        <!-- ===== 快捷键页（L2：只读清单） ===== -->
+                        <Border Visibility="{Binding IsShortcutTab, Converter={StaticResource BoolToVis}}"
+                                CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
+                            <StackPanel>
+                                <ItemsControl ItemsSource="{Binding ShortcutItems}" Focusable="False">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,4">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="150" />
+                                                    <ColumnDefinition Width="*" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Text="{Binding Keys}" FontWeight="SemiBold"
+                                                           Style="{StaticResource TitleTextStyle}" />
+                                                <TextBlock Grid.Column="1" Text="{Binding Description}"
+                                                           Style="{StaticResource SubTextStyle}" TextWrapping="Wrap" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,12,0,0" TextWrapping="Wrap"
+                                           Text="任何输入框（搜索/Key 输入等）聚焦时快捷键一律不响应；按钮聚焦时 Space 归按钮；滑条聚焦时方向键归滑条。自定义改绑进 backlog。" />
+                            </StackPanel>
+                        </Border>
+
                         <Border Height="20" />
                     </StackPanel>
                 </ScrollViewer>
@@ -760,7 +788,7 @@
             <Border Background="{DynamicResource SurfaceBrush}" CornerRadius="8,0,0,0">
                 <DockPanel>
                         <StackPanel DockPanel.Dock="Top" Margin="10,10,10,4">
-                            <ui:TextBox PlaceholderText="搜索当前列表" Height="30"
+                            <ui:TextBox x:Name="FilterBox" PlaceholderText="搜索当前列表" Height="30"
                                        Icon="{ui:SymbolIcon Search24}"
                                        Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
