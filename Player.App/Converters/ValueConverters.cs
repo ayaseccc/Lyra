@@ -86,11 +86,11 @@ public sealed class VolumeSquareConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
-/// <summary>bool → 列表首列宽度（UI-R2 修订）：分组模式 48px 封面列，平铺模式 0（无封面列）。</summary>
+/// <summary>bool → 列表首列宽度（UI-R2 修订）：分组模式 72px 封面列，平铺模式 0（无封面列）。</summary>
 public sealed class BoolToGroupCoverWidthConverter : IValueConverter
 {
     public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => value is true ? new System.Windows.GridLength(48) : new System.Windows.GridLength(0);
+        => value is true ? new System.Windows.GridLength(72) : new System.Windows.GridLength(0);
 
     public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();

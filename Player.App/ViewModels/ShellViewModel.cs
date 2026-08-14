@@ -567,7 +567,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             return;
         }
 
-        Player.PlayTracks(folder.Tracks, 0, "文件夹：" + nav.Title);
+        // 随机播放模式下从随机位置起播，否则每次都从第一首开始（UI-R2 反馈）
+        var startIndex = Player.PlayMode == PlayMode.Shuffle
+            ? Random.Shared.Next(folder.Tracks.Count)
+            : 0;
+        Player.PlayTracks(folder.Tracks, startIndex, "文件夹：" + nav.Title);
     }
 
     [RelayCommand]

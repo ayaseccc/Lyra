@@ -363,9 +363,9 @@
         </Setter>
     </Style>
 
-    <!-- = 曲目列表（UI-R2：56px 双行，扁平 ListBox 保持虚拟化；组头矮行 32px） = -->
+    <!-- = 曲目列表（UI-R2 修订：84px 双行，一页约 6 曲；组头矮行 32px） = -->
     <Style x:Key="TrackRowStyle" TargetType="ListBoxItem">
-        <Setter Property="Height" Value="56" />
+        <Setter Property="Height" Value="84" />
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />

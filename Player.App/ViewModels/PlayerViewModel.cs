@@ -284,6 +284,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     {
         if (device is null) return;
 
+        Log.Information("尝试切换输出：{Kind} · {Name}", device.Kind, device.Name);
+
         var settings = _engine.OutputSettings.Clone();
         settings.Backend = device.Kind;
         settings.DeviceName = device.Name;

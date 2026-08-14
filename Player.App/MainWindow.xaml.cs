@@ -52,6 +52,10 @@ public partial class MainWindow : FluentWindow
             menu.IsOpen = true;
         };
 
+        // 输出设备菜单项点击：直连命令（ItemContainerStyle 里的 RelativeSource 绑定不执行，实测确认）
+        OutputBadgeButton.ContextMenu.AddHandler(System.Windows.Controls.MenuItem.ClickEvent,
+            new RoutedEventHandler(OnOutputDeviceMenuClick));
+
 
         // DataContext 是构造后由 App 赋值的，定位事件在这里挂才挂得上
         DataContextChanged += (_, _) =>
@@ -252,6 +256,14 @@ public partial class MainWindow : FluentWindow
             Shell.LeaveSettings();
             e.Handled = true;
         }
+    }
+
+    /// <summary>输出设备菜单项点击：直连 Player 命令（UI-R2 修复：菜单绑定不执行）。</summary>
+    private void OnOutputDeviceMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is not System.Windows.Controls.MenuItem item) return;
+        if (item.DataContext is not PlayerViewModel.OutputDeviceItem device) return;
+        Player?.SwitchOutputDeviceCommand.Execute(device);
     }
 
     // ================= 曲目列表 =================

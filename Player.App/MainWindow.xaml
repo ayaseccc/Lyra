@@ -191,7 +191,7 @@
                                             <ColumnDefinition Width="60" />
                                         </Grid.ColumnDefinitions>
 
-                                        <Border Grid.Column="0" Width="48" Height="48" CornerRadius="2"
+                                        <Border Grid.Column="0" Width="72" Height="72" CornerRadius="2"
                                                 VerticalAlignment="Center"
                                                 Background="{StaticResource HoverBrush}"
                                                 Visibility="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToVis}}">
@@ -941,9 +941,6 @@
                                             <Setter Property="Header" Value="{Binding DisplayName}" />
                                             <Setter Property="IsCheckable" Value="True" />
                                             <Setter Property="IsChecked" Value="{Binding IsCurrent, Mode=OneWay}" />
-                                            <Setter Property="Command"
-                                                    Value="{Binding SwitchOutputDeviceCommand, RelativeSource={RelativeSource AncestorType=ContextMenu}}" />
-                                            <Setter Property="CommandParameter" Value="{Binding}" />
                                         </Style>
                                     </ContextMenu.ItemContainerStyle>
                                 </ContextMenu>
