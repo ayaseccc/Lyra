@@ -33,8 +33,6 @@ public sealed class LyricCanvas : FrameworkElement
     private static double _lastFrameMs = FrameClock.Elapsed.TotalMilliseconds;
 
     private double _offset;
-    private bool _userScrolling;
-    private DateTime _lastUserScroll = DateTime.MinValue;
     private bool _animating;
 
     /// <summary>FrameworkElement 没有 FontFamily 属性，这里自持字体。</summary>
@@ -170,32 +168,21 @@ public sealed class LyricCanvas : FrameworkElement
         var dt = Math.Min(0.05, Math.Max(0.001, (nowMs - _lastFrameMs) / 1000.0));
         _lastFrameMs = nowMs;
 
-        // 静置 3 秒回跟随（临时自由浏览结束）
-        if (_userScrolling && (DateTime.UtcNow - _lastUserScroll).TotalSeconds >= 3)
-            _userScrolling = false;
-
         var count = Lines?.Count ?? 0;
-        if (count == 0)
+        if (count == 0 || IsStatic)
         {
+            // 静态模式无跟随目标；空列表无内容
             StopAnimation();
             return;
         }
 
-        double target;
-        if (IsStatic || _userScrolling)
-        {
-            target = _offset;   // 静态/自由浏览：保持用户位置
-        }
-        else
-        {
-            target = LyricLayout.TargetOffsetFor(CurrentIndex, count, ActualHeight);
-        }
+        var target = LyricLayout.TargetOffsetFor(CurrentIndex, count, ActualHeight);
 
         var (next, settled) = LyricLayout.EaseTowards(_offset, target, dt);
         _offset = next;
         InvalidateVisual();
 
-        if (settled && !_userScrolling)
+        if (settled)
             StopAnimation();
     }
 
@@ -205,16 +192,16 @@ public sealed class LyricCanvas : FrameworkElement
     {
         base.OnMouseWheel(e);
 
+        // 跟随模式（有时间轴）：滚轮不介入，避免手动滚动破坏跟随（用户要求）。
+        // 静态模式（无时间轴长歌词）：滚轮是唯一的浏览方式，保留。
+        if (!IsStatic) return;
+
         var count = Lines?.Count ?? 0;
         if (count == 0) return;
-
-        _userScrolling = true;
-        _lastUserScroll = DateTime.UtcNow;
 
         var maxOffset = Math.Max(0, count * LyricLayout.LineHeight - ActualHeight);
         _offset = Math.Clamp(_offset + LyricLayout.WheelStep(e.Delta), 0, maxOffset);
         InvalidateVisual();
-        StartAnimation();
         e.Handled = true;
     }
 
