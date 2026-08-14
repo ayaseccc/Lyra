@@ -66,6 +66,26 @@ public sealed class BoolToAccentConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>音量方块（UI-R1.5 反馈）：当前级别大于方块序号时用强调色，否则用轨道空色。</summary>
+public sealed class VolumeSquareConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+    {
+        var level = value is int i ? i : 0;
+        var index = parameter is string s && int.TryParse(s, out var n) ? n : 0;
+        if (level > index)
+        {
+            return System.Windows.Application.Current?.TryFindResource("AccentBrush") as SolidColorBrush
+                   ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x60, 0xCD, 0xFF));
+        }
+        return System.Windows.Application.Current?.TryFindResource("TrackEmptyBrush") as SolidColorBrush
+               ?? new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x40, 0xFF, 0xFF, 0xFF));
+    }
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>bool → 强调色/次级文字色（UI-R1.5 ⑬：激活态用强调色着色，不用实心填充）。</summary>
 public sealed class BoolToTintBrushConverter : IValueConverter
 {

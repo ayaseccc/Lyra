@@ -128,6 +128,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(VolumePercentText))]
+    [NotifyPropertyChangedFor(nameof(VolumeLevel))]
+    [NotifyPropertyChangedFor(nameof(VolumeDbText))]
     private double _volume = 0.6;
 
     [ObservableProperty]
@@ -140,6 +142,48 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     public string DurationText => FormatTime(HasTrack ? DurationSeconds : 0);
 
     public string VolumePercentText => ((int)Math.Round(Volume * 100)) + "%";
+
+    /// <summary>音量方块的亮起个数（0..10，UI-R1.5 反馈）。</summary>
+    public int VolumeLevel => (int)Math.Round(Volume * 10);
+
+    /// <summary>拖动音量时短暂显示的 dB 值：0dB=100%，-100dB=静音。</summary>
+    public string VolumeDbText
+    {
+        get
+        {
+            if (Volume <= 0.0001) return "-100 dB";
+            return Math.Max(-100, 20 * Math.Log10(Volume)).ToString("0") + " dB";
+        }
+    }
+
+    /// <summary>拖动音量期间显示 dB 反馈，松开 1 秒后自动隐藏。</summary>
+    [ObservableProperty]
+    private bool _isVolumeFeedbackVisible;
+
+    private DispatcherTimer? _volumeFeedbackTimer;
+
+    /// <summary>拖动音量方块（点击/滑动）：连续设音量并显示 dB 文字。</summary>
+    public void SetVolumeFromDrag(double fraction)
+    {
+        Volume = Math.Clamp(fraction, 0, 1);
+        IsVolumeFeedbackVisible = true;
+    }
+
+    /// <summary>松手：dB 文字 1 秒后消失。</summary>
+    public void EndVolumeDrag()
+    {
+        _volumeFeedbackTimer?.Stop();
+        _volumeFeedbackTimer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
+        {
+            Interval = TimeSpan.FromSeconds(1)
+        };
+        _volumeFeedbackTimer.Tick += (_, _) =>
+        {
+            _volumeFeedbackTimer.Stop();
+            IsVolumeFeedbackVisible = false;
+        };
+        _volumeFeedbackTimer.Start();
+    }
 
     /// <summary>播放条上的输出指示，如「ASIO · TOPPING E1x2 · 96000 Hz · 缓冲 256 samples」。</summary>
     [ObservableProperty]

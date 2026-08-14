@@ -36,6 +36,7 @@ public partial class MainWindow : FluentWindow
     private TrackRecord? _draggingTrack;
     private TrackRecord[] _dragPayload = Array.Empty<TrackRecord>();
     private bool _seekPressedOnSlider;
+    private bool _volumeDragging;
 
     public MainWindow()
     {
@@ -77,6 +78,14 @@ public partial class MainWindow : FluentWindow
                 Shell.TrackLocateRequested += ScrollToCurrentTrack;
         };
 
+        // 音量方块：点击/拖动设置音量（UI-R1.5 反馈）
+        VolumeSquares.AddHandler(PreviewMouseLeftButtonDownEvent,
+            new MouseButtonEventHandler(OnVolumeMouseDown), handledEventsToo: true);
+        VolumeSquares.AddHandler(PreviewMouseMoveEvent,
+            new MouseEventHandler(OnVolumeMouseMove), handledEventsToo: true);
+        VolumeSquares.AddHandler(PreviewMouseLeftButtonUpEvent,
+            new MouseButtonEventHandler(OnVolumeMouseUp), handledEventsToo: true);
+
         // 恢复上次的窗口尺寸（UI-R1.5 反馈）
         var ui = ConfigService.Current.Ui;
         if (ui.WindowWidth >= MinWidth && ui.WindowHeight >= MinHeight)
@@ -84,6 +93,35 @@ public partial class MainWindow : FluentWindow
             Width = ui.WindowWidth;
             Height = ui.WindowHeight;
         }
+    }
+
+    private void OnVolumeMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        _volumeDragging = true;
+        UpdateVolumeFromMouse(e.GetPosition(VolumeSquares));
+        e.Handled = true;
+    }
+
+    private void OnVolumeMouseMove(object sender, MouseEventArgs e)
+    {
+        if (!_volumeDragging || e.LeftButton != MouseButtonState.Pressed) return;
+        UpdateVolumeFromMouse(e.GetPosition(VolumeSquares));
+        e.Handled = true;
+    }
+
+    private void OnVolumeMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_volumeDragging) return;
+        _volumeDragging = false;
+        Player?.EndVolumeDrag();
+        e.Handled = true;
+    }
+
+    /// <summary>按横向位置换算音量 0..1 并设给引擎（dB 反馈由 VM 弹出）。</summary>
+    private void UpdateVolumeFromMouse(Point p)
+    {
+        if (Player is null || VolumeSquares.ActualWidth <= 0) return;
+        Player.SetVolumeFromDrag(Math.Clamp(p.X / VolumeSquares.ActualWidth, 0, 1));
     }
 
     /// <summary>关窗前记下窗口尺寸，退出时随配置落盘。</summary>

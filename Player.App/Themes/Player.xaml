@@ -12,6 +12,7 @@
     <conv:NonEmptyToVisibilityConverter x:Key="NonEmptyToVis" />
     <conv:BoolToAccentConverter x:Key="BoolToAccent" />
     <conv:BoolToTintBrushConverter x:Key="BoolToTintBrush" />
+    <conv:VolumeSquareConverter x:Key="VolumeSquare" />
     <conv:InverseBoolToVisibilityConverter x:Key="InverseBoolToVisibility" />
     <BooleanToVisibilityConverter x:Key="BoolToVis" />
 
