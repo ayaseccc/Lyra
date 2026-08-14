@@ -94,13 +94,46 @@ public partial class MainWindow : FluentWindow
         var list = LyricList;
         if (list is null || index >= list.Items.Count) return;
 
-        list.ScrollIntoView(list.Items[index]);
+        // 虚拟化下容器可能未生成：先 ScrollIntoView 触发生成，再居中
+        if (list.ItemContainerGenerator.ContainerFromIndex(index) is not System.Windows.FrameworkElement container)
+        {
+            list.ScrollIntoView(list.Items[index]);
+            _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, () =>
+            {
+                if (list.ItemContainerGenerator.ContainerFromIndex(index) is System.Windows.FrameworkElement created)
+                    CenterLyricLine(list, created);
+            });
+            return;
+        }
+
+        CenterLyricLine(list, container);
     }
 
-    /// <summary>
-    /// 当前行滚动到可视区中部。**已经完整可见就不动** —— 点击行 seek 后位置不变就不会跳走；
-    /// 集合重建（切换模式/加载新歌）后容器可能还没生成，用 ScrollIntoView 兜底。
-    /// </summary>
+    /// <summary>把当前行滚到可视区中部（正常音乐软件的歌词跟随行为）。偏离中心超过一行高才滚，避免抖动。</summary>
+    private void CenterLyricLine(System.Windows.Controls.ListBox list, System.Windows.FrameworkElement container)
+    {
+        if (FindScrollViewer(list) is not { } scroll) return;
+
+        var position = container.TransformToAncestor(scroll).Transform(new Point(0, 0));
+        var lineCenter = position.Y + container.ActualHeight / 2;
+        var viewportCenter = scroll.ViewportHeight / 2;
+
+        // 已在中部附近就不动（点击行跳转后不会把列表挪走）
+        if (Math.Abs(lineCenter - viewportCenter) <= container.ActualHeight) return;
+
+        scroll.ScrollToVerticalOffset(Math.Max(0, position.Y + container.ActualHeight / 2 - viewportCenter));
+    }
+
+    private static System.Windows.Controls.ScrollViewer? FindScrollViewer(DependencyObject root)
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is System.Windows.Controls.ScrollViewer viewer) return viewer;
+            if (FindScrollViewer(child) is { } found) return found;
+        }
+        return null;
+    }
     private ShellViewModel? Shell => DataContext as ShellViewModel;
 
     private PlayerViewModel? Player => Shell?.Player;
