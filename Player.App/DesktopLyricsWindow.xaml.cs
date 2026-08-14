@@ -31,6 +31,8 @@ public partial class DesktopLyricsWindow : Window
     private bool _locked = true;
     private bool _dragging;
     private Point _dragStart;
+    private HwndSource? _source;
+    private bool _hookAdded;
 
     /// <summary>右键菜单"字体设置…" → 主窗打开设置页歌词组。</summary>
     public event Action? OpenFontSettingsRequested;
@@ -38,6 +40,8 @@ public partial class DesktopLyricsWindow : Window
     public DesktopLyricsWindow()
     {
         InitializeComponent();
+        // 复查修复：构造即按配置初始化锁定态（避免 Loaded 前 WndProc 短暂按锁定处理）
+        _locked = ConfigService.Current.Ui.DesktopLyricsLocked;
         ApplySettings();
         ApplyTextColor();
     }
@@ -104,25 +108,37 @@ public partial class DesktopLyricsWindow : Window
     protected override void OnSourceInitialized(EventArgs e)
     {
         base.OnSourceInitialized(e);
+        if (_hookAdded) return;
         if (PresentationSource.FromVisual(this) is HwndSource source)
+        {
+            _hookAdded = true;
+            _source = source;
             source.AddHook(WndProc);
+        }
     }
 
     /// <summary>
     /// B5：锁定态逐点鼠标穿透。WM_NCHITTEST 里把除小柄外的区域返回 HTTRANSPARENT，
     /// 鼠标事件直接落到下层窗口；小柄区域返回 HTCLIENT 保持可点（解锁入口）。
     /// 解锁态不拦截（返回默认）。
+    /// 复查修复：lParam 是物理像素、Left/Top/ActualWidth 是 DIP——先经 TransformFromDevice
+    /// 换算再比较（非 100% DPI 下命中区才不会错位）。
     /// </summary>
     private IntPtr WndProc(IntPtr hwnd, int msg, IntPtr wParam, IntPtr lParam, ref bool handled)
     {
         if (msg != WmNcHitTest || !_locked) return IntPtr.Zero;
 
-        var x = (short)((long)lParam & 0xFFFF);
-        var y = (short)(((long)lParam >> 16) & 0xFFFF);
-        var inHandle = x >= Left + ActualWidth - HandleHitSize
-                       && x < Left + ActualWidth
-                       && y >= Top
-                       && y < Top + HandleHitSize;
+        var xPx = (short)((long)lParam & 0xFFFF);
+        var yPx = (short)(((long)lParam >> 16) & 0xFFFF);
+        var inHandle = false;
+        if (_source?.CompositionTarget?.TransformFromDevice is { } fromDevice)
+        {
+            var dip = fromDevice.Transform(new Point(xPx, yPx));
+            inHandle = dip.X >= Left + ActualWidth - HandleHitSize
+                       && dip.X < Left + ActualWidth
+                       && dip.Y >= Top
+                       && dip.Y < Top + HandleHitSize;
+        }
         handled = true;
         return new IntPtr(inHandle ? HtClient : HtTransparent);
     }

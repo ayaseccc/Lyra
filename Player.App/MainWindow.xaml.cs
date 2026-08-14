@@ -127,6 +127,7 @@ public partial class MainWindow : FluentWindow
     /// <summary>关窗前记下窗口尺寸，退出时随配置落盘。</summary>
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        _bigLyricsIdle.Stop();   // 复查修复：大歌词页计时器随窗口关闭收敛
         var bounds = RestoreBounds;
         var ui = ConfigService.Current.Ui;
         if (bounds.Width > 0 && bounds.Height > 0)
@@ -458,7 +459,11 @@ public partial class MainWindow : FluentWindow
             BigLyricsControlBar.IsHitTestVisible = false;
             BigLyricsControlBar.BeginAnimation(OpacityProperty, new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(150)));
             var fade = new DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(200));
-            fade.Completed += (_, _) => BigLyricsOverlay.Visibility = Visibility.Collapsed;
+            // 复查修复：重入守卫——关闭淡出期间若已重新打开，旧回调不得把覆盖层拉回 Collapsed
+            fade.Completed += (_, _) =>
+            {
+                if (!_bigLyricsVisible) BigLyricsOverlay.Visibility = Visibility.Collapsed;
+            };
             BigLyricsOverlay.BeginAnimation(OpacityProperty, fade);
         }
     }

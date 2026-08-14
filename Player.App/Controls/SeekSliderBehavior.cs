@@ -32,12 +32,16 @@ public static class SeekSliderBehavior
         slider.AddHandler(UIElement.PreviewMouseLeftButtonUpEvent, new MouseButtonEventHandler(OnReleased), true);
         slider.AddHandler(Thumb.DragStartedEvent, new DragStartedEventHandler(OnDragStarted));
         slider.AddHandler(Thumb.DragCompletedEvent, new DragCompletedEventHandler(OnDragCompleted));
+        // 注：WPF 拖动取消（Esc/捕获丢失）同样会触发 DragCompleted（args.Canceled=true），
+        // 因此 OnDragCompleted 已覆盖取消路径，无需额外事件。
     }
 
     /// <summary>按下：接管进度条（定时器停止回写）。</summary>
     private static void OnPressed(object sender, MouseButtonEventArgs e)
     {
         if (sender is not Slider slider) return;
+        System.Diagnostics.Debug.Assert(slider.DataContext is PlayerViewModel,
+            "SeekSliderBehavior：滑条 DataContext 应为 PlayerViewModel（否则接管静默失效）");
         slider.Tag = true;
         (slider.DataContext as PlayerViewModel)?.BeginSeek();
     }
