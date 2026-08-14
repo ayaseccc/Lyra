@@ -321,8 +321,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void SetPlayMode(PlayMode mode)
     {
+        // UI-R1.5 反馈：模式切换不再在状态栏刷文字，界面只看按钮图标变化
         PlayMode = mode;
-        StatusText = PlayModeText;
     }
 
     /// <summary>音量是 UI → 引擎的单向写入，定时器不回写（P0.1）。</summary>
@@ -428,19 +428,6 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         }
 
         PlayCurrentOrSkip();
-    }
-
-    [RelayCommand]
-    private void CyclePlayMode()
-    {
-        PlayMode = PlayMode switch
-        {
-            PlayMode.Sequential => PlayMode.RepeatAll,
-            PlayMode.RepeatAll => PlayMode.RepeatOne,
-            PlayMode.RepeatOne => PlayMode.Shuffle,
-            _ => PlayMode.Sequential
-        };
-        StatusText = PlayModeText;
     }
 
     // ---------------- 定位正在播放（UI-R1.5 ⑪） ----------------

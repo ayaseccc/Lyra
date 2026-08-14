@@ -755,6 +755,51 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         SelectFirstPage();
     }
 
+    /// <summary>临时播放文件夹：选一个目录直接播里面的音乐，不入库（UI-R1.5 反馈）。</summary>
+    [RelayCommand]
+    private async Task PlayFolderAsync()
+    {
+        var dialog = new OpenFolderDialog
+        {
+            Title = "临时播放文件夹中的音乐",
+            Multiselect = false
+        };
+        var roots = ConfigService.Current.Library.Folders;
+        if (roots.Count > 0) dialog.InitialDirectory = roots[0];
+
+        if (dialog.ShowDialog() != true) return;
+        var folder = dialog.FolderName;
+        if (string.IsNullOrWhiteSpace(folder)) return;
+
+        ScanStatus = "正在读取文件夹…";
+        var tracks = await Task.Run(() =>
+        {
+            try
+            {
+                return Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
+                    .Where(AudioFormats.IsSupported)
+                    .OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase)
+                    .Select(f => _library.GetByPath(f) ?? TagReader.Read(f))
+                    .Where(r => r is not null)
+                    .Select(r => r!)
+                    .ToList();
+            }
+            catch (Exception ex)
+            {
+                Log.Error(ex, "读取文件夹失败：{Folder}", folder);
+                return new List<TrackRecord>();
+            }
+        });
+
+        if (tracks.Count == 0)
+        {
+            ScanStatus = "这个文件夹里没有可播放的音频";
+            return;
+        }
+
+        Player.PlayTracks(tracks, 0, "临时播放：" + Path.GetFileName(folder));
+    }
+
     [RelayCommand]
     private void ImportM3u()
     {

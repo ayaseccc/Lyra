@@ -56,8 +56,8 @@
 
     <!-- = 播放条控制键 = -->
     <Style x:Key="TransportButtonStyle" TargetType="Button">
-        <Setter Property="Width" Value="36" />
-        <Setter Property="Height" Value="36" />
+        <Setter Property="Width" Value="32" />
+        <Setter Property="Height" Value="32" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Foreground" Value="{StaticResource TextPrimaryBrush}" />
         <Setter Property="Cursor" Value="Hand" />
@@ -65,7 +65,7 @@
         <Setter Property="Template">
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
-                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="18">
+                    <Border x:Name="Bd" Background="{TemplateBinding Background}" CornerRadius="16">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
@@ -358,9 +358,9 @@
         </Setter>
     </Style>
 
-    <!-- = 曲目列表（大行：84px，一首歌约占三行面积，UI-R1.5 反馈） = -->
+    <!-- = 曲目列表（大行：110px，默认窗口约显示 6 首，UI-R1.5 反馈） = -->
     <Style x:Key="TrackRowStyle" TargetType="ListViewItem">
-        <Setter Property="Height" Value="84" />
+        <Setter Property="Height" Value="110" />
         <Setter Property="Foreground" Value="{StaticResource TextSecondaryBrush}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -503,8 +503,8 @@
 
     <!-- = 主播放键（UI-R1）：圆形强调色 -->
     <Style x:Key="PrimaryPlayButtonStyle" TargetType="Button">
-        <Setter Property="Width" Value="44" />
-        <Setter Property="Height" Value="44" />
+        <Setter Property="Width" Value="40" />
+        <Setter Property="Height" Value="40" />
         <Setter Property="Background" Value="{StaticResource AccentBrush}" />
         <Setter Property="Foreground" Value="#FF101418" />
         <Setter Property="Cursor" Value="Hand" />
@@ -512,7 +512,7 @@
             <Setter.Value>
                 <ControlTemplate TargetType="Button">
                     <Border x:Name="Bd" Background="{TemplateBinding Background}"
-                            CornerRadius="22">
+                            CornerRadius="20">
                         <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                     </Border>
                     <ControlTemplate.Triggers>
