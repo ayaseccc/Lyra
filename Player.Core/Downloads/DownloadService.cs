@@ -20,7 +20,9 @@ public enum DownloadStatus
     Completed,
     Failed,
     /// <summary>与库内已有曲目重复（标题+歌手同且时长差 &lt;2s），等待用户确认。</summary>
-    Duplicate
+    Duplicate,
+    /// <summary>用户取消（排队中或下载中被取消）。</summary>
+    Cancelled
 }
 
 /// <summary>一个下载任务（在线曲目 → 落盘）。</summary>
@@ -45,11 +47,19 @@ public sealed class DownloadItem
     /// <summary>实际下载音质（服务端返回）。</summary>
     public int ActualBr { get; internal set; }
 
+    /// <summary>入队时确定的目标目录（下载时弹窗选择；空则回落配置值）。</summary>
+    internal string? DownloadDir { get; set; }
+
+    /// <summary>单任务取消令牌（取消当前任务不影响队列后续任务）。</summary>
+    internal CancellationTokenSource CancelCts { get; } = new();
+
     public string DisplayTitle => Track.Name;
 
     public string DisplayArtist => Track.ArtistLine;
 
-    public bool IsDone => Status is DownloadStatus.Completed or DownloadStatus.Failed;
+    public bool IsDone => Status is DownloadStatus.Completed or DownloadStatus.Failed or DownloadStatus.Cancelled;
+
+    public bool IsCancellable => Status is DownloadStatus.Queued or DownloadStatus.Downloading;
 }
 
 /// <summary>
@@ -65,6 +75,12 @@ public sealed class DownloadService : IDisposable
     private readonly LibraryService _library;
     private readonly HttpClient _http;
     private readonly ConcurrentQueue<DownloadItem> _queue = new();
+
+    /// <summary>已结束的任务（完成/失败/取消/重复等待确认），保留最近若干条。
+    /// 页面重建（下载完成触发扫描 → 下载管理页刷新）后仍能显示历史任务（实机反馈：取消后行消失）。</summary>
+    private readonly List<DownloadItem> _history = new();
+    private const int HistoryLimit = 50;
+
     private readonly object _gate = new();
     private DownloadItem? _current;
     private CancellationTokenSource? _cts;
@@ -90,14 +106,39 @@ public sealed class DownloadService : IDisposable
     {
         lock (_gate)
         {
-            var list = _queue.ToList();
-            if (_current is not null) list.Insert(0, _current);
+            var list = new List<DownloadItem>();
+            if (_current is not null) list.Add(_current);
+            list.AddRange(_queue);
+            list.AddRange(_history);   // 历史（最新在前）
             return list;
         }
     }
 
-    /// <summary>入队（先查库内重复，命中则标记 Duplicate 等待确认）。服务已释放时返回 Failed 项（不抛）。</summary>
-    public DownloadItem Enqueue(OnlineTrack track, string sourceKey, int preferredBr, Func<DownloadItem, bool>? confirmDuplicate = null)
+    /// <summary>任务进入终态时归档（历史列表，超出上限丢最旧）。</summary>
+    private void AddHistory(DownloadItem item)
+    {
+        lock (_gate)
+        {
+            if (_history.Contains(item)) return;
+            _history.Insert(0, item);
+            if (_history.Count > HistoryLimit)
+                _history.RemoveAt(_history.Count - 1);
+        }
+    }
+
+    /// <summary>从历史里摘除（重复确认后重新入队时用）。</summary>
+    private void RemoveFromHistory(DownloadItem item)
+    {
+        lock (_gate)
+        {
+            _history.Remove(item);
+        }
+    }
+
+    /// <summary>入队（先查库内重复，命中则标记 Duplicate 等待确认）。服务已释放时返回 Failed 项（不抛）。
+    /// downloadDir：下载时弹窗选择的目标目录（不传则回落配置值）。</summary>
+    public DownloadItem Enqueue(OnlineTrack track, string sourceKey, int preferredBr,
+        Func<DownloadItem, bool>? confirmDuplicate = null, string? downloadDir = null)
     {
         if (_disposed)
         {
@@ -117,7 +158,8 @@ public sealed class DownloadService : IDisposable
             Track = track,
             SourceKey = sourceKey,
             PreferredBr = preferredBr,
-            FileName = BuildFileName(track, sourceKey, preferredBr)
+            FileName = BuildFileName(track, sourceKey, preferredBr),
+            DownloadDir = string.IsNullOrWhiteSpace(downloadDir) ? null : downloadDir
         };
 
         if (IsDuplicateInLibrary(track))
@@ -126,9 +168,11 @@ public sealed class DownloadService : IDisposable
             item.Error = "与媒体库中已有曲目重复";
             if (confirmDuplicate is null || !confirmDuplicate(item))
             {
+                AddHistory(item);   // 等待确认也算终态：切页后还能看到
                 Raise(item);
                 return item;
             }
+            RemoveFromHistory(item);
             item.Status = DownloadStatus.Queued;
             item.Error = null;
         }
@@ -143,6 +187,7 @@ public sealed class DownloadService : IDisposable
     public void ConfirmDuplicate(DownloadItem item)
     {
         if (item.Status != DownloadStatus.Duplicate) return;
+        RemoveFromHistory(item);
         item.Status = DownloadStatus.Queued;
         item.Error = null;
         Raise(item);
@@ -157,6 +202,39 @@ public sealed class DownloadService : IDisposable
         item.Status = DownloadStatus.Failed;
         item.Error = "已取消（库内重复）";
         Raise(item);
+    }
+
+    /// <summary>取消任务：下载中 → 取消当前下载（队列继续）；排队中 → 移出队列。</summary>
+    public void Cancel(DownloadItem item)
+    {
+        lock (_gate)
+        {
+            if (ReferenceEquals(item, _current))
+            {
+                item.CancelCts.Cancel();
+                return;
+            }
+        }
+
+        // 排队中的任务：从队列摘除并标记（worker 并发出队时可能已被取走，届时走 _current 分支）
+        if (item.Status == DownloadStatus.Queued)
+        {
+            var rest = new ConcurrentQueue<DownloadItem>();
+            DownloadItem? removed = null;
+            while (_queue.TryDequeue(out var q))
+            {
+                if (ReferenceEquals(q, item)) removed = q;
+                else rest.Enqueue(q);
+            }
+            while (rest.TryDequeue(out var r)) _queue.Enqueue(r);
+
+            if (removed is not null)
+            {
+                item.Status = DownloadStatus.Cancelled;
+                item.Error = null;
+                Raise(item);
+            }
+        }
     }
 
     private async Task RunAsync()
@@ -187,7 +265,19 @@ public sealed class DownloadService : IDisposable
                     _current = item;
                 }
 
-                await ProcessItemAsync(item, ct).ConfigureAwait(false);
+                try
+                {
+                    using var linked = CancellationTokenSource.CreateLinkedTokenSource(ct, item.CancelCts.Token);
+                    await ProcessItemAsync(item, linked.Token).ConfigureAwait(false);
+                }
+                catch (OperationCanceledException) when (item.CancelCts.IsCancellationRequested)
+                {
+                    // 用户取消当前任务：标记后继续下一个（不中断队列）
+                    item.Status = DownloadStatus.Cancelled;
+                    item.Error = null;
+                    Raise(item);
+                    AddHistory(item);
+                }
 
                 // 任务间隔 ≥4s（PLAN：串行队列；锁外延时）
                 if (!_queue.IsEmpty)
@@ -229,11 +319,11 @@ public sealed class DownloadService : IDisposable
 
         item.ActualBr = stream.Data!.ActualBr;
 
-        // ② 下载到临时文件
-        var dir = ConfigService.Current.Online.DownloadDir;
+        // ② 下载到临时文件（目录：入队时弹窗选择的优先，回落配置值）
+        var dir = item.DownloadDir ?? ConfigService.Current.Online.DownloadDir;
         if (string.IsNullOrWhiteSpace(dir))
         {
-            Fail(item, "未设置下载目录（设置页-在线）");
+            Fail(item, "未设置下载目录");
             return;
         }
 
@@ -282,6 +372,7 @@ public sealed class DownloadService : IDisposable
             item.Status = DownloadStatus.Completed;
             item.ProgressPercent = 100;
             Raise(item);
+            AddHistory(item);
             Log.Information("下载完成：{Target}（实际 {Br}）", target, item.ActualBr);
         }
         catch (OperationCanceledException)
@@ -397,6 +488,7 @@ public sealed class DownloadService : IDisposable
         item.Status = DownloadStatus.Failed;
         item.Error = error;
         Raise(item);
+        AddHistory(item);
         Log.Warning("下载失败：{Name}（{Error}）", item.Track.Name, error);
     }
 

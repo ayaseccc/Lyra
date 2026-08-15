@@ -13,7 +13,7 @@ using Serilog;
 
 namespace Player.App.ViewModels;
 
-public sealed record BackendOption(OutputBackendKind Kind, string Name, string Hint)
+public sealed record BackendOption(OutputBackendKind Kind, string Name)
 {
     public override string ToString() => Name;
 }
@@ -56,9 +56,9 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
         Backends = new[]
         {
-            new BackendOption(OutputBackendKind.Asio, "ASIO", "首选。绕过系统混音，采样率跟随源文件，可做到位完美"),
-            new BackendOption(OutputBackendKind.Wasapi, "WASAPI", "没有 ASIO 驱动时的次选，独占模式同样能位完美"),
-            new BackendOption(OutputBackendKind.DirectSound, "系统输出", "兜底，任何机器都能出声，经过系统混音")
+            new BackendOption(OutputBackendKind.Asio, "ASIO"),
+            new BackendOption(OutputBackendKind.Wasapi, "WASAPI"),
+            new BackendOption(OutputBackendKind.DirectSound, "系统输出")
         };
 
         RateModes = new[]
@@ -131,15 +131,19 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             || (c.Key != "Theme" && ui.DesktopLyricsTextColorMode == "Custom" && string.Equals(c.Key, ui.DesktopLyricsTextColor, StringComparison.OrdinalIgnoreCase)))
             ?? TextColors[0];
 
-        // P3 在线组：Key 只从 data/config.json 读
-        ApiKey = ConfigService.Current.ApiKey;
-        RefreshKeyStatus();
-
-        // P4 实机反馈：在线页补全（下载位置 / 音质档 / GD 与网易云 API 地址，改即生效）
-        _downloadDir = ConfigService.Current.Online.DownloadDir;
+        // P4 实机反馈：在线页 = 通用 API 列表（类型 + 地址 + 可选 Key，可增删，改即生效）
+        foreach (var ep in ConfigService.Current.Online.ApiEndpoints)
+        {
+            var row = new ApiEndpointRow
+            {
+                Kind = ApiKinds.FirstOrDefault(k => k.Value == ep.Kind) ?? ApiKinds[0],
+                Url = ep.Url,
+                Key = ep.Key
+            };
+            row.PropertyChanged += OnApiRowChanged;
+            ApiEndpoints.Add(row);
+        }
         _previewBr = BrOptions.FirstOrDefault(o => o.Value == ConfigService.Current.Online.PreviewBr) ?? BrOptions[0];
-        _gdApiUrl = ConfigService.Current.Online.GdApiUrl;
-        _chkszApiUrl = ConfigService.Current.Online.ChkszApiUrl;
 
         // L2 行为组：关闭到托盘（默认关闭）
         _closeToTray = ConfigService.Current.Ui.CloseToTray;
@@ -498,7 +502,6 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(IsAsio))]
     [NotifyPropertyChangedFor(nameof(IsWasapi))]
-    [NotifyPropertyChangedFor(nameof(BackendHint))]
     private BackendOption _selectedBackend;
 
     [ObservableProperty]
@@ -532,7 +535,6 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
     public bool IsFixedRate => SelectedRateMode.Mode == SampleRateMode.Fixed;
 
-    public string BackendHint => SelectedBackend.Hint;
 
     partial void OnSelectedBackendChanged(BackendOption value)
     {
@@ -715,51 +717,68 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         _library.StartWatching();   // 根目录变了，监听也要跟着重建
     }
 
-    // ================= 在线（P3） =================
+    // ================= 在线（P4 实机反馈：通用 API 列表，兼容各种 API、为扩展打基础） =================
 
-    [ObservableProperty]
-    private string _apiKey = string.Empty;
-
-    /// <summary>Key 是否已配置（用于界面提示，不显示 Key 本身）。</summary>
-    [ObservableProperty]
-    private string _keyStatus = string.Empty;
-
-    [ObservableProperty]
-    private bool _isTestingKey;
-
-    /// <summary>L2：Key 输入框密文显示。默认只回显尾 4 位；眼睛按钮临时明文（可编辑）。</summary>
-    [ObservableProperty]
-    private bool _isKeyRevealed;
-
-    partial void OnApiKeyChanged(string value) => OnPropertyChanged(nameof(ApiKeyDisplay));
-
-    partial void OnIsKeyRevealedChanged(bool value)
+    /// <summary>API 类型（运行时用途），新增 API 类型只需在此注册并让对应源读取。</summary>
+    public sealed record ApiKindOption(string Value, string Name)
     {
-        OnPropertyChanged(nameof(ApiKeyDisplay));
-        OnPropertyChanged(nameof(IsKeyReadOnly));
+        public override string ToString() => Name;
     }
 
-    /// <summary>输入框内容：隐藏态 = 圆点 + 尾 4 位（短 Key 只显圆点）；显示态 = 完整 Key（可编辑）。</summary>
-    public string ApiKeyDisplay
+    public IReadOnlyList<ApiKindOption> ApiKinds { get; } = new[]
     {
-        get => IsKeyRevealed
-            ? ApiKey
-            : MaskTail4(ApiKey);
-        set
-        {
-            if (IsKeyRevealed && ApiKey != value) ApiKey = value;
-        }
+        new ApiKindOption("gd", "GD 兼容"),
+        new ApiKindOption("chksz", "网易云兼容"),
+    };
+
+    /// <summary>一行可编辑的 API 端点（类型 + 地址 + 可选 Key），改动即落盘。</summary>
+    public sealed partial class ApiEndpointRow : ObservableObject
+    {
+        [ObservableProperty]
+        private ApiKindOption _kind = null!;
+
+        [ObservableProperty]
+        private string _url = string.Empty;
+
+        [ObservableProperty]
+        private string _key = string.Empty;
     }
 
-    /// <summary>隐藏态只读（避免把掩码前缀当 Key 编辑）。</summary>
-    public bool IsKeyReadOnly => !IsKeyRevealed;
+    public ObservableCollection<ApiEndpointRow> ApiEndpoints { get; } = new();
 
-    /// <summary>掩码回显只保留尾 4 位（状态行等处共用；短 Key 一律只显圆点，审查修复）。</summary>
-    public string KeyMasked => MaskTail4(ApiKey);
+    private void OnApiRowChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => PersistEndpoints();
 
-    private static string MaskTail4(string key) => string.IsNullOrEmpty(key)
-        ? string.Empty
-        : "••••" + (key.Length >= 4 ? key[^4..] : string.Empty);
+    [RelayCommand]
+    private void AddApiEndpoint()
+    {
+        var row = new ApiEndpointRow { Kind = ApiKinds[0] };
+        row.PropertyChanged += OnApiRowChanged;
+        ApiEndpoints.Add(row);
+        PersistEndpoints();
+    }
+
+    [RelayCommand]
+    private void RemoveApiEndpoint(ApiEndpointRow row)
+    {
+        row.PropertyChanged -= OnApiRowChanged;
+        ApiEndpoints.Remove(row);
+        PersistEndpoints();
+    }
+
+    private void PersistEndpoints()
+    {
+        if (_loading) return;
+        ConfigService.Current.Online.ApiEndpoints = ApiEndpoints
+            .Select(r => new Player.Core.Infra.ApiEndpointConfig
+            {
+                Kind = r.Kind?.Value ?? "gd",
+                Url = r.Url.Trim(),
+                Key = r.Key.Trim()
+            })
+            .ToList();
+        ConfigService.Save();
+        OnPropertyChanged(nameof(QuotaDisplay));
+    }
 
     /// <summary>额度展示（P3.1-④ 从播放条迁到设置页）：免费/付费余量 + UTC+8 重置时间。</summary>
     public string QuotaDisplay
@@ -790,81 +809,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         return TimeZoneInfo.ConvertTime(new DateTimeOffset(nowCst.Date.AddDays(1), cst.GetUtcOffset(nowCst)), TimeZoneInfo.Utc);
     }
 
-    private void RefreshKeyStatus()
-    {
-        KeyStatus = string.IsNullOrWhiteSpace(ConfigService.Current.ApiKey)
-            ? "未填写 API Key"
-            : $"已配置（{KeyMasked}）";
-        OnPropertyChanged(nameof(KeyMasked));
-        OnPropertyChanged(nameof(QuotaDisplay));
-    }
-
-    /// <summary>把 Key 写入 config.json。空输入 = 清除。</summary>
-    [RelayCommand]
-    private void SaveApiKey()
-    {
-        var key = ApiKey.Trim();
-
-        ConfigService.Current.ApiKey = key;
-        ConfigService.Save();
-        RefreshKeyStatus();
-    }
-
-    /// <summary>发一次真实搜索校验 Key。消耗 1 次额度，失败提示不弹窗（写在状态行）。</summary>
-    [RelayCommand]
-    private async Task TestApiKeyAsync()
-    {
-        if (string.IsNullOrWhiteSpace(ApiKey))
-        {
-            KeyStatus = "先粘贴 API Key 再测试。";
-            return;
-        }
-
-        if (!string.Equals(ApiKey.Trim(), ConfigService.Current.ApiKey, StringComparison.Ordinal))
-        {
-            // 测试前先落盘，ChkszClient 从配置里读 Key
-            ConfigService.Current.ApiKey = ApiKey.Trim();
-            ConfigService.Save();
-        }
-
-        IsTestingKey = true;
-        KeyStatus = "正在测试…";
-
-        try
-        {
-            var result = await _client.SearchAsync("测试", limit: 1);
-
-            if (result.Success)
-            {
-                RefreshKeyStatus();
-                OnPropertyChanged(nameof(QuotaDisplay));
-                KeyStatus = $"连接正常（剩余额度 {_client.Quota.FreeRemaining?.ToString() ?? "未知"}）。";
-            }
-            else if (result.AuthFailed)
-            {
-                KeyStatus = "Key 无效或未填写，请检查设置。";
-            }
-            else if (result.QuotaExhausted)
-            {
-                KeyStatus = "今日额度已用尽，等次日重置或去后台兑换 LDC。";
-            }
-            else
-            {
-                KeyStatus = "测试失败：" + result.Error;
-            }
-        }
-        catch (Exception ex)
-        {
-            Log.Debug(ex, "测试 API Key 失败");
-            KeyStatus = "测试失败：" + ex.Message;
-        }
-        finally
-        {
-            IsTestingKey = false;
-        }
-    }
-
-    // ================= 在线（P4 实机反馈补全：下载位置 / 音质档 / API 地址） =================
+    // ================= 在线（P4 实机反馈补全：音质档） =================
 
     /// <summary>音质档下拉（与在线搜索页同一套标签）。</summary>
     public sealed record BrSettingOption(int Value, string Label)
@@ -880,20 +825,6 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         new BrSettingOption(128, Player.Core.Online.QualityFormat.Br(128)),
     };
 
-    /// <summary>下载目录（空 = 未设置，下载时提示）。改即生效。</summary>
-    [ObservableProperty]
-    private string _downloadDir = string.Empty;
-
-    partial void OnDownloadDirChanged(string value)
-    {
-        if (_loading) return;
-        ConfigService.Current.Online.DownloadDir = value.Trim();
-        ConfigService.Save();
-        OnPropertyChanged(nameof(DownloadDirHint));
-    }
-
-    public string DownloadDirHint => string.Empty;
-
     /// <summary>在线搜索默认音质档。改即生效（下次打开搜索页起用）。</summary>
     [ObservableProperty]
     private BrSettingOption _previewBr = null!;
@@ -903,53 +834,5 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         if (_loading || value is null) return;
         ConfigService.Current.Online.PreviewBr = value.Value;
         ConfigService.Save();
-    }
-
-    /// <summary>GD 音源 API 地址（空 = 官方默认）。改即生效。</summary>
-    [ObservableProperty]
-    private string _gdApiUrl = string.Empty;
-
-    partial void OnGdApiUrlChanged(string value)
-    {
-        if (_loading) return;
-        if (!Player.Core.Online.OnlineUrl.IsHttp(value.Trim()) && !string.IsNullOrWhiteSpace(value))
-        {
-            // 非法地址不落盘，状态行提示；界面值保留让用户改
-            KeyStatus = "GD 地址必须以 http:// 或 https:// 开头（当前未保存）。";
-            return;
-        }
-        ConfigService.Current.Online.GdApiUrl = value.Trim();
-        ConfigService.Save();
-    }
-
-    /// <summary>网易云（ChKSz）API 地址（空 = 官方默认）。改即生效。</summary>
-    [ObservableProperty]
-    private string _chkszApiUrl = string.Empty;
-
-    partial void OnChkszApiUrlChanged(string value)
-    {
-        if (_loading) return;
-        if (!Player.Core.Online.OnlineUrl.IsHttp(value.Trim()) && !string.IsNullOrWhiteSpace(value))
-        {
-            KeyStatus = "网易云地址必须以 http:// 或 https:// 开头（当前未保存）。";
-            return;
-        }
-        ConfigService.Current.Online.ChkszApiUrl = value.Trim();
-        ConfigService.Save();
-    }
-
-    /// <summary>选择下载目录（.NET 8 WPF 自带 OpenFolderDialog）。</summary>
-    [RelayCommand]
-    private void BrowseDownloadDir()
-    {
-        var dialog = new Microsoft.Win32.OpenFolderDialog
-        {
-            Title = "选择下载目录",
-            InitialDirectory = string.IsNullOrWhiteSpace(DownloadDir)
-                ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
-                : DownloadDir
-        };
-        if (dialog.ShowDialog() == true)
-            DownloadDir = dialog.FolderName;
     }
 }

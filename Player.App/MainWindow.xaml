@@ -489,11 +489,7 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="后端" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <StackPanel Grid.Column="1">
-                                        <ComboBox ItemsSource="{Binding Backends}" SelectedItem="{Binding SelectedBackend}" />
-                                        <TextBlock Text="{Binding BackendHint}" Style="{StaticResource SubTextStyle}"
-                                                   Margin="2,6,0,0" TextWrapping="Wrap" />
-                                    </StackPanel>
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding Backends}" SelectedItem="{Binding SelectedBackend}" />
                                 </Grid>
 
                                 <Grid Margin="0,0,0,10">
@@ -618,46 +614,7 @@
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="API Key" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ui:TextBox Grid.Column="1" PlaceholderText="在 api.chksz.com 后台生成的 Key"
-                                                Text="{Binding ApiKeyDisplay, UpdateSourceTrigger=PropertyChanged}"
-                                                IsReadOnly="{Binding IsKeyReadOnly}" />
-                                    <StackPanel Grid.Column="2" Orientation="Horizontal" Margin="8,0,0,0">
-                                        <Button Style="{StaticResource ModeButtonStyle}" ToolTip="显示 / 隐藏完整 Key"
-                                                Click="OnToggleKeyReveal">
-                                            <Grid>
-                                                <ui:SymbolIcon Symbol="Eye24" FontSize="16" Foreground="{DynamicResource TextSecondaryBrush}"
-                                                               Visibility="{Binding IsKeyRevealed, Converter={StaticResource InverseBoolToVisibility}}" />
-                                                <ui:SymbolIcon Symbol="EyeOff24" FontSize="16" Foreground="{DynamicResource TextSecondaryBrush}"
-                                                               Visibility="{Binding IsKeyRevealed, Converter={StaticResource BoolToVis}}" />
-                                            </Grid>
-                                        </Button>
-                                        <ui:Button Content="保存" Appearance="Primary" Margin="8,0,0,0"
-                                                   Command="{Binding SaveApiKeyCommand}" />
-                                        <ui:Button Content="测试连接" Margin="8,0,0,0"
-                                                   Command="{Binding TestApiKeyCommand}" />
-                                    </StackPanel>
-                                </Grid>
-
                                 <Border Background="{DynamicResource HoverBrush}" CornerRadius="6" Padding="10,8">
-                                    <Grid>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="Auto" />
-                                            <ColumnDefinition Width="*" />
-                                        </Grid.ColumnDefinitions>
-                                        <ui:SymbolIcon Symbol="Key24" FontSize="14" VerticalAlignment="Center"
-                                                       Foreground="{DynamicResource AccentBrush}" />
-                                        <TextBlock Grid.Column="1" Text="{Binding KeyStatus}" Margin="8,0,0,0" VerticalAlignment="Center"
-                                                   TextWrapping="Wrap" Style="{StaticResource SubTextStyle}" />
-                                    </Grid>
-                                </Border>
-                                <Border Background="{DynamicResource HoverBrush}" CornerRadius="6" Padding="10,8" Margin="0,8,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="Auto" />
@@ -670,19 +627,37 @@
                                     </Grid>
                                 </Border>
 
-                                <Grid Margin="0,16,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="下载位置" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ui:TextBox Grid.Column="1" PlaceholderText="未设置（点击下载时提示）"
-                                                Text="{Binding DownloadDir, UpdateSourceTrigger=PropertyChanged}" />
-                                    <ui:Button Grid.Column="2" Content="浏览…" Margin="8,0,0,0"
-                                               Command="{Binding BrowseDownloadDirCommand}" />
-                                </Grid>
-                                <Grid Margin="0,0,0,8">
+                                <TextBlock Text="API 列表" Margin="0,16,0,0" Style="{StaticResource TitleTextStyle}" />
+                                <ItemsControl ItemsSource="{Binding ApiEndpoints}" Focusable="False" Margin="0,4,0,0">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid Margin="0,5">
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="120" />
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="230" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <ComboBox ItemsSource="{Binding DataContext.ApiKinds, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                          SelectedItem="{Binding Kind}" />
+                                                <ui:TextBox Grid.Column="1" Margin="8,0,0,0" PlaceholderText="API 地址"
+                                                            Text="{Binding Url, UpdateSourceTrigger=PropertyChanged}" />
+                                                <ui:TextBox Grid.Column="2" Margin="8,0,0,0" PlaceholderText="Key（可选）"
+                                                            Text="{Binding Key, UpdateSourceTrigger=PropertyChanged}" />
+                                                <Button Grid.Column="3" Margin="8,0,0,0" Style="{StaticResource ModeButtonStyle}"
+                                                        ToolTip="删除"
+                                                        Command="{Binding DataContext.RemoveApiEndpointCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding}">
+                                                    <ui:SymbolIcon Symbol="Delete24" FontSize="15" Foreground="{DynamicResource TextSecondaryBrush}" />
+                                                </Button>
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                                <ui:Button Content="＋ 添加 API" Margin="0,8,0,0"
+                                           Command="{Binding AddApiEndpointCommand}" />
+
+                                <Grid Margin="0,16,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="110" />
                                         <ColumnDefinition Width="*" />
@@ -691,27 +666,6 @@
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding BrOptions}"
                                               SelectedItem="{Binding PreviewBr}" />
                                 </Grid>
-
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="GD 音源地址" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ui:TextBox Grid.Column="1" PlaceholderText="https://music-api.gdstudio.xyz/api.php（留空 = 官方默认）"
-                                                Text="{Binding GdApiUrl, UpdateSourceTrigger=PropertyChanged}" />
-                                </Grid>
-
-                                <Grid Margin="0,0,0,8">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="网易云地址" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ui:TextBox Grid.Column="1" PlaceholderText="https://api.chksz.com（留空 = 官方默认）"
-                                                Text="{Binding ChkszApiUrl, UpdateSourceTrigger=PropertyChanged}" />
-                                </Grid>
-
                             </StackPanel>
                         </Border>
 
@@ -880,6 +834,24 @@
                                     <TextBlock Text="版本" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <TextBlock Grid.Column="1" Text="{Binding AppVersion}" VerticalAlignment="Center"
                                                Style="{StaticResource TitleTextStyle}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="BASS 授权" VerticalAlignment="Top" Style="{StaticResource TitleTextStyle}" />
+                                    <TextBlock Grid.Column="1" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
+                                               Text="音频引擎 BASS（un4seen）对个人 / 非商业使用免费；若未来上架收费需向 un4seen 购买授权。" />
+                                </Grid>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="开源组件" VerticalAlignment="Top" Style="{StaticResource TitleTextStyle}" />
+                                    <TextBlock Grid.Column="1" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
+                                               Text="WPF-UI（MIT）、CommunityToolkit.Mvvm（MIT）、Serilog（Apache-2.0）、TagLibSharp（LGPL-2.1）、ManagedBass（MIT）、Microsoft.Data.Sqlite（MIT）。" />
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -1091,8 +1063,13 @@
                                             <TextBlock Text="{Binding ArtistLine}" Style="{StaticResource SubTextStyle}"
                                                        TextTrimming="CharacterEllipsis" />
                                         </StackPanel>
-                                        <TextBlock Grid.Column="1" Text="{Binding StatusText}"
-                                                   Style="{StaticResource SubTextStyle}" VerticalAlignment="Center" />
+                                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <TextBlock Text="{Binding StatusText}"
+                                                       Style="{StaticResource SubTextStyle}" VerticalAlignment="Center" />
+                                            <Button Style="{StaticResource ModeButtonStyle}" Margin="8,0,0,0" Padding="6,2"
+                                                    FontSize="11" Content="取消" Click="OnDownloadCancelClick"
+                                                    Visibility="{Binding IsCancellable, Converter={StaticResource BoolToVis}}" />
+                                        </StackPanel>
                                     </Grid>
                                     <!-- Progress 是只读属性，Value 默认 TwoWay 会抛 XamlParseException（2026-08-15 实机崩溃根因），必须 OneWay -->
                                     <ProgressBar Grid.Row="1" Height="3" Margin="0,6,0,0" Minimum="0" Maximum="100"

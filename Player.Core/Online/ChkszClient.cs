@@ -60,8 +60,8 @@ public sealed partial class ChkszClient : IDisposable
 
     public TokenBucket Bucket => _bucket;
 
-    /// <summary>配置里有没有 Key。没有时在线功能整体降级，不发任何请求。</summary>
-    public static bool HasApiKey => !string.IsNullOrWhiteSpace(ConfigService.Current.ApiKey);
+    /// <summary>API 列表里有没有带 Key 的条目。没有时在线功能整体降级，不发任何请求。</summary>
+    public static bool HasApiKey => ConfigService.ChkszEndpoint() is not null;
 
     // ================= 四个端点 =================
 
@@ -100,13 +100,13 @@ public sealed partial class ChkszClient : IDisposable
     {
         if (_disposed) return ChkszResult<T>.Fail("客户端已释放");
 
-        var apiKey = ConfigService.Current.ApiKey;
-        if (string.IsNullOrWhiteSpace(apiKey))
+        var endpoint = ConfigService.ChkszEndpoint();
+        if (endpoint is null)
             return ChkszResult<T>.Fail("还没有填 API Key，请到设置页的在线功能里填写", auth: true);
 
-        var baseUrl = ConfigService.Current.Online.ChkszApiUrl;
+        var baseUrl = endpoint.Url;
         if (!OnlineUrl.IsHttp(baseUrl)) baseUrl = DefaultBaseAddress;
-        var url = $"{baseUrl.Trim().TrimEnd('/')}{path}?apikey={Uri.EscapeDataString(apiKey)}&{query}";
+        var url = $"{baseUrl.Trim().TrimEnd('/')}{path}?apikey={Uri.EscapeDataString(endpoint.Key)}&{query}";
         var safeUrl = Redact(url);
 
         try

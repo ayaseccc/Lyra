@@ -90,18 +90,38 @@ public sealed class OnlineConfig
 
     public string DownloadLevel { get; set; } = "hires";
 
+    /// <summary>上次下载使用的目录（下载时弹窗选择并记住）。</summary>
     public string DownloadDir { get; set; } = string.Empty;
 
     public string NamingTemplate { get; set; } = "{AlbumArtist}/{Album}/{TrackNo} - {Title}";
 
-    /// <summary>GD 音源 API 地址（P4 实机反馈：设置页可改，空 = 官方默认）。</summary>
-    public string GdApiUrl { get; set; } = "https://music-api.gdstudio.xyz/api.php";
-
-    /// <summary>网易云（ChKSz）API 地址（设置页可改，空 = 官方默认）。</summary>
-    public string ChkszApiUrl { get; set; } = "https://api.chksz.com";
+    /// <summary>通用 API 端点列表（实机反馈：可自行增删，每条可选 Key）。
+    /// 运行规则：第 1 条（http 地址）供 GD 源搜索/试听/下载；第一条带 Key 的条目供网易云（ChKSz）源。
+    /// 旧的 gdApiUrl / chkszApiUrl / apiKey 字段在加载时迁移进本列表。</summary>
+    public List<ApiEndpointConfig> ApiEndpoints { get; set; } = new();
 
     /// <summary>在线搜索默认音质档（999/740/320/128）。</summary>
     public int PreviewBr { get; set; } = 999;
+
+    /// <summary>（已废弃，仅迁移用）GD 音源地址。见 ApiEndpoints。</summary>
+    public string GdApiUrl { get; set; } = "https://music-api.gdstudio.xyz/api.php";
+
+    /// <summary>（已废弃，仅迁移用）网易云地址。见 ApiEndpoints。</summary>
+    public string ChkszApiUrl { get; set; } = "https://api.chksz.com";
+}
+
+/// <summary>
+/// 一个可配置的在线 API 端点（类型 + 地址 + 可选 Key）。
+/// Kind 决定运行时用途，为未来扩展新 API 类型预留：新增类型只需注册新的 Kind 并让对应源读取。
+/// </summary>
+public sealed class ApiEndpointConfig
+{
+    /// <summary>类型：gd（GD 兼容：搜索/试听/下载/歌词）| chksz（网易云 ChKSz 兼容）。</summary>
+    public string Kind { get; set; } = "gd";
+
+    public string Url { get; set; } = string.Empty;
+
+    public string Key { get; set; } = string.Empty;
 }
 
 public sealed class UiConfig
@@ -234,6 +254,8 @@ public static class ConfigService
                 return new AppConfig();
             }
 
+            MigrateLegacyOnlineFields(config);
+
             Log.Information("配置已加载：媒体库根目录 {Count} 个", config.Library.Folders.Count);
             return config;
         }
@@ -243,6 +265,44 @@ public static class ConfigService
             return new AppConfig();
         }
     }
+
+    /// <summary>把旧的 gdApiUrl / chkszApiUrl / apiKey 配置迁移进通用 API 列表（2026-08-15 实机反馈）。</summary>
+    private static void MigrateLegacyOnlineFields(AppConfig config)
+    {
+        var online = config.Online;
+        if (online.ApiEndpoints is { Count: > 0 }) return;
+
+        const string defaultGd = "https://music-api.gdstudio.xyz/api.php";
+        const string defaultChksz = "https://api.chksz.com";
+
+        // 始终生成 GD + 网易云两条打底，再用旧字段覆盖（保证设置页列表可见、GD 默认源可用）
+        online.ApiEndpoints.Add(new ApiEndpointConfig { Kind = "gd", Url = defaultGd });
+        online.ApiEndpoints.Add(new ApiEndpointConfig { Kind = "chksz", Url = defaultChksz });
+
+        if (!string.IsNullOrWhiteSpace(online.GdApiUrl)
+            && !string.Equals(online.GdApiUrl.Trim(), defaultGd, StringComparison.OrdinalIgnoreCase))
+            online.ApiEndpoints[0].Url = online.GdApiUrl.Trim();
+
+        if (!string.IsNullOrWhiteSpace(online.ChkszApiUrl)
+            && !string.Equals(online.ChkszApiUrl.Trim(), defaultChksz, StringComparison.OrdinalIgnoreCase))
+            online.ApiEndpoints[1].Url = online.ChkszApiUrl.Trim();
+
+        if (!string.IsNullOrWhiteSpace(config.ApiKey))
+            online.ApiEndpoints[1].Key = config.ApiKey.Trim();
+    }
+
+    /// <summary>GD 源端点：Kind=gd 的第一条合法 http 地址，没有则官方默认。</summary>
+    public static string GdEndpointUrl()
+    {
+        var ep = Current.Online.ApiEndpoints?.FirstOrDefault(
+            e => e.Kind == "gd" && Player.Core.Online.OnlineUrl.IsHttp(e.Url));
+        return ep is null ? "https://music-api.gdstudio.xyz/api.php" : ep.Url.Trim().TrimEnd('?');
+    }
+
+    /// <summary>网易云（ChKSz）端点：Kind=chksz 的第一条带 Key 条目；没有返回 null（在线源按无 Key 降级）。</summary>
+    public static ApiEndpointConfig? ChkszEndpoint()
+        => Current.Online.ApiEndpoints?.FirstOrDefault(
+            e => e.Kind == "chksz" && !string.IsNullOrWhiteSpace(e.Key));
 
     public static void Save()
     {

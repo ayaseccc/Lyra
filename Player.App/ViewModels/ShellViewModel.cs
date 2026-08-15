@@ -34,6 +34,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>P4 下载服务（下载管理页/搜索页下载用）。</summary>
     private readonly Player.Core.Downloads.DownloadService? _downloads;
+
+    /// <summary>下载目标选择器（MainWindow 注入弹窗；null = 用配置目录直接下载）。</summary>
+    public Func<string?, string?>? DownloadDirPicker { get; set; }
     private bool _rebuildQueued;
     private bool _pendingLibraryChanged;
     private long? _pendingPlaylistSelection;
@@ -234,13 +237,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         });
         NavItems.Add(new NavItemViewModel
         {
-            Kind = NavKind.OnlineSearch, Title = "在线搜索", Icon = SymbolRegular.Cloud24,
-            CountText = "GD / 网易云"
+            Kind = NavKind.OnlineSearch, Title = "在线搜索", Icon = SymbolRegular.Cloud24
         });
         NavItems.Add(new NavItemViewModel
         {
-            Kind = NavKind.Downloads, Title = "下载管理", Icon = SymbolRegular.ArrowDownload24,
-            CountText = "串行队列"
+            Kind = NavKind.Downloads, Title = "下载管理", Icon = SymbolRegular.ArrowDownload24
         });
 
         var manual = _playlists.Playlists;
@@ -389,7 +390,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
             case NavKind.OnlineSearch:
                 CurrentPage = new OnlineSearchViewModel(
-                    _onlineSources?.All ?? Array.Empty<Player.Core.Online.IOnlineSource>(), Player, _downloads);
+                    _onlineSources?.All ?? Array.Empty<Player.Core.Online.IOnlineSource>(), Player, _downloads,
+                    DownloadDirPicker);
                 break;
 
             case NavKind.Downloads:

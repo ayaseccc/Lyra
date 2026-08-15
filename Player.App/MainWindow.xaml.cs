@@ -84,6 +84,7 @@ public partial class MainWindow : FluentWindow
             if (Shell is not null)
             {
                 Shell.TrackLocateRequested += ScrollToCurrentTrack;
+                Shell.DownloadDirPicker = PickDownloadDirectory;   // P4 实机反馈：下载时弹窗选目标
                 HookDesktopLyricsUpdates();
                 HookSettingsLyricsUpdates();
                 InitTray();
@@ -312,11 +313,29 @@ public partial class MainWindow : FluentWindow
             (Shell?.CurrentPage as ViewModels.DownloadPageViewModel)?.Cancel(row);
     }
 
-    /// <summary>L2 设置页-在线组：Key 输入框眼睛按钮（密文/明文切换）。</summary>
-    private void OnToggleKeyReveal(object sender, RoutedEventArgs e)
+    /// <summary>P4 实机反馈：下载时弹出目标选择（媒体库根/一级子文件夹 + 自定义），返回选中目录或 null（取消）。</summary>
+    private string? PickDownloadDirectory(string? current)
     {
-        if (Shell?.CurrentPage is ViewModels.SettingsPageViewModel settings)
-            settings.IsKeyRevealed = !settings.IsKeyRevealed;
+        var candidates = new List<string>();
+        foreach (var root in ConfigService.Current.Library.Folders)
+        {
+            if (!Directory.Exists(root)) continue;
+            candidates.Add(root);
+            try
+            {
+                foreach (var sub in Directory.EnumerateDirectories(root))
+                    candidates.Add(sub);
+            }
+            catch { /* 无权限子目录跳过 */ }
+        }
+        if (!string.IsNullOrWhiteSpace(current) && Directory.Exists(current)
+            && !candidates.Any(c => string.Equals(c, current, System.StringComparison.OrdinalIgnoreCase)))
+            candidates.Add(current);
+        if (candidates.Count == 0)
+            candidates.Add(Environment.GetFolderPath(Environment.SpecialFolder.UserProfile));
+
+        var dialog = new Controls.DownloadDirDialog(candidates, current) { Owner = this };
+        return dialog.ShowDialog() == true ? dialog.SelectedDir : null;
     }
 
     /// <summary>L2 托盘：Player 就绪后创建（菜单播放控制需要命令）。</summary>

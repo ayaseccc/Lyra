@@ -39,14 +39,16 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
     private readonly IReadOnlyList<IOnlineSource> _sources;
     private readonly PlayerViewModel _player;
     private readonly Player.Core.Downloads.DownloadService? _downloads;
+    private readonly Func<string?, string?>? _pickDirectory;
     private CancellationTokenSource? _searchCts;
 
     public OnlineSearchViewModel(IReadOnlyList<IOnlineSource> sources, PlayerViewModel player,
-        Player.Core.Downloads.DownloadService? downloads = null)
+        Player.Core.Downloads.DownloadService? downloads = null, Func<string?, string?>? pickDirectory = null)
     {
         _sources = sources;
         _player = player;
         _downloads = downloads;
+        _pickDirectory = pickDirectory;
 
         // 默认选中网易云（PLAN：默认音源 netease）；无 Key/不可用则自动落回 GD
         var preferred = sources.FirstOrDefault(s => s.Key == "netease" && s.IsAvailable) ?? sources.FirstOrDefault(s => s.IsAvailable) ?? sources.FirstOrDefault();
@@ -185,14 +187,17 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
     {
         if (SelectedItem is not { } item || _downloads is null) return;
 
-        // 实机反馈：未设下载目录时入队只会立刻失败，直接提示去设置
-        if (string.IsNullOrWhiteSpace(Player.Core.Infra.ConfigService.Current.Online.DownloadDir))
+        // 实机反馈：下载时弹窗选择目标（媒体库子文件夹/自定义），选完即记作默认
+        var dir = _pickDirectory?.Invoke(Player.Core.Infra.ConfigService.Current.Online.DownloadDir);
+        if (string.IsNullOrWhiteSpace(dir))
         {
-            StatusText = "请先在 设置-在线 里设置下载位置";
+            StatusText = "已取消下载";
             return;
         }
+        Player.Core.Infra.ConfigService.Current.Online.DownloadDir = dir;
+        Player.Core.Infra.ConfigService.Save();
 
-        var duplicate = _downloads.Enqueue(item.Track, item.SourceKey, SelectedBr);
+        var duplicate = _downloads.Enqueue(item.Track, item.SourceKey, SelectedBr, downloadDir: dir);
         if (duplicate.Status == Player.Core.Downloads.DownloadStatus.Duplicate)
         {
             StatusText = "该曲目与媒体库重复，已加入下载管理页等待确认";
