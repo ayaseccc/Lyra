@@ -65,6 +65,11 @@ public sealed class TrackRecord
 
     public string BitDepthText => BitDepth > 0 ? BitDepth + " bit" : "-";
 
+    /// <summary>码率显示（L3.1 码率列）。</summary>
+    public string BitrateText => Bitrate > 0
+        ? (Bitrate >= 1000 ? (Bitrate / 1000.0).ToString("0.#") + " Mbps" : Bitrate + " kbps")
+        : "-";
+
     public string DisplayTitle => string.IsNullOrWhiteSpace(Title)
         ? System.IO.Path.GetFileNameWithoutExtension(Path)
         : Title;

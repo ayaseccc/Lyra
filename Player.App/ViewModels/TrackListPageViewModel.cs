@@ -20,13 +20,16 @@ public sealed class TrackRowItem
     /// <summary>分组模式：该行是组内第一行（封面不降透明、专辑行显示年份）。</summary>
     public bool ShowCover { get; init; }
 
+    /// <summary>所属分组键（分组模式折叠过滤用；平铺为空）。</summary>
+    public string? GroupKey { get; init; }
+
     /// <summary>组年份（仅组首行有值，显示在专辑行右端）。</summary>
     public string YearText { get; init; } = string.Empty;
 
     public bool IsGroupHeader => false;
 }
 
-/// <summary>专辑分组头（UI-R2）：专辑名 | 艺术家 ———— 年份（年份右对齐）。</summary>
+/// <summary>专辑分组头（UI-R2）：专辑名 | 艺术家 ———— 年份（年份右对齐）。L3.1：封面/折叠。</summary>
 public sealed class GroupHeaderItem
 {
     public required string AlbumText { get; init; }
@@ -35,11 +38,23 @@ public sealed class GroupHeaderItem
 
     public required string YearText { get; init; }
 
+    /// <summary>分组键（专辑+艺术家），折叠状态按它记。</summary>
+    public required string GroupKey { get; init; }
+
+    /// <summary>组内第一首的封面（组头封面缩略图，L3.1 开关控制显示）。</summary>
+    public string? CoverHash { get; init; }
+
     public bool IsGroupHeader => true;
+
+    /// <summary>折叠指示（▸ 折叠 / ▾ 展开）。</summary>
+    public bool IsCollapsed { get; init; }
 
     /// <summary>供「当前播放」MultiBinding 空安全使用（组头没有曲目）。</summary>
     public TrackRecord? Track => null;
 }
+
+/// <summary>曲目列表列定义（L3.1 列自定义：显示/隐藏+顺序+列宽持久化）。</summary>
+public sealed record TrackColumnDef(string Key, string Name, double DefaultWidth);
 
 /// <summary>
 /// 曲目列表页：全部歌曲 / 某个歌单 / 某个文件夹虚拟歌单 / 某张专辑 / 某位艺术家 都用它。
@@ -58,6 +73,123 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     private string _appliedFilter = string.Empty;
     private string? _sortProperty;
     private ListSortDirection _sortDirection = ListSortDirection.Ascending;
+
+    /// <summary>折叠的分组键（会话内记住；初始按配置默认展开/折叠）。</summary>
+    private readonly HashSet<string> _collapsedGroups = new(StringComparer.Ordinal);
+
+    // ================= L3.1 列自定义 =================
+
+    public static IReadOnlyList<TrackColumnDef> TrackColumns { get; } = new[]
+    {
+        new TrackColumnDef("Title", "标题", 500),
+        new TrackColumnDef("Artist", "歌手", 150),
+        new TrackColumnDef("Album", "专辑", 170),
+        new TrackColumnDef("Duration", "时长", 64),
+        new TrackColumnDef("Format", "格式", 60),
+        new TrackColumnDef("SampleRate", "采样率", 80),
+        new TrackColumnDef("BitDepth", "位深", 60),
+        new TrackColumnDef("Bitrate", "码率", 80),
+    };
+
+    private double ColWidth(string key)
+        => ConfigService.Current.Ui.ColumnWidths.TryGetValue(key, out var w) && w > 0 ? w : DefaultWidthOf(key);
+
+    private int ColIndex(string key)
+    {
+        var cols = ConfigService.Current.Ui.Columns;
+        var idx = cols.IndexOf(key);
+        return idx < 0 ? -1 : idx;
+    }
+
+    private static double DefaultWidthOf(string key)
+        => TrackColumns.FirstOrDefault(c => c.Key == key)?.DefaultWidth ?? 100;
+
+    /// <summary>列可见性（顺序列表里出现 = 可见）。</summary>
+    public bool IsColumnVisible(string key) => ConfigService.Current.Ui.Columns.Contains(key);
+
+    /// <summary>列配置变化后刷新全部列绑定。</summary>
+    public void RefreshColumns()
+    {
+        foreach (var col in TrackColumns)
+        {
+            OnPropertyChanged($"ColWidth{col.Key}");
+            OnPropertyChanged($"ColIndex{col.Key}");
+        }
+    }
+
+    /// <summary>显示/隐藏列。</summary>
+    public void SetColumnVisible(string key, bool visible)
+    {
+        var cols = ConfigService.Current.Ui.Columns;
+        if (visible)
+        {
+            if (!cols.Contains(key))
+            {
+                var defs = TrackColumns.Select(c => c.Key).ToList();
+                var insertAt = cols.Count;
+                for (var i = 0; i < defs.Count; i++)
+                {
+                    if (defs[i] == key) { insertAt = i; break; }
+                    if (cols.Contains(defs[i]) && defs.IndexOf(key) < defs.IndexOf(defs[i]))
+                    {
+                        // 保持在默认顺序中的相对位置
+                    }
+                }
+                cols.Insert(Math.Min(insertAt, cols.Count), key);
+            }
+        }
+        else
+        {
+            cols.Remove(key);
+        }
+        ConfigService.Save();
+        RefreshColumns();
+    }
+
+    /// <summary>列顺序上移/下移（delta = -1/+1）。</summary>
+    public void MoveColumn(string key, int delta)
+    {
+        var cols = ConfigService.Current.Ui.Columns;
+        var idx = cols.IndexOf(key);
+        if (idx < 0) return;
+        var target = idx + delta;
+        if (target < 0 || target >= cols.Count) return;
+        cols.RemoveAt(idx);
+        cols.Insert(target, key);
+        ConfigService.Save();
+        RefreshColumns();
+    }
+
+    /// <summary>列宽（0 清空回默认）。</summary>
+    public void SetColumnWidth(string key, double width)
+    {
+        if (width <= 0) ConfigService.Current.Ui.ColumnWidths.Remove(key);
+        else ConfigService.Current.Ui.ColumnWidths[key] = width;
+        ConfigService.Save();
+        RefreshColumns();
+    }
+
+    /// <summary>分组标题封面开关（L3.1）。</summary>
+    public bool GroupCoverVisible => ConfigService.Current.Ui.GroupCoverVisible;
+
+    /// <summary>组头封面列宽（开关关闭 = 0 隐藏）。</summary>
+    public double GroupCoverWidth => ConfigService.Current.Ui.GroupCoverVisible ? 36 : 0;
+
+    /// <summary>折叠/展开一个分组（组头点击）。</summary>
+    public void ToggleGroup(string groupKey)
+    {
+        if (!_collapsedGroups.Add(groupKey))
+            _collapsedGroups.Remove(groupKey);
+        RebuildDisplay();
+    }
+
+    /// <summary>配置变化后重建显示（L3.1 组头封面开关等）。</summary>
+    public void ReloadConfigDependentDisplay()
+    {
+        OnPropertyChanged(nameof(GroupCoverWidth));
+        OnPropertyChanged(nameof(GroupCoverVisible));
+        RebuildDisplay();
+    }
 
     public TrackListPageViewModel(
         string title,
@@ -116,26 +248,46 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         RebuildDisplay();
     }
 
-    /// <summary>按当前模式重建显示行。分组用 TrackGrouper（纯函数），平铺用过滤/排序后的 View。</summary>
+    /// <summary>分组键（与 TrackGrouper 一致：专辑 + 艺术家）。</summary>
+    private static string GroupKeyOf(TrackGroup group)
+        => group.Album + "\u0001" + group.Artist;
+
+    /// <summary>按当前模式重建显示行。分组用 TrackGrouper（纯函数），平铺用过滤/排序后的 View。
+    /// L3.1：折叠组只留组头；组头带封面与折叠状态。</summary>
     private void RebuildDisplay()
     {
         DisplayItems.Clear();
         if (IsGrouped)
         {
-            foreach (var group in TrackGrouper.Group(View.Cast<TrackRecord>()))
+            var grouped = TrackGrouper.Group(View.Cast<TrackRecord>()).ToList();
+
+            // 初始默认：配置要求默认折叠时，把所有组标记折叠（只一次）
+            if (!ConfigService.Current.Ui.GroupsExpandedByDefault && _collapsedGroups.Count == 0)
             {
+                foreach (var g in grouped) _collapsedGroups.Add(GroupKeyOf(g));
+            }
+
+            foreach (var group in grouped)
+            {
+                var key = GroupKeyOf(group);
+                var collapsed = _collapsedGroups.Contains(key);
                 DisplayItems.Add(new GroupHeaderItem
                 {
                     AlbumText = group.Album,
                     ArtistText = group.Artist,
-                    YearText = group.Year
+                    YearText = group.Year,
+                    GroupKey = key,
+                    CoverHash = group.Tracks.FirstOrDefault()?.CoverHash,
+                    IsCollapsed = collapsed
                 });
+                if (collapsed) continue;
                 for (var i = 0; i < group.Tracks.Count; i++)
                 {
                     DisplayItems.Add(new TrackRowItem
                     {
                         Track = group.Tracks[i],
-                        ShowCover = i == 0
+                        ShowCover = i == 0,
+                        GroupKey = key
                     });
                 }
             }

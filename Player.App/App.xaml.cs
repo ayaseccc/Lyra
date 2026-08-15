@@ -76,6 +76,9 @@ public partial class App : Application
         _library = new LibraryService();
         _playlists = new PlaylistService(_library);
 
+        // L3.1 个性化：行高/全局字体/字号缩放写入 Application 资源（XAML DynamicResource 引用）
+        Theming.ThemeService.ApplyUiPersonalization();
+
         // P3：ChKSz 客户端与歌词服务。Key 只在 ConfigService 里读，任何在线失败都不影响本地播放
         _client = new ChkszClient();
 

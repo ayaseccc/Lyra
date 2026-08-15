@@ -146,6 +146,19 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         _previewBr = BrOptions.FirstOrDefault(o => o.Value == ConfigService.Current.Online.PreviewBr) ?? BrOptions[0];
         _selectedSection = Sections[0];
 
+        // L3.1 个性化初始值（ui 已在上面歌词组声明）
+        _selectedRowHeight = RowHeights.FirstOrDefault(r => r.Value == ui.RowHeight) ?? RowHeights[1];
+        _groupsExpandedByDefault = ui.GroupsExpandedByDefault;
+        _groupCoverVisible = ui.GroupCoverVisible;
+        _selectedUiFont = UiFontOptions.FirstOrDefault(f =>
+            string.Equals(f.Family, ui.UiFontFamily, StringComparison.OrdinalIgnoreCase)) ?? UiFontOptions[0];
+        _selectedFontScale = FontScales.FirstOrDefault(s => Math.Abs(s.Value - ui.UiFontScale) < 0.001) ?? FontScales[2];
+        _selectedAccent = AccentColors.FirstOrDefault(a =>
+            string.Equals(a.Color, ui.CustomAccent, StringComparison.OrdinalIgnoreCase)) ?? AccentColors[0];
+        _selectedOpacity = ui.SelectedOpacity;
+        _hoverOpacity = ui.HoverOpacity;
+        RefreshColumnRows();
+
         // L2 行为组：关闭到托盘（默认关闭）
         _closeToTray = ConfigService.Current.Ui.CloseToTray;
 
@@ -847,5 +860,244 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         if (_loading || value is null) return;
         ConfigService.Current.Online.PreviewBr = value.Value;
         ConfigService.Save();
+    }
+
+    // ================= L3.1 个性化（外观区：列表 / 列 / 字体 / 颜色） =================
+
+    /// <summary>个性化变化后由 Shell 注入刷新当前列表页（列绑定/分组重建）。</summary>
+    public Action? OnListSettingsChanged { get; set; }
+
+    // ---- 列表 ----
+
+    public sealed record RowHeightOption(int Value, string Name)
+    {
+        public override string ToString() => Name;
+    }
+
+    public IReadOnlyList<RowHeightOption> RowHeights { get; } = new[]
+    {
+        new RowHeightOption(56, "紧凑"),
+        new RowHeightOption(72, "标准"),
+        new RowHeightOption(110, "舒适"),
+    };
+
+    [ObservableProperty]
+    private RowHeightOption _selectedRowHeight = null!;
+
+    partial void OnSelectedRowHeightChanged(RowHeightOption value)
+    {
+        if (_loading || value is null) return;
+        ConfigService.Current.Ui.RowHeight = value.Value;
+        ConfigService.Save();
+        Theming.ThemeService.ApplyUiPersonalization();
+    }
+
+    [ObservableProperty]
+    private bool _groupsExpandedByDefault;
+
+    partial void OnGroupsExpandedByDefaultChanged(bool value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.GroupsExpandedByDefault = value;
+        ConfigService.Save();
+    }
+
+    [ObservableProperty]
+    private bool _groupCoverVisible;
+
+    partial void OnGroupCoverVisibleChanged(bool value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.GroupCoverVisible = value;
+        ConfigService.Save();
+        OnListSettingsChanged?.Invoke();
+    }
+
+    // ---- 列 ----
+
+    public sealed partial class ColumnSettingRow : ObservableObject
+    {
+        public required string Key { get; init; }
+
+        public required string Name { get; init; }
+
+        [ObservableProperty]
+        private bool _visible;
+
+        [ObservableProperty]
+        private double _width;
+    }
+
+    public ObservableCollection<ColumnSettingRow> ColumnRows { get; } = new();
+
+    public void RefreshColumnRows()
+    {
+        ColumnRows.Clear();
+        var cols = ConfigService.Current.Ui.Columns;
+        foreach (var col in TrackListPageViewModel.TrackColumns)
+        {
+            var row = new ColumnSettingRow
+            {
+                Key = col.Key,
+                Name = col.Name,
+                Visible = cols.Contains(col.Key),
+                Width = ConfigService.Current.Ui.ColumnWidths.TryGetValue(col.Key, out var w) ? w : col.DefaultWidth
+            };
+            row.PropertyChanged += (_, _) => ApplyColumnRow(row);
+            ColumnRows.Add(row);
+        }
+    }
+
+    /// <summary>列的显示/宽度/顺序变化 → 落盘并刷新当前列表页。</summary>
+    private void ApplyColumnRow(ColumnSettingRow row)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.ColumnWidths[row.Key] = row.Width;
+        if (!row.Visible) ConfigService.Current.Ui.Columns.Remove(row.Key);
+        else if (!ConfigService.Current.Ui.Columns.Contains(row.Key))
+        {
+            // 按默认顺序插回
+            var defs = TrackListPageViewModel.TrackColumns.Select(c => c.Key).ToList();
+            var insertAt = defs.Count;
+            for (var i = 0; i < defs.Count; i++)
+            {
+                if (defs[i] == row.Key) { insertAt = i; break; }
+            }
+            ConfigService.Current.Ui.Columns.Insert(Math.Min(insertAt, ConfigService.Current.Ui.Columns.Count), row.Key);
+        }
+        ConfigService.Save();
+        OnListSettingsChanged?.Invoke();
+    }
+
+    /// <summary>列上移/下移（设置页按钮）。</summary>
+    [RelayCommand]
+    private void MoveColumnUp(ColumnSettingRow row)
+    {
+        MoveColumnRow(row, -1);
+    }
+
+    [RelayCommand]
+    private void MoveColumnDown(ColumnSettingRow row)
+    {
+        MoveColumnRow(row, +1);
+    }
+
+    private void MoveColumnRow(ColumnSettingRow row, int delta)
+    {
+        var cols = ConfigService.Current.Ui.Columns;
+        var idx = cols.IndexOf(row.Key);
+        if (idx < 0) return;
+        var target = idx + delta;
+        if (target < 0 || target >= cols.Count) return;
+        cols.RemoveAt(idx);
+        cols.Insert(target, row.Key);
+        ConfigService.Save();
+        RefreshColumnRows();
+        OnListSettingsChanged?.Invoke();
+    }
+
+    // ---- 字体 ----
+
+    public sealed record FontOption(string Name, string Family)
+    {
+        public override string ToString() => Name;
+    }
+
+    public IReadOnlyList<FontOption> UiFontOptions { get; } = new[]
+    {
+        new FontOption("默认（跟随系统）", string.Empty),
+        new FontOption("微软雅黑", "Microsoft YaHei UI"),
+        new FontOption("Segoe UI", "Segoe UI"),
+        new FontOption("思源黑体", "Source Han Sans SC"),
+        new FontOption("Noto Sans SC", "Noto Sans SC"),
+        new FontOption("宋体", "SimSun"),
+    };
+
+    [ObservableProperty]
+    private FontOption _selectedUiFont = null!;
+
+    partial void OnSelectedUiFontChanged(FontOption value)
+    {
+        if (_loading || value is null) return;
+        ConfigService.Current.Ui.UiFontFamily = value.Family;
+        ConfigService.Save();
+        Theming.ThemeService.ApplyUiPersonalization();
+    }
+
+    public sealed record ScaleOption(double Value, string Name)
+    {
+        public override string ToString() => Name;
+    }
+
+    public IReadOnlyList<ScaleOption> FontScales { get; } = new[]
+    {
+        new ScaleOption(0.90, "90%"), new ScaleOption(0.95, "95%"), new ScaleOption(1.00, "100%"),
+        new ScaleOption(1.05, "105%"), new ScaleOption(1.10, "110%"), new ScaleOption(1.15, "115%"),
+        new ScaleOption(1.20, "120%"), new ScaleOption(1.25, "125%"),
+    };
+
+    [ObservableProperty]
+    private ScaleOption _selectedFontScale = null!;
+
+    partial void OnSelectedFontScaleChanged(ScaleOption value)
+    {
+        if (_loading || value is null) return;
+        ConfigService.Current.Ui.UiFontScale = value.Value;
+        ConfigService.Save();
+        Theming.ThemeService.ApplyUiPersonalization();
+    }
+
+    // ---- 颜色 ----
+
+    public sealed record AccentOption(string Color, string Name)
+    {
+        public override string ToString() => Name;
+    }
+
+    public IReadOnlyList<AccentOption> AccentColors { get; } = new[]
+    {
+        new AccentOption(string.Empty, "跟随封面/默认"),
+        new AccentOption("#B87A00", "琥珀金"),
+        new AccentOption("#D35400", "落日橙"),
+        new AccentOption("#E91E63", "樱粉"),
+        new AccentOption("#9C27B0", "紫罗兰"),
+        new AccentOption("#3F51B5", "靛蓝"),
+        new AccentOption("#0288D1", "天蓝"),
+        new AccentOption("#00897B", "青绿"),
+        new AccentOption("#43A047", "草绿"),
+        new AccentOption("#757575", "中性灰"),
+    };
+
+    [ObservableProperty]
+    private AccentOption _selectedAccent = null!;
+
+    partial void OnSelectedAccentChanged(AccentOption value)
+    {
+        if (_loading || value is null) return;
+        ConfigService.Current.Ui.CustomAccent = value.Color;
+        ConfigService.Save();
+        Theming.ThemeService.ApplyModeFromConfig();
+    }
+
+    [ObservableProperty]
+    private double _selectedOpacity;
+
+    partial void OnSelectedOpacityChanged(double value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.SelectedOpacity = value;
+        ConfigService.Save();
+        Theming.ThemeService.ApplyModeFromConfig();
+    }
+
+    [ObservableProperty]
+    private double _hoverOpacity;
+
+    partial void OnHoverOpacityChanged(double value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.HoverOpacity = value;
+        ConfigService.Save();
+        Theming.ThemeService.ApplyModeFromConfig();
     }
 }

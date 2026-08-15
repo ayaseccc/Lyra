@@ -213,6 +213,15 @@ public partial class MainWindow : FluentWindow
         _ = Player?.PlayOnlinePreviewAsync(item.Track, item.SourceKey, vm.SelectedBr);
     }
 
+    /// <summary>L3.1 分组折叠：组头行点击切换该组折叠状态。</summary>
+    private void OnGroupHeaderClick(object sender, MouseButtonEventArgs e)
+    {
+        if (e.OriginalSource is not DependencyObject d) return;
+        if (FindAncestor<System.Windows.Controls.ListBox>(d)?.DataContext is not ViewModels.TrackListPageViewModel page) return;
+        if (FindAncestor<System.Windows.Controls.ListBoxItem>(d)?.DataContext is ViewModels.GroupHeaderItem header)
+            page.ToggleGroup(header.GroupKey);
+    }
+
     /// <summary>P4 搜索结果右键菜单。菜单项 Click 优先取 ContextMenu.PlacementTarget——
     /// 框架打开菜单时自动设为所属行（独立弹出树也可靠），不依赖点击时刻的鼠标命中；
     /// 右键按下那一刻的捕获值做兜底（实测：菜单在右键抬起后才弹出，弹后再取位置不可靠）。</summary>

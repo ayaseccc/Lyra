@@ -71,6 +71,7 @@ public static class Program
 
             case "downloads":
                 RunDownloadTemplateChecks();
+                RunL31ConfigRoundtrip();
                 break;
 
             case "dlprobe":
@@ -826,6 +827,77 @@ public static class Program
         Console.WriteLine($"专辑拉取「叶惠美」：success={album.Success} count={album.Data?.Count ?? 0} err={album.Error}");
 
         Console.WriteLine();
+    }
+
+    // ================= L3.1 个性化配置往返（JSON 序列化→反序列化） =================
+
+    private static void RunL31ConfigRoundtrip()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== L3.1 个性化配置往返 ===");
+
+        var ui = ConfigService.Current.Ui;
+        var backup = new Player.Core.Infra.UiConfig
+        {
+            RowHeight = ui.RowHeight,
+            GroupsExpandedByDefault = ui.GroupsExpandedByDefault,
+            GroupCoverVisible = ui.GroupCoverVisible,
+            UiFontFamily = ui.UiFontFamily,
+            UiFontScale = ui.UiFontScale,
+            CustomAccent = ui.CustomAccent,
+            SelectedOpacity = ui.SelectedOpacity,
+            HoverOpacity = ui.HoverOpacity,
+            Columns = new List<string>(ui.Columns),
+            ColumnWidths = new Dictionary<string, double>(ui.ColumnWidths)
+        };
+
+        try
+        {
+            ui.RowHeight = 110;
+            ui.GroupsExpandedByDefault = false;
+            ui.GroupCoverVisible = false;
+            ui.UiFontFamily = "Segoe UI";
+            ui.UiFontScale = 1.15;
+            ui.CustomAccent = "#E91E63";
+            ui.SelectedOpacity = 0.22;
+            ui.HoverOpacity = 0.05;
+            ui.Columns = new List<string> { "Title", "Duration", "Format" };
+            ui.ColumnWidths["Title"] = 430;
+            ConfigService.Save();
+
+            var json = System.IO.File.ReadAllText(Player.Core.Infra.AppPaths.ConfigFile);
+            var reloaded = System.Text.Json.JsonSerializer.Deserialize<Player.Core.Infra.AppConfig>(json,
+                new System.Text.Json.JsonSerializerOptions
+                {
+                    PropertyNamingPolicy = System.Text.Json.JsonNamingPolicy.CamelCase,
+                    PropertyNameCaseInsensitive = true
+                });
+
+            Check("行高往返", reloaded?.Ui.RowHeight == 110);
+            Check("分组默认折叠往返", reloaded?.Ui.GroupsExpandedByDefault == false);
+            Check("组头封面开关往返", reloaded?.Ui.GroupCoverVisible == false);
+            Check("界面字体往返", reloaded?.Ui.UiFontFamily == "Segoe UI");
+            Check("字号缩放往返", reloaded is not null && Math.Abs(reloaded.Ui.UiFontScale - 1.15) < 0.001);
+            Check("自定义强调色往返", reloaded?.Ui.CustomAccent == "#E91E63");
+            Check("选中透明度往返", reloaded is not null && Math.Abs(reloaded.Ui.SelectedOpacity - 0.22) < 0.001);
+            Check("悬停透明度往返", reloaded is not null && Math.Abs(reloaded.Ui.HoverOpacity - 0.05) < 0.001);
+            Check("列顺序往返", reloaded is not null && string.Join(",", reloaded.Ui.Columns) == "Title,Duration,Format");
+            Check("列宽往返", reloaded is not null && reloaded.Ui.ColumnWidths.TryGetValue("Title", out var w) && Math.Abs(w - 430) < 0.001);
+        }
+        finally
+        {
+            ui.RowHeight = backup.RowHeight;
+            ui.GroupsExpandedByDefault = backup.GroupsExpandedByDefault;
+            ui.GroupCoverVisible = backup.GroupCoverVisible;
+            ui.UiFontFamily = backup.UiFontFamily;
+            ui.UiFontScale = backup.UiFontScale;
+            ui.CustomAccent = backup.CustomAccent;
+            ui.SelectedOpacity = backup.SelectedOpacity;
+            ui.HoverOpacity = backup.HoverOpacity;
+            ui.Columns = backup.Columns;
+            ui.ColumnWidths = backup.ColumnWidths;
+            ConfigService.Save();
+        }
     }
 
     // ================= 下载命名模板（P4-5） =================

@@ -399,8 +399,18 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                 break;
 
             case NavKind.Settings:
-                CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client,
+                var settingsVm = new SettingsPageViewModel(_library, _engine, ScanAsync, _client,
                     () => ImportM3uCommand.Execute(null));
+                settingsVm.OnListSettingsChanged = () =>
+                {
+                    // L3.1：列/分组设置变化即时刷新当前列表页
+                    if (CurrentPage is TrackListPageViewModel trackPage)
+                    {
+                        trackPage.RefreshColumns();
+                        trackPage.ReloadConfigDependentDisplay();
+                    }
+                };
+                CurrentPage = settingsVm;
                 break;
         }
     }

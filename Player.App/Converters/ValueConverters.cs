@@ -106,6 +106,26 @@ public sealed class BoolToGroupCoverWidthConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>double → GridLength（L3.1 列宽绑定；<=0 视为 0 隐藏列）。</summary>
+public sealed class DoubleToGridLengthConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is double d && d > 0 ? new System.Windows.GridLength(d) : new System.Windows.GridLength(0);
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
+/// <summary>bool → 分组折叠箭头（L3.1：true=折叠 ▸ / false=展开 ▾）。</summary>
+public sealed class BoolToCollapseArrowConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is true ? "▸" : "▾";
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>多绑定：行路径 == 当前播放路径（UI-R2 的 ▶ 与整行淡色高亮）。</summary>
 public sealed class TrackIsCurrentConverter : IMultiValueConverter
 {

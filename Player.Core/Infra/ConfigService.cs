@@ -186,6 +186,38 @@ public sealed class UiConfig
     /// <summary>L1.1-②：歌词字重 Normal / Medium / Bold。</summary>
     public string LyricFontWeight { get; set; } = "Normal";
 
+    // ================= L3.1 个性化 =================
+
+    /// <summary>曲目行高（紧凑 56 / 标准 72 / 舒适 110，平铺与分组共用）。</summary>
+    public int RowHeight { get; set; } = 72;
+
+    /// <summary>专辑分组默认展开（false = 默认折叠，手动切换每组状态会话内记住）。</summary>
+    public bool GroupsExpandedByDefault { get; set; } = true;
+
+    /// <summary>分组标题行显示专辑封面。</summary>
+    public bool GroupCoverVisible { get; set; } = true;
+
+    /// <summary>全局 UI 字体（空 = 跟随系统）。</summary>
+    public string UiFontFamily { get; set; } = string.Empty;
+
+    /// <summary>全局 UI 字号缩放（0.90–1.25）。</summary>
+    public double UiFontScale { get; set; } = 1.0;
+
+    /// <summary>自定义强调色（#RRGGBB，空 = 跟随封面取色/主题默认）。</summary>
+    public string CustomAccent { get; set; } = string.Empty;
+
+    /// <summary>选中行高亮透明度（0–1，默认 0.12）。</summary>
+    public double SelectedOpacity { get; set; } = 0.12;
+
+    /// <summary>悬停高亮透明度（0–1，默认 0.07）。</summary>
+    public double HoverOpacity { get; set; } = 0.07;
+
+    /// <summary>曲目列表可见列顺序（Key 列表：Title/Artist/Album/Duration/Format/SampleRate/BitDepth/Bitrate）。</summary>
+    public List<string> Columns { get; set; } = new() { "Title", "Artist", "Album", "Duration", "Format", "SampleRate", "BitDepth", "Bitrate" };
+
+    /// <summary>各列宽度（Key → 像素，缺省用默认宽度）。</summary>
+    public Dictionary<string, double> ColumnWidths { get; set; } = new();
+
     /// <summary>L2 托盘：关闭主窗时最小化到托盘而不是退出（默认关闭 = 关窗即退出）。</summary>
     public bool CloseToTray { get; set; }
 

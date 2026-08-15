@@ -89,6 +89,35 @@ public static class ThemeService
         }
     }
 
+    /// <summary>L3.1 个性化应用到 Application 资源：行高/全局字体/字号缩放。
+    /// 启动与设置变化时调用；XAML 样式用 DynamicResource 引用。</summary>
+    public static void ApplyUiPersonalization()
+    {
+        if (Application.Current is not { } app) return;
+        var ui = ConfigService.Current.Ui;
+        var res = app.Resources;
+
+        res["RowHeightFlat"] = (double)Math.Clamp(ui.RowHeight, 40, 160);
+        res["RowHeightGrouped"] = (double)Math.Clamp(ui.RowHeight, 40, 160);
+
+        var scale = Math.Clamp(ui.UiFontScale, 0.9, 1.25);
+        res["UiFontFamily"] = string.IsNullOrWhiteSpace(ui.UiFontFamily)
+            ? SystemFonts.MessageFontFamily
+            : new FontFamily(ui.UiFontFamily);
+        res["UiFontSizePage"] = 20 * scale;
+        res["UiFontSizeTitle"] = 14 * scale;
+        res["UiFontSizeBody"] = 12 * scale;
+        res["UiFontSizeSmall"] = 11 * scale;
+    }
+
+    /// <summary>按当前配置重新应用主题（L3.1 自定义强调色/透明度变化后调用）。</summary>
+    public static void ApplyModeFromConfig()
+    {
+        Initialize();
+        var ui = ConfigService.Current.Ui;
+        SetMode(DarkBase, Tint);
+    }
+
     /// <summary>设置页切换：底色（深/浅）× 染色（开/关）。</summary>
     public static void SetMode(bool darkBase, bool tint)
     {
@@ -215,9 +244,43 @@ public static class ThemeService
         (byte)Math.Round(a.B + (b.B - a.B) * t),
         (byte)Math.Round(a.A + (b.A - a.A) * t));
 
+    /// <summary>L3.1 个性化：自定义强调色 + 选中/悬停透明度（读配置，每帧应用动画中间帧也一致）。</summary>
+    private static ThemePalette Personalize(ThemePalette p)
+    {
+        var ui = ConfigService.Current.Ui;
+
+        if (!string.IsNullOrWhiteSpace(ui.CustomAccent)
+            && TryParseHex(ui.CustomAccent, out var accent))
+        {
+            p = p with { Accent = accent };
+        }
+
+        var hoverA = (byte)Math.Clamp((int)Math.Round(255 * ui.HoverOpacity), 0, 255);
+        var selectedA = (byte)Math.Clamp((int)Math.Round(255 * ui.SelectedOpacity), 0, 255);
+        p = p with
+        {
+            Hover = p.Hover with { A = hoverA },
+            Selected = p.Selected with { A = selectedA }
+        };
+        return p;
+    }
+
+    private static bool TryParseHex(string text, out RgbColor color)
+    {
+        color = default;
+        var hex = text.Trim().TrimStart('#');
+        if (hex.Length != 6 || !byte.TryParse(hex[..2], System.Globalization.NumberStyles.HexNumber, null, out var r)
+            || !byte.TryParse(hex[2..4], System.Globalization.NumberStyles.HexNumber, null, out var g)
+            || !byte.TryParse(hex[4..6], System.Globalization.NumberStyles.HexNumber, null, out var b))
+            return false;
+        color = new RgbColor(r, g, b);
+        return true;
+    }
+
     /// <summary>把调色板写进 Application 资源（XAML 全部用 DynamicResource 引用）。</summary>
     private static void ApplyPalette(ThemePalette p)
     {
+        p = Personalize(p);
         var resources = Application.Current.Resources;
         Set(resources, "SurfaceBrush", p.Surface);
         Set(resources, "SurfaceStrongBrush", p.SurfaceStrong);
