@@ -160,6 +160,9 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     /// <summary>当前是否处于在线试听（临时播放态）。</summary>
     private bool _isOnlinePreview;
 
+    /// <summary>试听取流取消源（Dispose 时取消，审查修复）。</summary>
+    private readonly CancellationTokenSource _previewCts = new();
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PlayModeIcon))]
     [NotifyPropertyChangedFor(nameof(PlayModeText))]
@@ -463,7 +466,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             return false;
         }
 
-        var stream = await source.GetStreamAsync(track, preferredBr, CancellationToken.None).ConfigureAwait(true);
+        var stream = await source.GetStreamAsync(track, preferredBr, _previewCts.Token).ConfigureAwait(true);
         if (!stream.Success)
         {
             StatusText = "试听失败：" + stream.Error;
@@ -638,6 +641,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     private void PlayCurrentOrSkip()
     {
+        // 审查修复：Next/Prev/PlayPause 等所有切本地曲入口统一先退出在线试听态
+        ExitOnlinePreview();
         var attempts = Math.Min(MaxSkipAttempts, Math.Max(1, _list.Count));
 
         for (var i = 0; i < attempts; i++)
@@ -853,6 +858,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         _disposed = true;
 
+        _previewCts.Cancel();
+        _previewCts.Dispose();
         _timer.Stop();
         _timer.Tick -= OnTimerTick;
 

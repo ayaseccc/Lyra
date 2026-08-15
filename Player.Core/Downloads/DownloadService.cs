@@ -96,9 +96,22 @@ public sealed class DownloadService : IDisposable
         }
     }
 
-    /// <summary>入队（先查库内重复，命中则标记 Duplicate 等待确认）。</summary>
+    /// <summary>入队（先查库内重复，命中则标记 Duplicate 等待确认）。服务已释放时返回 Failed 项（不抛）。</summary>
     public DownloadItem Enqueue(OnlineTrack track, string sourceKey, int preferredBr, Func<DownloadItem, bool>? confirmDuplicate = null)
     {
+        if (_disposed)
+        {
+            return new DownloadItem
+            {
+                Track = track,
+                SourceKey = sourceKey,
+                PreferredBr = preferredBr,
+                FileName = BuildFileName(track, sourceKey, preferredBr),
+                Status = DownloadStatus.Failed,
+                Error = "下载服务已释放"
+            };
+        }
+
         var item = new DownloadItem
         {
             Track = track,
@@ -159,29 +172,34 @@ public sealed class DownloadService : IDisposable
         {
             while (true)
             {
-                if (!_queue.TryDequeue(out var item))
+                DownloadItem? item;
+                lock (_gate)
                 {
-                    _current = null;
-                    BatchCompleted?.Invoke();
-                    return;
+                    // 锁内取任务；取不到=队列确定空，原子退出并清 _cts（修复：此前
+                    // "空队列退出"与"清 _cts"分两把锁，中间入队的新任务会被新 worker 误判
+                    // 已在跑而丢弃——最后一条下载被静默吞掉，审查发现）
+                    if (!_queue.TryDequeue(out item))
+                    {
+                        _current = null;
+                        _cts = null;
+                        break;
+                    }
+                    _current = item;
                 }
 
-                _current = item;
                 await ProcessItemAsync(item, ct).ConfigureAwait(false);
 
-                // 任务间隔 ≥4s（PLAN：串行队列）
+                // 任务间隔 ≥4s（PLAN：串行队列；锁外延时）
                 if (!_queue.IsEmpty)
                     await Task.Delay(TaskGap, ct).ConfigureAwait(false);
             }
         }
         catch (OperationCanceledException)
         {
-            _current = null;
+            lock (_gate) { _current = null; _cts = null; }
         }
-        finally
-        {
-            lock (_gate) { _cts = null; }
-        }
+
+        BatchCompleted?.Invoke();   // 后台线程触发；订阅方（媒体库扫描）也是后台，安全
     }
 
     private async Task ProcessItemAsync(DownloadItem item, CancellationToken ct)
@@ -254,11 +272,13 @@ public sealed class DownloadService : IDisposable
             Directory.CreateDirectory(Path.GetDirectoryName(target)!);
 
             await WriteTagsAsync(tempPath, item, source, ct).ConfigureAwait(false);
-            await WriteLyricIfAnyAsync(target, item, source, ct).ConfigureAwait(false);
 
             if (File.Exists(target)) TryDelete(target);
             File.Move(tempPath, target);
             item.TargetPath = target;
+
+            // 音频落盘成功后再写 .lrc（审查：先写 lrc 会让 File.Move 失败时留下孤立歌词文件）
+            await WriteLyricIfAnyAsync(target, item, source, ct).ConfigureAwait(false);
             item.Status = DownloadStatus.Completed;
             item.ProgressPercent = 100;
             Raise(item);
@@ -393,6 +413,12 @@ public sealed class DownloadService : IDisposable
         if (_disposed) return;
         _disposed = true;
         _cts?.Cancel();
+        lock (_gate)
+        {
+            _queue.Clear();
+            _current = null;
+            _cts = null;
+        }
         _http.Dispose();
     }
 }

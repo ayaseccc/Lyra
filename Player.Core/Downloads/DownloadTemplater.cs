@@ -33,6 +33,9 @@ public static class DownloadTemplater
                 result = result.Replace(token, component, StringComparison.Ordinal);
             }
         }
+        // 空值段清理可能留下双斜杠（{Album} 空时 {Artist}//{Title}），归一（审查修复）
+        while (result.Contains("//", StringComparison.Ordinal))
+            result = result.Replace("//", "/", StringComparison.Ordinal);
         return result.Trim('/', ' ');
     }
 

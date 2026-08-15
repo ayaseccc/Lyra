@@ -30,7 +30,13 @@ public sealed class GdSource : IOnlineSource
 
     private readonly HttpClient _http;
     private readonly TokenBucket _bucket = new(10, TimeSpan.FromMinutes(1));
-    private readonly Dictionary<string, bool> _subSourceOk = SubSources.ToDictionary(s => s, _ => true);
+
+    /// <summary>歌词专用桶（审查：P4-6 歌词链与搜索共享 10/min 会互相拖累，独立配额）。</summary>
+    private readonly TokenBucket _lyricBucket = new(10, TimeSpan.FromMinutes(1));
+
+    /// <summary>子源可用性：并发读写（探测线程 + 搜索线程），用 ConcurrentDictionary（审查修复）。</summary>
+    private readonly System.Collections.Concurrent.ConcurrentDictionary<string, bool> _subSourceOk =
+        new(SubSources.ToDictionary(s => s, _ => true));
     private bool _disposed;
 
     public GdSource(HttpMessageHandler? handler = null)
@@ -203,8 +209,9 @@ public sealed class GdSource : IOnlineSource
     /// <summary>P4-6：按网易云曲目 id 直接拉 GD(netease) 歌词——本地歌词链复用已匹配 id，零额度优先于 ChKSz。</summary>
     public async Task<OnlineResult<OnlineLyric>> GetLyricByNeteaseIdAsync(long neteaseId, CancellationToken ct)
     {
+        await _lyricBucket.WaitAsync(ct).ConfigureAwait(false);   // 独立桶：不拖累在线搜索
         var query = $"types=lyric&source=netease&id={neteaseId}";
-        var result = await GetJsonAsync<GdModels.Lyric>(query, ct).ConfigureAwait(false);
+        var result = await GetJsonCoreAsync<GdModels.Lyric>(query, ct).ConfigureAwait(false);
         if (!result.Success)
             return OnlineResult<OnlineLyric>.Fail(result.Error);
 
@@ -266,7 +273,7 @@ public sealed class GdSource : IOnlineSource
         var list = result.Data ?? new List<GdModels.Track>();
         return OnlineResult<IReadOnlyList<OnlineTrack>>.Ok(list
             .Select(t => new OnlineTrack(
-                t.Id, t.Name, t.Artist ?? Array.Empty<string>(), t.Album ?? string.Empty,
+                t.Id, t.Name ?? string.Empty, t.Artist ?? Array.Empty<string>(), t.Album ?? string.Empty,
                 t.PicId ?? string.Empty, t.LyricId ?? t.Id, t.Source ?? source))
             .ToList());
     }
@@ -274,7 +281,12 @@ public sealed class GdSource : IOnlineSource
     private async Task<OnlineResult<T>> GetJsonAsync<T>(string query, CancellationToken ct)
     {
         await _bucket.WaitAsync(ct).ConfigureAwait(false);
+        return await GetJsonCoreAsync<T>(query, ct).ConfigureAwait(false);
+    }
 
+    /// <summary>不带令牌桶的请求核心（歌词走独立桶时用）。</summary>
+    private async Task<OnlineResult<T>> GetJsonCoreAsync<T>(string query, CancellationToken ct)
+    {
         var url = BaseAddress + "?" + query;
         var safeUrl = "api.php?" + RedactQuery(query);
 
@@ -335,7 +347,7 @@ public sealed class GdSource : IOnlineSource
 
     private void Mark(string source, bool available, string? reason)
     {
-        if (available == _subSourceOk.TryGetValue(source, out var old) && old) return;
+        if (available && _subSourceOk.TryGetValue(source, out var old) && old) return;
         _subSourceOk[source] = available;
         if (!available)
             Log.Warning("GD 子源 {Source} 不可用：{Reason}", source, reason ?? "未知");

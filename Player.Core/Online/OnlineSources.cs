@@ -45,8 +45,8 @@ public sealed class OnlineSources : IDisposable
             }
             catch (Exception ex)
             {
+                // 探测异常不外抛（源自身 ProbeAsync 通常已内化错误）
                 Serilog.Log.Debug(ex, "探测在线源 {Key} 失败", source.Key);
-                if (source is GdSource gd) { /* 探测内部已处理 */ }
             }
         }
     }

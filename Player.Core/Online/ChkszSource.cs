@@ -80,8 +80,9 @@ public sealed class ChkszSource : IOnlineSource
         if (string.IsNullOrWhiteSpace(result.Data?.Url))
             return OnlineResult<OnlineStream>.Fail("该音质没有资源", notFound: true);
 
-        return OnlineResult<OnlineStream>.Ok(new OnlineStream(
-            result.Data!.Url, result.Data.Bitrate, result.Data.Size));
+        // 审查修复：Chksz 的 Bitrate 单位是 bps，统一转 kbps（>10000 视为 bps 防呆）
+        var kbps = result.Data.Bitrate > 10000 ? result.Data.Bitrate / 1000 : result.Data.Bitrate;
+        return OnlineResult<OnlineStream>.Ok(new OnlineStream(result.Data!.Url, kbps, result.Data.Size));
     }
 
     public async Task<OnlineResult<OnlineLyric>> GetLyricAsync(OnlineTrack track, CancellationToken ct)
