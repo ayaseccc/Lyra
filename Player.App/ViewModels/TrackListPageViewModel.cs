@@ -99,7 +99,8 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     {
         var cols = ConfigService.Current.Ui.Columns;
         var idx = cols.IndexOf(key);
-        return idx < 0 ? -1 : idx;
+        // 列 0 是封面列，数据列从 1 开始（实测：从 0 开始会堆到封面列，平铺宽 0 全不可见）
+        return idx < 0 ? -1 : idx + 1;
     }
 
     private static double DefaultWidthOf(string key)
@@ -175,6 +176,54 @@ public sealed partial class TrackListPageViewModel : ObservableObject
 
     /// <summary>组头封面列宽（开关关闭 = 0 隐藏）。</summary>
     public double GroupCoverWidth => ConfigService.Current.Ui.GroupCoverVisible ? 36 : 0;
+
+    /// <summary>标题 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
+    public double ColWidthTitle => ColWidth("Title");
+
+    /// <summary>歌手 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
+    public double ColWidthArtist => ColWidth("Artist");
+
+    /// <summary>专辑 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
+    public double ColWidthAlbum => ColWidth("Album");
+
+    /// <summary>时长 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
+    public double ColWidthDuration => ColWidth("Duration");
+
+    /// <summary>格式 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
+    public double ColWidthFormat => ColWidth("Format");
+
+    /// <summary>采样率 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
+    public double ColWidthSampleRate => ColWidth("SampleRate");
+
+    /// <summary>位深 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
+    public double ColWidthBitDepth => ColWidth("BitDepth");
+
+    /// <summary>码率 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
+    public double ColWidthBitrate => ColWidth("Bitrate");
+
+    /// <summary>标题 列索引（封面列=0，数据列从 1 起；缺失时元素堆到封面列）。</summary>
+    public int ColIndexTitle => ColIndex("Title");
+
+    /// <summary>歌手 列索引（封面列=0，数据列从 1 起；缺失时元素堆到封面列）。</summary>
+    public int ColIndexArtist => ColIndex("Artist");
+
+    /// <summary>专辑 列索引（封面列=0，数据列从 1 起；缺失时元素堆到封面列）。</summary>
+    public int ColIndexAlbum => ColIndex("Album");
+
+    /// <summary>时长 列索引（封面列=0，数据列从 1 起；缺失时元素堆到封面列）。</summary>
+    public int ColIndexDuration => ColIndex("Duration");
+
+    /// <summary>格式 列索引（封面列=0，数据列从 1 起；缺失时元素堆到封面列）。</summary>
+    public int ColIndexFormat => ColIndex("Format");
+
+    /// <summary>采样率 列索引（封面列=0，数据列从 1 起；缺失时元素堆到封面列）。</summary>
+    public int ColIndexSampleRate => ColIndex("SampleRate");
+
+    /// <summary>位深 列索引（封面列=0，数据列从 1 起；缺失时元素堆到封面列）。</summary>
+    public int ColIndexBitDepth => ColIndex("BitDepth");
+
+    /// <summary>码率 列索引（封面列=0，数据列从 1 起；缺失时元素堆到封面列）。</summary>
+    public int ColIndexBitrate => ColIndex("Bitrate");
 
     /// <summary>折叠/展开一个分组（组头点击）。</summary>
     public void ToggleGroup(string groupKey)

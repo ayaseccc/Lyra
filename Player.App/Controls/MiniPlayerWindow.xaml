@@ -1,16 +1,17 @@
-<ui:FluentWindow x:Class="Player.App.Controls.MiniPlayerWindow"
+<Window x:Class="Player.App.Controls.MiniPlayerWindow"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         Title="迷你窗" Width="340" Height="104" WindowStyle="None" ResizeMode="NoResize"
         Topmost="True" ShowInTaskbar="False" WindowStartupLocation="Manual"
-        ExtendsContentIntoTitleBar="True" WindowCornerPreference="Round"
-        Background="Transparent"
+        AllowsTransparency="True" Background="Transparent"
         KeyDown="OnWindowKeyDown">
     <Border x:Name="BorderRoot" CornerRadius="12" Padding="1"
             Background="{DynamicResource SurfaceStrongBrush}"
             BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1"
-            MouseLeftButtonDown="OnDragStart">
+            MouseLeftButtonDown="OnDragStart"
+            MouseMove="OnDragMove"
+            MouseLeftButtonUp="OnDragEnd">
         <Grid Margin="10,8">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
@@ -77,4 +78,4 @@
             </Grid>
         </Grid>
     </Border>
-</ui:FluentWindow>
+</Window>

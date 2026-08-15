@@ -16,7 +16,7 @@ namespace Player.App.Controls;
 /// 频谱红线：绝不直接对解码流/混音流 ChannelGetData 消费数据——引擎在 mixer 挂 DSP tap
 /// 复制样本进环形缓冲，这里只对缓冲做 FFT（探针已验证不抢 ASIO 数据）。
 /// </summary>
-public partial class MiniPlayerWindow : Wpf.Ui.Controls.FluentWindow
+public partial class MiniPlayerWindow : Window
 {
     private readonly PlayerViewModel _player;
     private readonly DispatcherTimer _marqueeTimer;
@@ -144,32 +144,58 @@ public partial class MiniPlayerWindow : Wpf.Ui.Controls.FluentWindow
         ConfigService.Save();
     }
 
+    private Point _dragStartPoint;
+    private bool _dragActive;
+
+    /// <summary>按下：记录起点；双击（第二击 ClickCount==2）直接回主窗。</summary>
     private void OnDragStart(object sender, MouseButtonEventArgs e)
     {
         if (e.ClickCount >= 2)
         {
             // 双击 = 回主窗（Border 无 MouseDoubleClick 事件，在按下事件里判 ClickCount）
-            OnRestoreClick(sender, e);
+            _dragActive = false;
+            RestoreFromMini();
             return;
         }
-        if (e.ClickCount == 1) DragMove();
+        _dragStartPoint = e.GetPosition(this);
+        _dragActive = false;
+        CaptureMouse();
+    }
+
+    /// <summary>移动超过阈值才进入拖动（修复：按下即 DragMove 会吞掉双击第二击，回主窗失效）。</summary>
+    private void OnDragMove(object sender, MouseEventArgs e)
+    {
+        if (e.LeftButton != MouseButtonState.Pressed || _dragActive) return;
+        var pos = e.GetPosition(this);
+        if (Math.Abs(pos.X - _dragStartPoint.X) > 4 || Math.Abs(pos.Y - _dragStartPoint.Y) > 4)
+        {
+            _dragActive = true;
+            ReleaseMouseCapture();
+            DragMove();
+        }
+    }
+
+    private void OnDragEnd(object sender, MouseButtonEventArgs e)
+    {
+        ReleaseMouseCapture();
         SavePosition();
     }
 
-    private void OnRestoreClick(object sender, RoutedEventArgs e)
+    /// <summary>回主窗公共路径（按钮/双击/Esc）。</summary>
+    private void RestoreFromMini()
     {
         SavePosition();
         Hide();
         RestoreRequested?.Invoke();
     }
 
+    private void OnRestoreClick(object sender, RoutedEventArgs e) => RestoreFromMini();
+
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
         if (e.Key == Key.Escape)
         {
-            SavePosition();
-            Hide();
-            RestoreRequested?.Invoke();
+            RestoreFromMini();
         }
     }
 
