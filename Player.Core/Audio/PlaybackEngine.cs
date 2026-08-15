@@ -349,6 +349,10 @@ public sealed class PlaybackEngine : IPlaybackEngine
         }
 
         UpdateResamplingFlag();
+
+        // L3.2：mixer 重建后若频谱开启，重挂 DSP tap
+        if (_spectrumEnabled) EnableSpectrum(true);
+
         return true;
     }
 
@@ -370,6 +374,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
         catch (Exception ex) { Log.Debug(ex, "释放混音器失败"); }
 
         _mixer = 0;
+        lock (_spectrumGate) { _spectrumDsp = null; }   // DSP 随 mixer 句柄失效，重建后重挂
     }
 
     private void UpdateResamplingFlag()
@@ -939,5 +944,145 @@ public sealed class PlaybackEngine : IPlaybackEngine
         }
 
         Log.Debug("PlaybackEngine 已释放");
+    }
+
+    // ================= L3.2 频谱（mixer 挂 DSP tap 复制样本，红线：绝不直接 ChannelGetData 消费播放数据） =================
+
+    private readonly object _spectrumGate = new();
+    private float[] _spectrumRing = new float[4096];
+    private int _spectrumWrite;
+    private volatile bool _spectrumEnabled;
+    private ManagedBass.DSPProcedure? _spectrumDsp;
+
+    /// <summary>开启/关闭频谱取样。DSP 挂在 mixer 上，回调拿到的是混音输出样本指针（只读复制）。</summary>
+    public void EnableSpectrum(bool enabled)
+    {
+        lock (_spectrumGate)
+        {
+            _spectrumEnabled = enabled;
+            if (!enabled)
+            {
+                _spectrumDsp = null;   // 关闭后 mixer 重建时可重新挂
+                return;
+            }
+            if (_mixer != 0 && _spectrumDsp is null)
+            {
+                _spectrumDsp = OnSpectrumDsp;
+                if (ManagedBass.Bass.ChannelSetDSP(_mixer, _spectrumDsp, IntPtr.Zero, 0) == 0)
+                {
+                    _spectrumDsp = null;
+                    _spectrumEnabled = false;
+                    Serilog.Log.Warning("挂频谱 DSP 失败：{Error}", ManagedBass.Bass.LastError);
+                }
+            }
+        }
+    }
+
+    /// <summary>DSP 回调（音频线程）：把样本复制进环形缓冲（立体声→单声道平均）。只读不修改。</summary>
+    private void OnSpectrumDsp(int handle, int channel, IntPtr buffer, int length, IntPtr user)
+    {
+        var count = length / 4;
+        if (count <= 0) return;
+
+        var src = new float[count];
+        System.Runtime.InteropServices.Marshal.Copy(buffer, src, 0, count);
+
+        lock (_spectrumGate)
+        {
+            if (!_spectrumEnabled) return;
+            var ring = _spectrumRing;
+            var w = _spectrumWrite;
+            for (var i = 0; i < count; i++)
+            {
+                var sample = src[i];
+                // 双声道（mixer 固定 2 声道输出）：成对平均
+                if (i + 1 < count) sample = (sample + src[i + 1]) * 0.5f;
+                ring[w] = sample;
+                w = (w + 1) % ring.Length;
+            }
+            _spectrumWrite = w;
+        }
+    }
+
+    /// <summary>取归一化频谱柱：环形缓冲末尾 256 样本 → 256 点 FFT → 16 柱对数映射。</summary>
+    public float[] GetSpectrumLevels(int bins = 16)
+    {
+        var result = new float[bins];
+        float[] ring;
+        int write;
+
+        lock (_spectrumGate)
+        {
+            if (!_spectrumEnabled) return result;
+            ring = _spectrumRing;
+            write = _spectrumWrite;
+        }
+
+        const int fftSize = 256;
+        var re = new double[fftSize];
+        var im = new double[fftSize];
+        var start = (write - fftSize + ring.Length * 2) % ring.Length;
+        for (var i = 0; i < fftSize; i++)
+        {
+            var idx = (start + i) % ring.Length;
+            re[i] = ring[idx] * (0.5 - 0.5 * Math.Cos(2 * Math.PI * i / (fftSize - 1)));   // Hann 窗
+            im[i] = 0;
+        }
+        Fft(re, im);
+
+        // 能量 → 柱（对数频率映射：低频多分柱）
+        var binCount = fftSize / 2;
+        for (var b = 0; b < bins; b++)
+        {
+            var lo = b == 0 ? 1 : (int)Math.Round(Math.Pow(binCount - 1, (double)b / bins));
+            var hi = (int)Math.Round(Math.Pow(binCount - 1, (double)(b + 1) / bins));
+            hi = Math.Max(hi, lo + 1);
+            double energy = 0;
+            for (var k = lo; k < hi && k < binCount; k++)
+                energy += re[k] * re[k] + im[k] * im[k];
+            var mag = Math.Sqrt(energy / (hi - lo));
+            result[b] = (float)Math.Clamp(mag * 4.0, 0, 1);   // 归一化（经验系数）
+        }
+        return result;
+    }
+
+    /// <summary>原位 Radix-2 FFT（长度须为 2 的幂）。</summary>
+    private static void Fft(double[] re, double[] im)
+    {
+        var n = re.Length;
+        for (var i = 1; i < n; i++)
+        {
+            var j = 0;
+            for (var bit = n >> 1; bit > 0; bit >>= 1)
+            {
+                if ((i & bit) == 0) break;
+                j |= bit;
+            }
+            if (j > i)
+            {
+                (re[i], re[j]) = (re[j], re[i]);
+                (im[i], im[j]) = (im[j], im[i]);
+            }
+        }
+        for (var size = 2; size <= n; size <<= 1)
+        {
+            var half = size >> 1;
+            var step = 2 * Math.PI / size;
+            for (var i = 0; i < n; i += size)
+            {
+                for (var k = 0; k < half; k++)
+                {
+                    var a = k * step;
+                    var wr = Math.Cos(a);
+                    var wi = Math.Sin(a);
+                    var tr = wr * re[i + k + half] - wi * im[i + k + half];
+                    var ti = wr * im[i + k + half] + wi * re[i + k + half];
+                    re[i + k + half] = re[i + k] - tr;
+                    im[i + k + half] = im[i + k] - ti;
+                    re[i + k] += tr;
+                    im[i + k] += ti;
+                }
+            }
+        }
     }
 }

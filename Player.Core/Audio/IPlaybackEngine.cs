@@ -58,6 +58,14 @@ public interface IPlaybackEngine : IDisposable
     /// <summary>预载下一曲（PLAN 第 4 节：提前 5 秒）。采样率一致时可做到样本级无缝。</summary>
     void PreloadNext(string path);
 
+    // ---------- 频谱（L3.2） ----------
+
+    /// <summary>开启/关闭频谱取样（mixer 挂 DSP tap 复制样本，不消费播放数据）。</summary>
+    void EnableSpectrum(bool enabled);
+
+    /// <summary>取归一化频谱柱（0~1，bins 个；无信号返回全 0）。30fps 由 UI 侧定时拉取。</summary>
+    float[] GetSpectrumLevels(int bins = 16);
+
     void ClearPreload();
 
     /// <summary>下一曲是否已经预载好，且能与当前曲目无缝衔接。</summary>

@@ -87,6 +87,10 @@ public static class Program
                 RunUrlProbe(args[1]);
                 break;
 
+            case "dsp":
+                RunDspProbe();
+                break;
+
             default:
                 Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme / shortcuts / gdprobe）");
                 return 2;
@@ -1336,5 +1340,69 @@ public static class Program
         Check("改绑后 Ctrl+Space 命中播放暂停", map4.TryResolve("Space", ModifierMask.Ctrl, FocusKind.None, out a) && a == ShortcutKey.Space);
 
         Console.WriteLine();
+    }
+
+    // ================= L3.2 频谱 DSP 探针（进主工程前验证：mixer 挂 DSP 复制样本不抢播放数据） =================
+
+    /// <summary>探针：生成正弦波 → mixer → 挂 DSP 回调计数 → 播放 1.5 秒 → 验证 DSP 收到样本且播放未中断。</summary>
+    private static void RunDspProbe()
+    {
+        Console.WriteLine("=== L3.2 频谱 DSP 探针 ===");
+
+        Player.Core.Audio.BassRuntime.Initialize();
+        try
+        {
+            const int rate = 44100;
+            var phase = 0.0;
+
+            // push 模式流：BASS 需要数据时回调往 buffer 里填（写数据进给定缓冲）
+            var wave = new ManagedBass.StreamProcedure((_, buffer, length, _) =>
+            {
+                var count = length / 4;
+                var buf = new float[count];
+                for (var i = 0; i < count; i++)
+                {
+                    buf[i] = (float)Math.Sin(2 * Math.PI * 440 * phase / rate) * 0.3f;
+                    phase += 1;
+                }
+                System.Runtime.InteropServices.Marshal.Copy(buf, 0, buffer, count);
+                return length;
+            });
+
+            var source = ManagedBass.Bass.CreateStream(rate, 1, ManagedBass.BassFlags.Decode, wave, IntPtr.Zero);
+            if (source == 0) { Console.WriteLine($"创建源流失败：{ManagedBass.Bass.LastError}"); return; }
+
+            var mixer = ManagedBass.Mix.BassMix.CreateMixerStream(rate, 1, ManagedBass.BassFlags.Default);
+            if (mixer == 0) { Console.WriteLine($"创建 mixer 失败：{ManagedBass.Bass.LastError}"); return; }
+            if (!ManagedBass.Mix.BassMix.MixerAddChannel(mixer, source, 0))
+            { Console.WriteLine($"挂源失败：{ManagedBass.Bass.LastError}"); return; }
+
+            long dspSamples = 0;
+            ManagedBass.DSPProcedure dsp = (_, _, _, len, _) =>
+            {
+                // 只复制不修改：DSP 回调直接拿到混音输出样本指针，不用 ChannelGetData，不消费播放数据
+                Interlocked.Add(ref dspSamples, len / 4);
+            };
+            if (ManagedBass.Bass.ChannelSetDSP(mixer, dsp, IntPtr.Zero, 0) == 0)
+            { Console.WriteLine($"挂 DSP 失败：{ManagedBass.Bass.LastError}"); return; }
+
+            if (!ManagedBass.Bass.ChannelPlay(mixer, false))
+            { Console.WriteLine($"播放失败：{ManagedBass.Bass.LastError}"); return; }
+
+            Thread.Sleep(1500);
+
+            var active = ManagedBass.Bass.ChannelIsActive(mixer);
+            Console.WriteLine($"DSP 收到样本：{dspSamples}（期望 >{rate}）");
+            Console.WriteLine($"播放状态：{active}（期望 Playing）");
+            Check("DSP 收到样本", dspSamples > rate / 2);
+            Check("播放未中断", active == ManagedBass.PlaybackState.Playing);
+
+            ManagedBass.Bass.StreamFree(mixer);
+            ManagedBass.Bass.StreamFree(source);
+        }
+        finally
+        {
+            Player.Core.Audio.BassRuntime.Shutdown();
+        }
     }
 }

@@ -1546,6 +1546,12 @@
                             </Button.ToolTip>
                             <ui:SymbolIcon Symbol="ClosedCaption24" FontSize="16" />
                         </Button>
+                        <Button x:Name="MiniButton" Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnMiniButtonClick">
+                            <Button.ToolTip>
+                                <ToolTip x:Name="MiniButtonTip" Content="迷你窗" />
+                            </Button.ToolTip>
+                            <ui:SymbolIcon Symbol="PictureInPicture24" FontSize="16" />
+                        </Button>
                     </StackPanel>
 
                     <StackPanel Grid.ColumnSpan="5" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">

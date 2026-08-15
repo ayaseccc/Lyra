@@ -178,6 +178,22 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     public string VolumePercentText => ((int)Math.Round(Volume * 100)) + "%";
 
+    /// <summary>播放进度百分比（迷你窗进度线用）。</summary>
+    public double ProgressPercent
+    {
+        get
+        {
+            var duration = _engine.Duration.TotalSeconds;
+            return duration > 0 ? Math.Clamp(_engine.Position.TotalSeconds * 100 / duration, 0, 100) : 0;
+        }
+    }
+
+    /// <summary>L3.2 频谱（转发引擎；迷你窗 30fps 拉取）。</summary>
+    public float[] GetSpectrumLevels(int bins = 16) => _engine.GetSpectrumLevels(bins);
+
+    /// <summary>L3.2 频谱开关（转发引擎；迷你窗/设置页用）。</summary>
+    public void EnableSpectrum(bool enabled) => _engine.EnableSpectrum(enabled);
+
     /// <summary>音量方块的亮起个数（0..10，UI-R1.5 反馈）。</summary>
     public int VolumeLevel => (int)Math.Round(Volume * 10);
 

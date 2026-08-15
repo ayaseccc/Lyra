@@ -35,6 +35,9 @@ public partial class MainWindow : FluentWindow
     /// <summary>L2 托盘（菜单播放控制/桌面歌词开关/显示主窗/退出，双击还原）。</summary>
     private Player.App.SystemTray.TrayService? _tray;
 
+    /// <summary>L3.2 迷你悬浮窗（开=主窗隐藏，关=主窗恢复）。</summary>
+    private Controls.MiniPlayerWindow? _miniWindow;
+
     /// <summary>L2 全局热键（RegisterHotKey，默认全关；占用逐条提示）。</summary>
     private Player.App.GlobalHotkeys.GlobalHotkeyService? _globalHotkeys;
 
@@ -347,6 +350,44 @@ public partial class MainWindow : FluentWindow
         return dialog.ShowDialog() == true ? dialog.SelectedDir : null;
     }
 
+    /// <summary>L3.2 迷你窗按钮④：开=主窗隐藏+迷你窗显示；关=Escape/回主窗按钮/再按。</summary>
+    private void OnMiniButtonClick(object sender, RoutedEventArgs e)
+    {
+        if (_miniWindow is null)
+        {
+            _miniWindow = new Controls.MiniPlayerWindow(Player!)
+            {
+                Owner = null   // 独立置顶小窗，不随主窗
+            };
+            _miniWindow.RestoreRequested += ShowMainFromMini;
+            _miniWindow.Show();
+            Hide();
+            return;
+        }
+
+        if (_miniWindow.IsVisible)
+        {
+            _miniWindow.Hide();
+            ShowMainFromMini();
+        }
+        else
+        {
+            _miniWindow.Show();
+            Hide();
+        }
+    }
+
+    /// <summary>迷你窗请求回主窗：主窗恢复显示（迷你窗已自行隐藏）。</summary>
+    private void ShowMainFromMini()
+    {
+        if (!IsVisible)
+        {
+            Show();
+            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
+            Activate();
+        }
+    }
+
     /// <summary>L2 托盘：Player 就绪后创建（菜单播放控制需要命令）。</summary>
     private void InitTray()
     {
@@ -444,6 +485,8 @@ public partial class MainWindow : FluentWindow
         _globalHotkeys = null;
         _smtcService?.Dispose();
         _smtcService = null;
+        _miniWindow?.Close();
+        _miniWindow = null;
         var bounds = RestoreBounds;
         var ui = ConfigService.Current.Ui;
         if (bounds.Width > 0 && bounds.Height > 0)
