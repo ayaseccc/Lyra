@@ -254,6 +254,9 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
     public bool IsRebinding { get; private set; }
 
+    /// <summary>正在捕获的动作名（应用内动作名或全局热键名）；该行按键显示"按新组合…"。</summary>
+    private string? _rebindingActionName;
+
     public event Action<ShortcutKey>? RebindRequested;
 
     public event Action<string>? RebindGlobalRequested;
@@ -263,9 +266,11 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     {
         if (!Enum.TryParse<ShortcutKey>(actionName, out var action)) return;
         IsRebinding = true;
+        _rebindingActionName = actionName;
         RebindStatus = "按新组合…（Esc 取消）";
         OnPropertyChanged(nameof(IsRebinding));
         OnPropertyChanged(nameof(RebindStatus));
+        OnPropertyChanged(nameof(ShortcutItems));
         RebindRequested?.Invoke(action);
     }
 
@@ -274,9 +279,11 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     {
         if (string.IsNullOrEmpty(name)) return;
         IsRebinding = true;
+        _rebindingActionName = name;
         RebindStatus = "按新组合…（Esc 取消）";
         OnPropertyChanged(nameof(IsRebinding));
         OnPropertyChanged(nameof(RebindStatus));
+        OnPropertyChanged(nameof(GlobalHotkeyItems));
         RebindGlobalRequested?.Invoke(name);
     }
 
@@ -289,6 +296,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     public void EndRebind(bool ok, string message)
     {
         IsRebinding = false;
+        _rebindingActionName = null;
         RebindStatus = message;
         OnPropertyChanged(nameof(IsRebinding));
         OnPropertyChanged(nameof(RebindStatus));
@@ -303,7 +311,9 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         {
             var map = new ShortcutMap(ConfigService.Current.Ui.ShortcutBindings);
             var items = Enum.GetValues<ShortcutKey>()
-                .Select(k => new ShortcutItem(map.GetCombo(k), ShortcutMap.Describe(k), true, k.ToString()))
+                .Select(k => new ShortcutItem(
+                    _rebindingActionName == k.ToString() ? "按新组合…" : map.GetCombo(k),
+                    ShortcutMap.Describe(k), true, k.ToString()))
                 .ToList();
             items.Add(new ShortcutItem("Tab", "平铺 / 专辑分组切换（固定）", false, string.Empty));
             items.Add(new ShortcutItem("Esc", "退出大歌词页 / 设置页（固定）", false, string.Empty));
@@ -320,7 +330,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             var over = ConfigService.Current.Ui.GlobalHotkeyCombos;
             return GlobalHotkeys.GlobalHotkeyService.DefaultCombos
                 .Select(c => new GlobalHotkeyItem(c.Name,
-                    over.TryGetValue(c.Name, out var o) ? o : c.Combo,
+                    _rebindingActionName == c.Name ? "按新组合…" : (over.TryGetValue(c.Name, out var o) ? o : c.Combo),
                     c.Name switch
                     {
                         "PlayPause" => "播放 / 暂停",

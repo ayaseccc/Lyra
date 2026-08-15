@@ -753,16 +753,14 @@
                                         <DataTemplate>
                                             <Grid Margin="0,4">
                                                 <Grid.ColumnDefinitions>
-                                                    <ColumnDefinition Width="150" />
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Text="{Binding Keys}" FontWeight="SemiBold"
-                                                           Style="{StaticResource TitleTextStyle}" />
-                                                <TextBlock Grid.Column="1" Text="{Binding Description}" Margin="8,0,0,0"
-                                                           Style="{StaticResource SubTextStyle}" TextWrapping="Wrap" />
-                                                <Button Grid.Column="2" Style="{StaticResource ModeButtonStyle}" Content="改绑"
-                                                        Margin="8,0,0,0" Padding="8,2"
+                                                <TextBlock Text="{Binding Description}"
+                                                           Style="{StaticResource SubTextStyle}" TextWrapping="Wrap" VerticalAlignment="Center" />
+                                                <Button Grid.Column="1" Style="{StaticResource ModeButtonStyle}" Margin="12,0,0,0"
+                                                        MinWidth="120" Padding="10,3" FontWeight="SemiBold"
+                                                        Content="{Binding Keys}"
                                                         Visibility="{Binding CanRebind, Converter={StaticResource BoolToVis}}"
                                                         Command="{Binding DataContext.BeginRebindCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                         CommandParameter="{Binding ActionName}" />
@@ -771,7 +769,7 @@
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,12,0,0" TextWrapping="Wrap"
-                                           Text="点「改绑」后直接按新组合（字母键需带 Ctrl/Shift/Alt；Esc 取消）。任何输入框（搜索/Key 输入等）聚焦时快捷键一律不响应；按钮聚焦时 Space 归按钮；滑条聚焦时方向键归滑条。" />
+                                           Text="点右侧按键直接按新组合（字母键需带 Ctrl/Shift/Alt；Esc 取消）。任何输入框（搜索/Key 输入等）聚焦时快捷键一律不响应；按钮聚焦时 Space 归按钮；滑条聚焦时方向键归滑条。" />
                                 <Grid Margin="0,16,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="110" />
@@ -785,16 +783,14 @@
                                                 <DataTemplate>
                                                     <Grid Margin="0,3">
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="150" />
                                                             <ColumnDefinition Width="*" />
                                                             <ColumnDefinition Width="Auto" />
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBlock Text="{Binding Keys}" FontWeight="SemiBold"
-                                                                   Style="{StaticResource TitleTextStyle}" />
-                                                        <TextBlock Grid.Column="1" Text="{Binding Description}" Margin="8,0,0,0"
+                                                        <TextBlock Text="{Binding Description}" Margin="0,0,12,0"
                                                                    Style="{StaticResource SubTextStyle}" VerticalAlignment="Center" />
-                                                        <Button Grid.Column="2" Style="{StaticResource ModeButtonStyle}" Content="改绑"
-                                                                Margin="8,0,0,0" Padding="8,2"
+                                                        <Button Grid.Column="1" Style="{StaticResource ModeButtonStyle}" Margin="12,0,0,0"
+                                                                MinWidth="120" Padding="10,3" FontWeight="SemiBold"
+                                                                Content="{Binding Keys}"
                                                                 Command="{Binding DataContext.BeginRebindGlobalCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
                                                                 CommandParameter="{Binding Name}" />
                                                     </Grid>

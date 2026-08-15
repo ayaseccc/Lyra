@@ -35,6 +35,16 @@ public partial class DesktopLyricsWindow : Window
     private bool _hookAdded;
     private bool _handleHot;
 
+    [StructLayout(LayoutKind.Sequential)]
+    private struct NativePoint
+    {
+        public int X;
+        public int Y;
+    }
+
+    [DllImport("user32.dll")]
+    private static extern bool GetCursorPos(out NativePoint pt);
+
     /// <summary>锁定态光标轮询（目验四修复：小锁默认隐藏，悬停歌词区域才显示——鼠标穿透态收不到悬停事件，只能轮询光标）。</summary>
     private readonly System.Windows.Threading.DispatcherTimer _hoverTimer = new()
     {
@@ -59,15 +69,19 @@ public partial class DesktopLyricsWindow : Window
     {
         if (!_locked)
         {
-            if (_handleHot) { _handleHot = false; UnlockHandle.Opacity = 0; }
+            if (_handleHot)
+            {
+                _handleHot = false;
+                UnlockHandle.BeginAnimation(OpacityProperty, null);
+                UnlockHandle.Opacity = 0;
+            }
             return;
         }
-        var rect = new Rect(Left, Top, ActualWidth, ActualHeight);
-        var pos = Mouse.GetPosition(null);   // 相对屏幕（WPF，DPI 感知）
-        var inside = rect.Contains(pos);
+        var inside = IsMouseOverLyrics();
         if (inside && !_handleHot)
         {
             _handleHot = true;
+            Serilog.Log.Debug("桌面歌词悬停进入（窗口 {Rect}）", new Rect(Left, Top, ActualWidth, ActualHeight));
             UnlockHandle.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(0, 1, TimeSpan.FromMilliseconds(120)));
         }
         else if (!inside && _handleHot)
@@ -75,6 +89,20 @@ public partial class DesktopLyricsWindow : Window
             _handleHot = false;
             UnlockHandle.BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(1, 0, TimeSpan.FromMilliseconds(120)));
         }
+    }
+
+    /// <summary>
+    /// 光标是否落在歌词窗口内（修复：用户机器 DPI/多屏下 Mouse.GetPosition(null) 与
+    /// 窗口坐标空间不一致导致悬停检测失效——改用与 WndProc 命中测试同一套
+    /// 物理像素 → TransformFromDevice → 屏幕 DIP 的换算，保证一致）。
+    /// </summary>
+    private bool IsMouseOverLyrics()
+    {
+        if (!GetCursorPos(out var pt)) return false;
+        if (_source?.CompositionTarget?.TransformFromDevice is not { } fromDevice) return false;
+        var dip = fromDevice.Transform(new Point(pt.X, pt.Y));
+        return dip.X >= Left && dip.X < Left + ActualWidth
+            && dip.Y >= Top && dip.Y < Top + ActualHeight;
     }
 
     /// <summary>设置页「歌词」组 / 右键菜单改动后即时应用（字体/字号/单双行/宽度/背景/文字颜色）。</summary>
@@ -188,6 +216,7 @@ public partial class DesktopLyricsWindow : Window
             UnlockHandle.Visibility = Visibility.Visible;
             // 修复（用户目验）：锁定态初始必须隐藏，鼠标悬停窗口才淡入；
             // 否则启动/重新锁定时 Opacity 停在 1，鼠标不在歌词区域也显示锁
+            UnlockHandle.BeginAnimation(OpacityProperty, null);   // 先清动画，直接赋值才生效
             UnlockHandle.Opacity = 0;
             _handleHot = false;
             ResizeHandle.Visibility = Visibility.Collapsed;
