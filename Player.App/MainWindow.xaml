@@ -528,31 +528,6 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- ===== 外观区：风格预设（L3.1 用户反馈增补） ===== -->
-                        <Border Visibility="{Binding IsAppearanceSec, Converter={StaticResource BoolToVis}}"
-                                CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
-                                BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
-                            <StackPanel>
-                                <TextBlock Text="风格预设" Style="{StaticResource TitleTextStyle}" />
-                                <TextBlock Text="一键应用组合风格。染色关闭时使用预设强调色" Margin="0,2,0,0" Style="{StaticResource SubTextStyle}" />
-                                <ItemsControl ItemsSource="{Binding StylePresets}" Focusable="False" Margin="0,8,0,0">
-                                    <ItemsControl.ItemsPanel>
-                                        <ItemsPanelTemplate>
-                                            <WrapPanel />
-                                        </ItemsPanelTemplate>
-                                    </ItemsControl.ItemsPanel>
-                                    <ItemsControl.ItemTemplate>
-                                        <DataTemplate>
-                                            <Button Content="{Binding Name}" Margin="0,0,8,8"
-                                                    AutomationProperties.Name="{Binding Name}"
-                                                    Command="{Binding DataContext.ApplyPresetCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
-                                                    CommandParameter="{Binding}" />
-                                        </DataTemplate>
-                                    </ItemsControl.ItemTemplate>
-                                </ItemsControl>
-                            </StackPanel>
-                        </Border>
-
                         <!-- ===== 外观区：列表（L3.1） ===== -->
                         <Border Visibility="{Binding IsAppearanceSec, Converter={StaticResource BoolToVis}}"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
@@ -675,8 +650,18 @@
                                     <TextBlock Text="悬停高亮" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <Slider Grid.Column="1" Minimum="0" Maximum="0.5" Value="{Binding HoverOpacity}" />
                                 </Grid>
-                                <ui:Button Content="恢复默认外观" Margin="0,14,0,0" Appearance="Secondary"
-                                           Icon="{ui:SymbolIcon ArrowSync24}" Command="{Binding ResetAppearanceCommand}" />
+                                <Grid Margin="0,14,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="风格预设" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding StylePresets}"
+                                              SelectedItem="{Binding SelectedStylePreset}" />
+                                    <ui:Button Grid.Column="2" Content="恢复默认外观" Margin="8,0,0,0" Appearance="Secondary"
+                                               Icon="{ui:SymbolIcon ArrowSync24}" Command="{Binding ResetAppearanceCommand}" />
+                                </Grid>
                             </StackPanel>
                         </Border>
 

@@ -1008,26 +1008,51 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         OnListSettingsChanged?.Invoke();
     }
 
-    // ---- 风格预设 / 恢复默认（L3.1 用户反馈增补） ----
+    // ---- 风格预设 / 恢复默认（L3.1 用户反馈二轮） ----
 
-    /// <summary>一键风格预设：强调色（染色关闭时生效）+ 行高 + 字号 + 透明度组合。</summary>
-    public sealed record StylePreset(string Key, string Name, string Accent, int RowHeight, double FontScale, double SelectedOpacity, double HoverOpacity)
+    /// <summary>
+    /// 一套完整列表风格：强调色（染色关闭时生效）+ 行高 + 字号 + 透明度 +
+    /// 组头封面 + 列子集 + 列宽。应用后整体观感一次性切换。
+    /// </summary>
+    public sealed record StylePreset(
+        string Key, string Name, string Accent, int RowHeight, double FontScale,
+        double SelectedOpacity, double HoverOpacity, bool GroupCoverVisible,
+        IReadOnlyList<string> Columns, IReadOnlyDictionary<string, double> ColumnWidths)
     {
         public override string ToString() => Name;
     }
 
+    /// <summary>下拉选择的预设（null = 未套用，用户手工调节中）。</summary>
+    [ObservableProperty]
+    private StylePreset? _selectedStylePreset;
+
+    partial void OnSelectedStylePresetChanged(StylePreset? value)
+    {
+        if (_loading || value is null) return;
+        ApplyPreset(value);
+    }
+
     public IReadOnlyList<StylePreset> StylePresets { get; } = new[]
     {
-        new StylePreset("default", "默认清爽", "", 72, 1.00, 0.12, 0.07),
-        new StylePreset("ocean", "海洋蓝", "#0288D1", 72, 1.00, 0.14, 0.08),
-        new StylePreset("mint", "薄荷绿", "#00897B", 72, 1.00, 0.12, 0.07),
-        new StylePreset("sunset", "落日橙", "#D35400", 72, 1.00, 0.12, 0.07),
-        new StylePreset("violet", "紫罗兰", "#9C27B0", 72, 1.10, 0.14, 0.08),
-        new StylePreset("compact", "紧凑大字", "", 56, 1.15, 0.14, 0.08),
+        // 经典：P4 收官原样——无组头封面、8 列默认、72 行高、100% 字号
+        new StylePreset("classic", "经典（P4 原样）", "", 72, 1.00, 0.12, 0.07, false,
+            new[] { "Title", "Artist", "Album", "Duration", "Format", "SampleRate", "BitDepth", "Bitrate" },
+            new Dictionary<string, double>()),
+        // 简洁三列：紧凑行高 + 只留标题/歌手/时长，信息密度最低、最清爽
+        new StylePreset("clean", "简洁三列", "#0288D1", 56, 1.00, 0.14, 0.08, false,
+            new[] { "Title", "Artist", "Duration" },
+            new Dictionary<string, double> { ["Title"] = 460, ["Artist"] = 160, ["Duration"] = 64 }),
+        // 信息全览：全列加宽 + 组头封面 + 稍大字号
+        new StylePreset("info", "信息全览", "#00897B", 72, 1.05, 0.12, 0.07, true,
+            new[] { "Title", "Artist", "Album", "Duration", "Format", "SampleRate", "BitDepth", "Bitrate" },
+            new Dictionary<string, double> { ["Title"] = 560, ["Artist"] = 180, ["Album"] = 200, ["Duration"] = 64, ["Format"] = 70, ["SampleRate"] = 90, ["BitDepth"] = 70, ["Bitrate"] = 90 }),
+        // 沉浸大图：高行高 + 组头封面 + 只留核心四列 + 大字号
+        new StylePreset("immersive", "沉浸大图", "#D35400", 110, 1.10, 0.14, 0.08, true,
+            new[] { "Title", "Artist", "Album", "Duration" },
+            new Dictionary<string, double> { ["Title"] = 520, ["Artist"] = 170, ["Album"] = 190, ["Duration"] = 64 }),
     };
 
     /// <summary>应用一套风格预设（落盘 + 主题刷新 + 设置页控件同步）。</summary>
-    [RelayCommand]
     private void ApplyPreset(StylePreset preset)
     {
         if (_loading || preset is null) return;
@@ -1037,6 +1062,9 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         ui.UiFontScale = preset.FontScale;
         ui.SelectedOpacity = preset.SelectedOpacity;
         ui.HoverOpacity = preset.HoverOpacity;
+        ui.GroupCoverVisible = preset.GroupCoverVisible;
+        ui.Columns = preset.Columns.ToList();
+        ui.ColumnWidths = new Dictionary<string, double>(preset.ColumnWidths);
         ConfigService.Save();
         Theming.ThemeService.ApplyUiPersonalization();
         Theming.ThemeService.ApplyModeFromConfig();
@@ -1044,7 +1072,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         OnListSettingsChanged?.Invoke();
     }
 
-    /// <summary>恢复全部外观设置为默认（行高/分组/封面/字体/字号/强调色/透明度/列）。</summary>
+    /// <summary>恢复全部外观设置到 P4 收官时的默认样子（行高 72/分组展开/无组头封面/
+    /// 字体默认/字号 100%/强调色跟随封面/默认透明度/8 列默认顺序与默认列宽）。</summary>
     [RelayCommand]
     private void ResetAppearance()
     {
@@ -1052,7 +1081,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         var ui = ConfigService.Current.Ui;
         ui.RowHeight = 72;
         ui.GroupsExpandedByDefault = true;
-        ui.GroupCoverVisible = true;
+        ui.GroupCoverVisible = false;   // P4 时代组头就是细行，无封面
         ui.UiFontFamily = string.Empty;
         ui.UiFontScale = 1.0;
         ui.CustomAccent = string.Empty;
@@ -1060,6 +1089,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         ui.HoverOpacity = 0.07;
         ui.Columns = TrackListPageViewModel.TrackColumns.Select(c => c.Key).ToList();
         ui.ColumnWidths.Clear();
+        _selectedStylePreset = StylePresets[0];   // 恢复结果 = 经典预设
+        OnPropertyChanged(nameof(SelectedStylePreset));
         ConfigService.Save();
         Theming.ThemeService.ApplyUiPersonalization();
         Theming.ThemeService.ApplyModeFromConfig();
