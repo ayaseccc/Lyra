@@ -49,6 +49,8 @@ public sealed class GlobalHotkeyService : IDisposable
         if (RegisterHotKey(_source.Handle, id, modifiers | ModNoRepeat, vk))
         {
             _active.Add((id, display));
+            // 注册成功也留痕：排查"热键不生效"时日志能区分 未启用/注册失败/未触发
+            Serilog.Log.Information("全局热键已注册：{Display}", display);
         }
         else
         {

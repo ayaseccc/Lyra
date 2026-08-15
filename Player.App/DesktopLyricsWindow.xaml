@@ -111,7 +111,7 @@
         </StackPanel>
 
         <!-- 小柄：锁定态唯一可点的解锁按钮 -->
-        <Border x:Name="UnlockHandle" Width="18" Height="18" CornerRadius="9"
+        <Border x:Name="UnlockHandle" Width="18" Height="18" CornerRadius="9" Opacity="0"
                 HorizontalAlignment="Right" VerticalAlignment="Top"
                 Background="{DynamicResource AccentBrush}" Cursor="Hand"
                 ToolTip="解锁（拖动/调宽）" MouseLeftButtonUp="OnUnlockHandleClick">

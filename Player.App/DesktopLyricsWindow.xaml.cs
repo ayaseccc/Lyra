@@ -186,6 +186,10 @@ public partial class DesktopLyricsWindow : Window
         if (_locked)
         {
             UnlockHandle.Visibility = Visibility.Visible;
+            // 修复（用户目验）：锁定态初始必须隐藏，鼠标悬停窗口才淡入；
+            // 否则启动/重新锁定时 Opacity 停在 1，鼠标不在歌词区域也显示锁
+            UnlockHandle.Opacity = 0;
+            _handleHot = false;
             ResizeHandle.Visibility = Visibility.Collapsed;
             HoverToolbar.Visibility = Visibility.Collapsed;
         }
