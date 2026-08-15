@@ -1008,6 +1008,99 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         OnListSettingsChanged?.Invoke();
     }
 
+    // ---- 风格预设 / 恢复默认（L3.1 用户反馈增补） ----
+
+    /// <summary>一键风格预设：强调色（染色关闭时生效）+ 行高 + 字号 + 透明度组合。</summary>
+    public sealed record StylePreset(string Key, string Name, string Accent, int RowHeight, double FontScale, double SelectedOpacity, double HoverOpacity)
+    {
+        public override string ToString() => Name;
+    }
+
+    public IReadOnlyList<StylePreset> StylePresets { get; } = new[]
+    {
+        new StylePreset("default", "默认清爽", "", 72, 1.00, 0.12, 0.07),
+        new StylePreset("ocean", "海洋蓝", "#0288D1", 72, 1.00, 0.14, 0.08),
+        new StylePreset("mint", "薄荷绿", "#00897B", 72, 1.00, 0.12, 0.07),
+        new StylePreset("sunset", "落日橙", "#D35400", 72, 1.00, 0.12, 0.07),
+        new StylePreset("violet", "紫罗兰", "#9C27B0", 72, 1.10, 0.14, 0.08),
+        new StylePreset("compact", "紧凑大字", "", 56, 1.15, 0.14, 0.08),
+    };
+
+    /// <summary>应用一套风格预设（落盘 + 主题刷新 + 设置页控件同步）。</summary>
+    [RelayCommand]
+    private void ApplyPreset(StylePreset preset)
+    {
+        if (_loading || preset is null) return;
+        var ui = ConfigService.Current.Ui;
+        ui.CustomAccent = preset.Accent;
+        ui.RowHeight = preset.RowHeight;
+        ui.UiFontScale = preset.FontScale;
+        ui.SelectedOpacity = preset.SelectedOpacity;
+        ui.HoverOpacity = preset.HoverOpacity;
+        ConfigService.Save();
+        Theming.ThemeService.ApplyUiPersonalization();
+        Theming.ThemeService.ApplyModeFromConfig();
+        ReloadUiProperties();
+        OnListSettingsChanged?.Invoke();
+    }
+
+    /// <summary>恢复全部外观设置为默认（行高/分组/封面/字体/字号/强调色/透明度/列）。</summary>
+    [RelayCommand]
+    private void ResetAppearance()
+    {
+        if (_loading) return;
+        var ui = ConfigService.Current.Ui;
+        ui.RowHeight = 72;
+        ui.GroupsExpandedByDefault = true;
+        ui.GroupCoverVisible = true;
+        ui.UiFontFamily = string.Empty;
+        ui.UiFontScale = 1.0;
+        ui.CustomAccent = string.Empty;
+        ui.SelectedOpacity = 0.12;
+        ui.HoverOpacity = 0.07;
+        ui.Columns = TrackListPageViewModel.TrackColumns.Select(c => c.Key).ToList();
+        ui.ColumnWidths.Clear();
+        ConfigService.Save();
+        Theming.ThemeService.ApplyUiPersonalization();
+        Theming.ThemeService.ApplyModeFromConfig();
+        ReloadUiProperties();
+        OnListSettingsChanged?.Invoke();
+    }
+
+    /// <summary>重读配置刷新全部外观属性（预设/恢复默认后设置页控件同步）。</summary>
+    private void ReloadUiProperties()
+    {
+        _loading = true;
+        try
+        {
+            var ui = ConfigService.Current.Ui;
+            _selectedRowHeight = RowHeights.FirstOrDefault(r => r.Value == ui.RowHeight) ?? RowHeights[1];
+            _groupsExpandedByDefault = ui.GroupsExpandedByDefault;
+            _groupCoverVisible = ui.GroupCoverVisible;
+            _selectedUiFont = UiFontOptions.FirstOrDefault(f =>
+                string.Equals(f.Family, ui.UiFontFamily, StringComparison.OrdinalIgnoreCase)) ?? UiFontOptions[0];
+            _selectedFontScale = FontScales.FirstOrDefault(s => Math.Abs(s.Value - ui.UiFontScale) < 0.001) ?? FontScales[2];
+            _selectedAccent = AccentColors.FirstOrDefault(a =>
+                string.Equals(a.Color, ui.CustomAccent, StringComparison.OrdinalIgnoreCase)) ?? AccentColors[0];
+            _selectedOpacity = ui.SelectedOpacity;
+            _hoverOpacity = ui.HoverOpacity;
+            RefreshColumnRows();
+            OnPropertyChanged(nameof(SelectedRowHeight));
+            OnPropertyChanged(nameof(GroupsExpandedByDefault));
+            OnPropertyChanged(nameof(GroupCoverVisible));
+            OnPropertyChanged(nameof(SelectedUiFont));
+            OnPropertyChanged(nameof(SelectedFontScale));
+            OnPropertyChanged(nameof(SelectedAccent));
+            OnPropertyChanged(nameof(SelectedOpacity));
+            OnPropertyChanged(nameof(HoverOpacity));
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+
     // ---- 字体 ----
 
     public sealed record FontOption(string Name, string Family)
