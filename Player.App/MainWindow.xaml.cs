@@ -878,13 +878,12 @@ public partial class MainWindow : FluentWindow
 
     private void ToggleDesktopLyrics()
     {
-        // 目验修复④：打开桌面歌词前关闭按钮 ToolTip（避免弹出层悬浮在歌词条上）
-        DesktopLyricsButtonTip.IsOpen = false;
         if (_desktopLyrics is null)
         {
             _desktopLyrics = CreateDesktopLyricsWindow();
             _desktopLyrics.ForceUnlocked();   // 重新打开必定解锁（目验修复：锁柄可能在屏幕外）
             _desktopLyrics.Show();
+            UpdateDesktopLyrics();   // 首次打开立即填充当前歌词（此前缺失：窗口空白、要点多次的次因）
         }
         else if (_desktopLyrics.IsVisible)
         {
@@ -1083,7 +1082,7 @@ public partial class MainWindow : FluentWindow
         if (_bigLyricsVisible)
         {
             // 目验修复④：覆盖层打开前关闭按钮 ToolTip（其弹出层是独立置顶窗口，否则会悬浮在覆盖层上）
-            BigLyricsButtonTip.IsOpen = false;
+    
             BigLyricsOverlay.Visibility = Visibility.Visible;
             // 目验五修复：覆盖层取得键盘焦点（空格/方向键等只在大页内生效；FocusVisualStyle 已置空无焦点框）
             BigLyricsOverlay.Focus();

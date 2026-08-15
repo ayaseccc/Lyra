@@ -78,14 +78,14 @@
             </Grid.RowDefinitions>
             <TextBlock x:Name="PrimaryText" FontSize="20" FontWeight="SemiBold"
                        Foreground="{DynamicResource TextPrimaryBrush}" TextAlignment="Center"
-                       TextTrimming="CharacterEllipsis" Padding="18,0">
+                       TextWrapping="Wrap" Padding="18,0">
                 <TextBlock.Effect>
                     <DropShadowEffect x:Name="PrimaryShadow" BlurRadius="6" ShadowDepth="1" Opacity="0.9" Color="Black" />
                 </TextBlock.Effect>
             </TextBlock>
             <TextBlock x:Name="SecondaryText" Grid.Row="1" FontSize="14" Margin="18,4,18,0"
                        Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Center"
-                       TextTrimming="CharacterEllipsis">
+                       TextWrapping="Wrap">
                 <TextBlock.Effect>
                     <DropShadowEffect x:Name="SecondaryShadow" BlurRadius="6" ShadowDepth="1" Opacity="0.9" Color="Black" />
                 </TextBlock.Effect>

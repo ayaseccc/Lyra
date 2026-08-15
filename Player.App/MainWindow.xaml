@@ -650,18 +650,8 @@
                                     <TextBlock Text="悬停高亮" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <Slider Grid.Column="1" Minimum="0" Maximum="0.5" Value="{Binding HoverOpacity}" />
                                 </Grid>
-                                <Grid Margin="0,14,0,0">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="Auto" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="风格预设" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ComboBox Grid.Column="1" ItemsSource="{Binding StylePresets}"
-                                              SelectedItem="{Binding SelectedStylePreset}" />
-                                    <ui:Button Grid.Column="2" Content="恢复默认外观" Margin="8,0,0,0" Appearance="Secondary"
-                                               Icon="{ui:SymbolIcon ArrowSync24}" Command="{Binding ResetAppearanceCommand}" />
-                                </Grid>
+                                <ui:Button Content="恢复默认外观" Margin="0,14,0,0" Appearance="Secondary"
+                                           Icon="{ui:SymbolIcon ArrowSync24}" Command="{Binding ResetAppearanceCommand}" />
                             </StackPanel>
                         </Border>
 
@@ -1553,26 +1543,22 @@
                     </Grid.ColumnDefinitions>
 
                     <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
-                        <Button Style="{StaticResource ModeButtonStyle}" ToolTip="设置"
+                        <!-- 播放条左侧小按钮：不设 ToolTip（悬停弹出会拦截首次点击，实测）
+                             语义走 AutomationProperties.Name -->
+                        <Button Style="{StaticResource ModeButtonStyle}" AutomationProperties.Name="设置"
                                 Command="{Binding DataContext.OpenSettingsCommand, RelativeSource={RelativeSource AncestorType=Window}}">
                             <ui:SymbolIcon Symbol="Settings24" FontSize="16" />
                         </Button>
-                        <Button x:Name="BigLyricsButton" Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnBigLyricsButtonClick">
-                            <Button.ToolTip>
-                                <ToolTip x:Name="BigLyricsButtonTip" Content="大歌词页" />
-                            </Button.ToolTip>
+                        <Button x:Name="BigLyricsButton" Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnBigLyricsButtonClick"
+                                AutomationProperties.Name="大歌词页">
                             <ui:SymbolIcon Symbol="ReadingList24" FontSize="16" />
                         </Button>
-                        <Button x:Name="DesktopLyricsButton" Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnDesktopLyricsButtonClick">
-                            <Button.ToolTip>
-                                <ToolTip x:Name="DesktopLyricsButtonTip" Content="桌面歌词" />
-                            </Button.ToolTip>
+                        <Button x:Name="DesktopLyricsButton" Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnDesktopLyricsButtonClick"
+                                AutomationProperties.Name="桌面歌词">
                             <ui:SymbolIcon Symbol="ClosedCaption24" FontSize="16" />
                         </Button>
-                        <Button x:Name="MiniButton" Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnMiniButtonClick">
-                            <Button.ToolTip>
-                                <ToolTip x:Name="MiniButtonTip" Content="迷你窗" />
-                            </Button.ToolTip>
+                        <Button x:Name="MiniButton" Style="{StaticResource ModeButtonStyle}" Margin="4,0,0,0" Click="OnMiniButtonClick"
+                                AutomationProperties.Name="迷你窗">
                             <ui:SymbolIcon Symbol="PictureInPicture24" FontSize="16" />
                         </Button>
                     </StackPanel>
