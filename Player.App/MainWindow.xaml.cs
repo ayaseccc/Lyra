@@ -689,6 +689,7 @@ public partial class MainWindow : FluentWindow
         if (_desktopLyrics is null)
         {
             _desktopLyrics = CreateDesktopLyricsWindow();
+            _desktopLyrics.ForceUnlocked();   // 重新打开必定解锁（目验修复：锁柄可能在屏幕外）
             _desktopLyrics.Show();
         }
         else if (_desktopLyrics.IsVisible)
@@ -697,6 +698,7 @@ public partial class MainWindow : FluentWindow
         }
         else
         {
+            _desktopLyrics.ForceUnlocked();   // 隐藏后再显示：必定回到解锁态
             _desktopLyrics.Show();
             _desktopLyrics.ApplySettings();
             UpdateDesktopLyrics();

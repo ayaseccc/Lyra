@@ -57,8 +57,14 @@ public partial class DesktopLyricsWindow : Window
     public DesktopLyricsWindow()
     {
         InitializeComponent();
-        // 复查修复：构造即按配置初始化锁定态（避免 Loaded 前 WndProc 短暂按锁定处理）
-        _locked = ConfigService.Current.Ui.DesktopLyricsLocked;
+        // 目验修复：重新打开（含启动恢复）必定为解锁态——锁柄可能随窗口被移到屏幕外
+        // 而无法解锁，重开必须回到可操作状态；锁定只在窗口连续打开期间有效
+        if (ConfigService.Current.Ui.DesktopLyricsLocked)
+        {
+            ConfigService.Current.Ui.DesktopLyricsLocked = false;
+            ConfigService.Save();
+        }
+        _locked = false;
         ApplySettings();
         ApplyTextColor();
         _hoverTimer.Tick += OnHoverTick;
@@ -251,6 +257,12 @@ public partial class DesktopLyricsWindow : Window
         ConfigService.Current.Ui.DesktopLyricsLocked = locked;
         ConfigService.Save();
         ApplyLockedStyle();
+    }
+
+    /// <summary>重新打开/再次显示时强制回到解锁态（目验修复：锁柄可能随窗口被移到屏幕外无法解锁）。</summary>
+    public void ForceUnlocked()
+    {
+        if (_locked) SetLocked(false);
     }
 
     // ================= 小柄 / 拖动 / 调宽 =================
