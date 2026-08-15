@@ -108,11 +108,14 @@ public sealed class ShortcutMap
     public bool TryResolve(string keyName, ModifierMask mods, FocusKind focus, out ShortcutKey action)
     {
         action = default;
-        if (!_byCombo.TryGetValue(Format(mods, keyName), out var hit)) return false;
+        if (!_byCombo.TryGetValue(Format(mods, Canonical(keyName)), out var hit)) return false;
         if (!ShortcutPolicy.ShouldHandle(focus, hit)) return false;
         action = hit;
         return true;
     }
+
+    /// <summary>键名规范化：WPF 的 Key.Enter.ToString() 是 "Return"，统一成界面使用的 "Enter"（P4 实测修正）。</summary>
+    public static string Canonical(string key) => key == "Return" ? "Enter" : key;
 
     /// <summary>字母键必须带修饰键（防止在任意窗口误触）。</summary>
     public static bool RequiresModifier(string key) => KeyNames.IsLetter(key);

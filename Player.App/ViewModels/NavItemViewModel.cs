@@ -12,6 +12,7 @@ public enum NavKind
     Artists,
     Playlist,
     FolderPlaylist,
+    OnlineSearch,
     Settings
 }
 

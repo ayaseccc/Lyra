@@ -68,6 +68,11 @@ public static class Program
                 await RunGdProbeAsync();
                 break;
 
+            case "urlprobe":
+                if (args.Length < 2) { Console.WriteLine("用法：urlprobe <url>"); return 2; }
+                RunUrlProbe(args[1]);
+                break;
+
             default:
                 Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme / shortcuts / gdprobe）");
                 return 2;
@@ -810,6 +815,41 @@ public static class Program
         Console.WriteLine();
     }
 
+    /// <summary>BASS URL 流 flags 诊断（P4-4；需联网 + BASS 初始化）。</summary>
+    private static void RunUrlProbe(string url)
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== BASS URL 流 flags 诊断（P4-4） ===");
+
+        BassRuntime.Initialize();
+
+        // 疑似根因：CDN 拒默认 UA（curl 打样都带 Mozilla）。先配 NetAgent 再试
+        var uaPtr = System.Runtime.InteropServices.Marshal.StringToHGlobalUni(
+            "Mozilla/5.0 (Windows NT 10.0; Win64; x64)");
+        ManagedBass.Bass.Configure(ManagedBass.Configuration.NetAgent, uaPtr);
+        System.Runtime.InteropServices.Marshal.FreeHGlobal(uaPtr);
+        Console.WriteLine("NetAgent 已设为 Mozilla UA");
+
+        var combos = new (string Name, ManagedBass.BassFlags Flags)[]
+        {
+            ("Decode|Float", ManagedBass.BassFlags.Decode | ManagedBass.BassFlags.Float),
+            ("Decode|Float|StreamStatus", ManagedBass.BassFlags.Decode | ManagedBass.BassFlags.Float | ManagedBass.BassFlags.StreamStatus),
+            ("StreamStatus", ManagedBass.BassFlags.StreamStatus),
+            ("无 flags", 0),
+            ("Decode|Float|AsyncFile", ManagedBass.BassFlags.Decode | ManagedBass.BassFlags.Float | ManagedBass.BassFlags.AsyncFile)
+        };
+
+        foreach (var (name, flags) in combos)
+        {
+            // 5 参重载（带 DownloadProcedure）才是 URL 流；4 参是本地文件
+            var h = ManagedBass.Bass.CreateStream(url, 0, flags, null, IntPtr.Zero);
+            Console.WriteLine($"{name}: handle={h} error={ManagedBass.Bass.LastError}");
+            if (h != 0) ManagedBass.Bass.StreamFree(h);
+        }
+
+        Console.WriteLine();
+    }
+
     private static async Task<string> TryHeadAsync(string url)
     {
         try
@@ -1051,6 +1091,7 @@ public static class Program
         Check("默认 Ctrl+F → 聚焦搜索", map.TryResolve("F", ModifierMask.Ctrl, FocusKind.None, out a) && a == ShortcutKey.FocusSearch);
         Check("默认 F5 → 重扫", map.TryResolve("F5", ModifierMask.None, FocusKind.None, out a) && a == ShortcutKey.Rescan);
         Check("未绑定的组合不命中", !map.TryResolve("X", ModifierMask.Ctrl, FocusKind.None, out _));
+        Check("Enter 规范化（WPF Key.Enter 是 Return）", map.TryResolve("Return", ModifierMask.None, FocusKind.None, out a) && a == ShortcutKey.Enter);
 
         // 改绑
         var overridden = new Dictionary<string, string> { ["NextTrack"] = "Ctrl+Right", ["Rescan"] = "F6" };

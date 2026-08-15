@@ -19,6 +19,7 @@ public partial class App : Application
     private ShellViewModel? _shell;
     private ChkszClient? _client;
     private LyricsService? _lyrics;
+    private Player.Core.Online.OnlineSources? _onlineSources;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -78,8 +79,13 @@ public partial class App : Application
         _client = new ChkszClient();
         _lyrics = new LyricsService(_client);
 
+        // P4：在线源注册表（GD 默认零 Key + 网易云兜底），后台探测可用性（下拉灰显用）
+        _onlineSources = new Player.Core.Online.OnlineSources(_client);
+        _ = _onlineSources.ProbeAllAsync(CancellationToken.None);
+
         _player = new PlayerViewModel(_engine, _lyrics, _client);
-        _shell = new ShellViewModel(_library, _playlists, _player, _engine, _client);
+        _player.SetOnlineSources(_onlineSources);
+        _shell = new ShellViewModel(_library, _playlists, _player, _engine, _client, _onlineSources);
 
         var window = new MainWindow { DataContext = _shell };
         MainWindow = window;
@@ -105,6 +111,7 @@ public partial class App : Application
         _shell?.Dispose();
         _player?.Dispose();
         _lyrics?.Dispose();
+        _onlineSources?.Dispose();
         _client?.Dispose();
         _library?.StopWatching();
         _library?.Dispose();

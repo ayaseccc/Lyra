@@ -42,6 +42,9 @@ public interface IPlaybackEngine : IDisposable
 
     bool Open(string path);
 
+    /// <summary>P4：打开网络流（在线试听）。BASS 直连 URL，不落盘。</summary>
+    bool OpenUrl(string url);
+
     bool Play();
 
     void Pause();

@@ -420,16 +420,24 @@ public sealed class PlaybackEngine : IPlaybackEngine
         }
     }
 
-    public bool Open(string path)
+    public bool Open(string path) => OpenInternal(path, isUrl: false);
+
+    /// <summary>
+    /// 打开网络流（P4 在线试听）：BASS 直连 URL，不落盘、不进任何队列。
+    /// 直链有时效，用完即弃；URL 流时长/格式信息随网络源可能不完整。
+    /// </summary>
+    public bool OpenUrl(string url) => OpenInternal(url, isUrl: true);
+
+    private bool OpenInternal(string source, bool isUrl)
     {
         ObjectDisposedException.ThrowIf(_disposed, this);
 
-        if (string.IsNullOrWhiteSpace(path)) return false;
+        if (string.IsNullOrWhiteSpace(source)) return false;
 
-        if (!File.Exists(path))
+        if (!isUrl && !File.Exists(source))
         {
-            Log.Warning("文件不存在：{File}", path);
-            ErrorOccurred?.Invoke(this, $"文件不存在：{Path.GetFileName(path)}");
+            Log.Warning("文件不存在：{File}", source);
+            ErrorOccurred?.Invoke(this, $"文件不存在：{Path.GetFileName(source)}");
             return false;
         }
 
@@ -439,20 +447,21 @@ public sealed class PlaybackEngine : IPlaybackEngine
             return false;
         }
 
-        // 建流放在所有锁之外：读文件头可能耗时（MP3 还要 Prescan）
-        var handle = CreateDecodeStream(path);
+        // 建流放在所有锁之外：读文件头/建 URL 流可能耗时
+        var handle = isUrl ? CreateUrlStream(source) : CreateDecodeStream(source);
         if (handle == 0)
         {
             var error = Bass.LastError;
-            Log.Error("打开文件失败 {File}：{Error}", path, error);
+            Log.Error("打开" + (isUrl ? "网络流" : "文件") + "失败 {Source}：{Error}", source, error);
             ErrorOccurred?.Invoke(this,
-                $"无法播放 {Path.GetFileName(path)}（BASS 错误：{error}，可能缺少对应格式插件或文件损坏）");
+                $"无法播放 {(isUrl ? "音频流" : Path.GetFileName(source))}（BASS 错误：{error}）");
 
             ReleaseCurrent();
             SetState(PlayerState.Stopped, force: true);
             return false;
         }
 
+        var path = isUrl ? source : source;
         var track = BuildTrackInfo(path, handle);
 
         lock (_control)
@@ -511,6 +520,18 @@ public sealed class PlaybackEngine : IPlaybackEngine
         var handle = Bass.CreateStream(path, 0, 0, flags);
         if (handle == 0)
             handle = Bass.CreateStream(path, 0, 0, BassFlags.Decode);
+
+        return handle;
+    }
+
+    /// <summary>网络流（P4 试听）：Decode + Float，交给同一套 mixer 链路输出。
+    /// 注意必须用 5 参重载（带 DownloadProcedure）：4 参重载把 URL 当本地文件路径，必然 FileOpen 失败（实测修正）。</summary>
+    private static int CreateUrlStream(string url)
+    {
+        var flags = BassFlags.Decode | BassFlags.Float;
+        var handle = Bass.CreateStream(url, 0, flags, null, IntPtr.Zero);
+        if (handle == 0)
+            handle = Bass.CreateStream(url, 0, BassFlags.Decode, null, IntPtr.Zero);
 
         return handle;
     }

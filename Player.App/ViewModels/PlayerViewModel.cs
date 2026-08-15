@@ -154,6 +154,12 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(VolumeDbText))]
     private double _volume = 0.6;
 
+    /// <summary>P4 在线试听：源注册表（按条目所属源取流）；试听不写歌单/队列，切走即结束。</summary>
+    private Player.Core.Online.OnlineSources? _onlineSources;
+
+    /// <summary>当前是否处于在线试听（临时播放态）。</summary>
+    private bool _isOnlinePreview;
+
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PlayModeIcon))]
     [NotifyPropertyChangedFor(nameof(PlayModeText))]
@@ -436,6 +442,66 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _engine.ClearPreload();
     }
 
+    // ---------------- P4 在线试听 ----------------
+
+    /// <summary>注入在线源注册表（App 启动时设置）。</summary>
+    public void SetOnlineSources(Player.Core.Online.OnlineSources sources) => _onlineSources = sources;
+
+    /// <summary>是否正在在线试听（UI 显示「试听」角标用）。</summary>
+    public bool IsOnlinePreview => _isOnlinePreview;
+
+    /// <summary>
+    /// 在线试听：取流 → URL 临时流 → 播放。不写任何歌单/队列；
+    /// 切到本地曲目（PlayTracks/PlayTrack）即结束临时态。
+    /// </summary>
+    public async Task<bool> PlayOnlinePreviewAsync(Player.Core.Online.OnlineTrack track, string sourceKey, int preferredBr)
+    {
+        var source = _onlineSources?.Get(sourceKey);
+        if (source is null)
+        {
+            StatusText = "在线源不可用";
+            return false;
+        }
+
+        var stream = await source.GetStreamAsync(track, preferredBr, CancellationToken.None).ConfigureAwait(true);
+        if (!stream.Success)
+        {
+            StatusText = "试听失败：" + stream.Error;
+            return false;
+        }
+
+        _isOnlinePreview = true;
+        if (!_engine.OpenUrl(stream.Data!.Url))
+        {
+            _isOnlinePreview = false;
+            StatusText = "试听失败：无法打开音频流";
+            return false;
+        }
+
+        // URL 流没有本地标签：覆盖展示元数据（OnTrackOpened 之后执行）
+        Title = track.Name;
+        Artist = track.ArtistLine;
+        Album = track.Album;
+        OnPropertyChanged(nameof(ArtistAndAlbum));
+        TechnicalInfo = $"在线试听 · 实际 {stream.Data.ActualBr} kbps";
+        CoverImage = null;
+        Lyrics.Reset();
+        RefreshWindowTitle();
+
+        _engine.Play();
+        StatusText = $"试听：{track.Name} · {track.ArtistLine}（{stream.Data.ActualBr} kbps）";
+        return true;
+    }
+
+    /// <summary>切换到本地曲目时退出临时试听态（在 PlayTracks 开头调用）。</summary>
+    private void ExitOnlinePreview()
+    {
+        if (!_isOnlinePreview) return;
+        _isOnlinePreview = false;
+        _engine.ClearPreload();
+        Lyrics.Reset();
+    }
+
     // ---------------- 对外播放入口 ----------------
 
     /// <summary>用一批曲目替换播放列表并从指定位置开始播放。</summary>
@@ -447,6 +513,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             return;
         }
 
+        ExitOnlinePreview();   // P4：切到本地曲目即结束在线试听
         _list.Replace(tracks, sourceName, startIndex);
         PlayCurrentOrSkip();
     }

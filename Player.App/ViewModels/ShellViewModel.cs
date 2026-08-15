@@ -28,18 +28,22 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     private readonly Dispatcher _dispatcher;
 
     private bool _suppressNavigation;
+
+    /// <summary>P4 在线源注册表（在线搜索页/试听用）。</summary>
+    private readonly Player.Core.Online.OnlineSources? _onlineSources;
     private bool _rebuildQueued;
     private bool _pendingLibraryChanged;
     private long? _pendingPlaylistSelection;
     private bool _disposed;
 
     public ShellViewModel(LibraryService library, PlaylistService playlists, PlayerViewModel player,
-        IPlaybackEngine engine, ChkszClient client)
+        IPlaybackEngine engine, ChkszClient client, Player.Core.Online.OnlineSources? onlineSources = null)
     {
         _library = library;
         _playlists = playlists;
         _engine = engine;
         _client = client;
+        _onlineSources = onlineSources;
         Player = player;
         _dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
 
@@ -223,6 +227,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             Kind = NavKind.Artists, Title = "艺术家", Icon = SymbolRegular.Person24,
             CountText = _library.GetArtists().Count.ToString()
         });
+        NavItems.Add(new NavItemViewModel
+        {
+            Kind = NavKind.OnlineSearch, Title = "在线搜索", Icon = SymbolRegular.Cloud24,
+            CountText = "GD / 网易云"
+        });
 
         var manual = _playlists.Playlists;
         NavItems.Add(new NavItemViewModel
@@ -367,6 +376,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                     filter: keepFilter);
                 break;
             }
+
+            case NavKind.OnlineSearch:
+                CurrentPage = new OnlineSearchViewModel(
+                    _onlineSources?.All ?? Array.Empty<Player.Core.Online.IOnlineSource>(), Player);
+                break;
 
             case NavKind.Settings:
                 CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client,

@@ -196,6 +196,22 @@ public partial class MainWindow : FluentWindow
         }
     }
 
+    /// <summary>P4 在线搜索：回车触发搜索。</summary>
+    private void OnOnlineSearchKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key != Key.Enter) return;
+        if (Shell?.CurrentPage is ViewModels.OnlineSearchViewModel vm && vm.CanSearch)
+            vm.SearchCommand.Execute(null);
+        e.Handled = true;
+    }
+
+    /// <summary>P4 在线搜索：双击结果 = 试听（临时播放，不写歌单/队列）。</summary>
+    private void OnOnlineSearchDoubleClick(object sender, MouseButtonEventArgs e)
+    {
+        if (Shell?.CurrentPage is not ViewModels.OnlineSearchViewModel vm || vm.SelectedItem is not { } item) return;
+        _ = Player?.PlayOnlinePreviewAsync(item.Track, item.SourceKey, vm.SelectedBr);
+    }
+
     /// <summary>L2 设置页-在线组：Key 输入框眼睛按钮（密文/明文切换）。</summary>
     private void OnToggleKeyReveal(object sender, RoutedEventArgs e)
     {
@@ -516,6 +532,8 @@ public partial class MainWindow : FluentWindow
                 break;
             case ShortcutKey.Enter:
                 if (CurrentTrackPage is { } page && page.SelectedTrack is { } track) page.Play(track);
+                else if (Shell?.CurrentPage is ViewModels.OnlineSearchViewModel search && search.SelectedItem is { } item)
+                    _ = Player?.PlayOnlinePreviewAsync(item.Track, item.SourceKey, search.SelectedBr);   // P4：Enter 试听选中结果
                 break;
             case ShortcutKey.Delete:
                 if (CurrentTrackPage is { } editPage && editPage.CanEdit)

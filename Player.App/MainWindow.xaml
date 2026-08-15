@@ -887,7 +887,134 @@
             </Grid>
         </DataTemplate>
 
+        <!-- ============ 在线搜索页（P4） ============ -->
+        <DataTemplate DataType="{x:Type vm:OnlineSearchViewModel}">
+            <Grid Margin="18,8,18,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
 
+                <StackPanel>
+                    <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleStyle}" />
+                    <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
+                </StackPanel>
+
+                <!-- 搜索栏：关键词 + 音源 + 专辑模式 + 音质 -->
+                <Grid Grid.Row="1" Margin="0,10,0,10">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <ui:TextBox x:Name="OnlineKeywordBox" PlaceholderText="歌名 / 歌手 / 专辑" Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}"
+                                AutomationProperties.Name="搜索关键词"
+                                KeyDown="OnOnlineSearchKeyDown" />
+                    <ComboBox Grid.Column="1" MinWidth="110" Margin="8,0,0,0"
+                              ItemsSource="{Binding Sources}" SelectedItem="{Binding SelectedSource}"
+                              DisplayMemberPath="Name" />
+                    <ui:ToggleSwitch Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"
+                                     IsChecked="{Binding IsAlbumMode}" Content="专辑" />
+                    <ComboBox Grid.Column="3" MinWidth="76" Margin="12,0,0,0"
+                              ItemsSource="{Binding BrOptions}" SelectedItem="{Binding SelectedBr}" />
+                    <ui:Button Grid.Column="4" Margin="8,0,0,0" Appearance="Primary"
+                               Content="搜索" Command="{Binding SearchCommand}"
+                               IsEnabled="{Binding CanSearch}" />
+                </Grid>
+
+                <!-- 结果列表 -->
+                <Grid Grid.Row="2">
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="*" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="200" />
+                            <ColumnDefinition Width="120" />
+                            <ColumnDefinition Width="80" />
+                        </Grid.ColumnDefinitions>
+                        <TextBlock Text="标题" Style="{StaticResource TrackHeaderLabelStyle}" />
+                        <TextBlock Grid.Column="1" Text="歌手 / 专辑" Style="{StaticResource TrackHeaderLabelStyle}" />
+                        <TextBlock Grid.Column="2" Text="时长" Style="{StaticResource TrackHeaderLabelStyle}" TextAlignment="Right" />
+                        <TextBlock Grid.Column="3" Text="音质" Style="{StaticResource TrackHeaderLabelStyle}" TextAlignment="Right" />
+                    </Grid>
+
+                    <ListBox Grid.Row="1" ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedItem}"
+                             Background="Transparent" BorderThickness="0"
+                             MouseDoubleClick="OnOnlineSearchDoubleClick"
+                             VirtualizingPanel.IsVirtualizing="True"
+                             VirtualizingPanel.VirtualizationMode="Recycling"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.Template>
+                            <ControlTemplate TargetType="ListBox">
+                                <Border Background="{TemplateBinding Background}" BorderThickness="0">
+                                    <ScrollViewer Focusable="False" Padding="0" Margin="0">
+                                        <ItemsPresenter />
+                                    </ScrollViewer>
+                                </Border>
+                            </ControlTemplate>
+                        </ListBox.Template>
+                        <ListBox.ItemContainerStyle>
+                            <Style TargetType="ListBoxItem">
+                                <Setter Property="Padding" Value="0,4" />
+                                <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                <Setter Property="Background" Value="Transparent" />
+                                <Setter Property="Focusable" Value="True" />
+                                <Style.Triggers>
+                                    <Trigger Property="IsSelected" Value="True">
+                                        <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+                                    </Trigger>
+                                </Style.Triggers>
+                            </Style>
+                        </ListBox.ItemContainerStyle>
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="200" />
+                                        <ColumnDefinition Width="120" />
+                                        <ColumnDefinition Width="80" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="{Binding Name}" Style="{StaticResource TitleTextStyle}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="1" Text="{Binding ArtistLine}" Style="{StaticResource SubTextStyle}"
+                                               TextTrimming="CharacterEllipsis" />
+                                    <TextBlock Grid.Column="2" Text="{Binding DurationText}" Style="{StaticResource SubTextStyle}"
+                                               TextAlignment="Right" />
+                                    <TextBlock Grid.Column="3" Text="{Binding BrText}" Style="{StaticResource SubTextStyle}"
+                                               TextAlignment="Right" />
+                                </Grid>
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
+
+                    <Grid Grid.Row="2" Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:Button Content="上一页" Command="{Binding PrevPageCommand}"
+                                   IsEnabled="{Binding HasPreviousPage}" />
+                        <TextBlock Grid.Column="1" Text="{Binding PageText}" Style="{StaticResource SubTextStyle}"
+                                   HorizontalAlignment="Center" VerticalAlignment="Center" />
+                        <ui:Button Grid.Column="2" Content="下一页" Command="{Binding NextPageCommand}"
+                                   IsEnabled="{Binding HasMore}" />
+                    </Grid>
+
+                    <TextBlock Grid.Row="3" Text="{Binding StatusText}" Style="{StaticResource SubTextStyle}"
+                               Margin="0,8,0,0" TextWrapping="Wrap" />
+                </Grid>
+            </Grid>
+        </DataTemplate>
 
     </ui:FluentWindow.Resources>
 
