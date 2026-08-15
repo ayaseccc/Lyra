@@ -5,6 +5,7 @@ using System.Net.Http;
 using System.Text.Json;
 using System.Threading;
 using System.Threading.Tasks;
+using Player.Core.Infra;
 using Serilog;
 
 namespace Player.Core.Online;
@@ -18,7 +19,8 @@ namespace Player.Core.Online;
 /// </summary>
 public sealed class GdSource : IOnlineSource
 {
-    private const string BaseAddress = "https://music-api.gdstudio.xyz/api.php";
+    /// <summary>官方默认地址；设置页可改（空/非法回落默认）。</summary>
+    private const string DefaultBaseAddress = "https://music-api.gdstudio.xyz/api.php";
 
     /// <summary>子源探测顺序（2026-08-15 打样：netease 搜索空、kuwo/joox 可用）。</summary>
     private static readonly string[] SubSources = { "netease", "kuwo", "joox", "bilibili" };
@@ -287,7 +289,9 @@ public sealed class GdSource : IOnlineSource
     /// <summary>不带令牌桶的请求核心（歌词走独立桶时用）。</summary>
     private async Task<OnlineResult<T>> GetJsonCoreAsync<T>(string query, CancellationToken ct)
     {
-        var url = BaseAddress + "?" + query;
+        var baseUrl = ConfigService.Current.Online.GdApiUrl;
+        if (!OnlineUrl.IsHttp(baseUrl)) baseUrl = DefaultBaseAddress;
+        var url = baseUrl.Trim().TrimEnd('?') + "?" + query;
         var safeUrl = "api.php?" + RedactQuery(query);
 
         // 指数退避：网络层失败重试最多 3 次（1s/2s/4s）；内容层错误（detail/空）不重试

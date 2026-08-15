@@ -212,15 +212,27 @@ public partial class MainWindow : FluentWindow
         _ = Player?.PlayOnlinePreviewAsync(item.Track, item.SourceKey, vm.SelectedBr);
     }
 
-    /// <summary>P4 搜索结果右键菜单：从鼠标命中点找回搜索页 VM 与行数据（ContextMenu 独立弹出树，不能用 RelativeSource）。</summary>
-    private (ViewModels.OnlineSearchItem? Item, ViewModels.OnlineSearchViewModel? Vm) SearchFromMenu()
+    /// <summary>P4 搜索结果右键菜单：右键按下那一刻捕获所在行（实机反馈：菜单弹出后
+    /// 点击位置偏移/命中偏差导致事后取行不可靠），菜单项 Click 直接用捕获值。</summary>
+    private ViewModels.OnlineSearchItem? _onlineMenuItem;
+    private ViewModels.OnlineSearchViewModel? _onlineMenuVm;
+
+    private void OnOnlineSearchPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
-        var pos = System.Windows.Input.Mouse.GetPosition(this);
-        var hit = System.Windows.Media.VisualTreeHelper.HitTest(this, pos)?.VisualHit;
-        var item = FindAncestor<System.Windows.Controls.ListBoxItem>(hit);
-        var list = FindAncestor<System.Windows.Controls.ListBox>(hit);
-        return (item?.DataContext as ViewModels.OnlineSearchItem,
-                list?.DataContext as ViewModels.OnlineSearchViewModel);
+        if (e.OriginalSource is not DependencyObject d) return;
+        var row = FindAncestor<System.Windows.Controls.ListBoxItem>(d);
+        _onlineMenuItem = row?.DataContext as ViewModels.OnlineSearchItem;
+        _onlineMenuVm = FindAncestor<System.Windows.Controls.ListBox>(d)?.DataContext as ViewModels.OnlineSearchViewModel;
+    }
+
+    /// <summary>键盘（菜单键）打开菜单时没有右键动作，清掉捕获值避免误操作。</summary>
+    private void OnOnlineSearchContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (System.Windows.Input.Mouse.RightButton != System.Windows.Input.MouseButtonState.Pressed)
+        {
+            _onlineMenuItem = null;
+            _onlineMenuVm = null;
+        }
     }
 
     private static T? FindAncestor<T>(DependencyObject? node) where T : DependencyObject
@@ -235,15 +247,13 @@ public partial class MainWindow : FluentWindow
 
     private void OnOnlineSearchMenuPreview(object sender, RoutedEventArgs e)
     {
-        var (item, vm) = SearchFromMenu();
-        if (item is not null && vm is not null)
+        if (_onlineMenuItem is { } item && _onlineMenuVm is { } vm)
             _ = Player?.PlayOnlinePreviewAsync(item.Track, item.SourceKey, vm.SelectedBr);
     }
 
     private void OnOnlineSearchMenuDownload(object sender, RoutedEventArgs e)
     {
-        var (item, vm) = SearchFromMenu();
-        if (item is not null && vm is not null)
+        if (_onlineMenuItem is { } item && _onlineMenuVm is { } vm)
         {
             vm.SelectedItem = item;   // 命令作用于选中项
             vm.DownloadSelectedCommand.Execute(null);

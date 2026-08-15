@@ -135,6 +135,12 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         ApiKey = ConfigService.Current.ApiKey;
         RefreshKeyStatus();
 
+        // P4 实机反馈：在线页补全（下载位置 / 音质档 / GD 与网易云 API 地址，改即生效）
+        _downloadDir = ConfigService.Current.Online.DownloadDir;
+        _previewBr = BrOptions.FirstOrDefault(o => o.Value == ConfigService.Current.Online.PreviewBr) ?? BrOptions[0];
+        _gdApiUrl = ConfigService.Current.Online.GdApiUrl;
+        _chkszApiUrl = ConfigService.Current.Online.ChkszApiUrl;
+
         // L2 行为组：关闭到托盘（默认关闭）
         _closeToTray = ConfigService.Current.Ui.CloseToTray;
 
@@ -856,5 +862,96 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         {
             IsTestingKey = false;
         }
+    }
+
+    // ================= 在线（P4 实机反馈补全：下载位置 / 音质档 / API 地址） =================
+
+    /// <summary>音质档下拉（与在线搜索页同一套标签）。</summary>
+    public sealed record BrSettingOption(int Value, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    public IReadOnlyList<BrSettingOption> BrOptions { get; } = new[]
+    {
+        new BrSettingOption(999, Player.Core.Online.QualityFormat.Br(999)),
+        new BrSettingOption(740, Player.Core.Online.QualityFormat.Br(740)),
+        new BrSettingOption(320, Player.Core.Online.QualityFormat.Br(320)),
+        new BrSettingOption(128, Player.Core.Online.QualityFormat.Br(128)),
+    };
+
+    /// <summary>下载目录（空 = 未设置，下载时提示）。改即生效。</summary>
+    [ObservableProperty]
+    private string _downloadDir = string.Empty;
+
+    partial void OnDownloadDirChanged(string value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Online.DownloadDir = value.Trim();
+        ConfigService.Save();
+        OnPropertyChanged(nameof(DownloadDirHint));
+    }
+
+    public string DownloadDirHint => string.IsNullOrWhiteSpace(DownloadDir)
+        ? "未设置：点击「下载」时提示先填目录"
+        : "已设置：下载文件按命名模板落在这里";
+
+    /// <summary>在线搜索默认音质档。改即生效（下次打开搜索页起用）。</summary>
+    [ObservableProperty]
+    private BrSettingOption _previewBr = null!;
+
+    partial void OnPreviewBrChanged(BrSettingOption value)
+    {
+        if (_loading || value is null) return;
+        ConfigService.Current.Online.PreviewBr = value.Value;
+        ConfigService.Save();
+    }
+
+    /// <summary>GD 音源 API 地址（空 = 官方默认）。改即生效。</summary>
+    [ObservableProperty]
+    private string _gdApiUrl = string.Empty;
+
+    partial void OnGdApiUrlChanged(string value)
+    {
+        if (_loading) return;
+        if (!Player.Core.Online.OnlineUrl.IsHttp(value.Trim()) && !string.IsNullOrWhiteSpace(value))
+        {
+            // 非法地址不落盘，状态行提示；界面值保留让用户改
+            KeyStatus = "GD 地址必须以 http:// 或 https:// 开头（当前未保存）。";
+            return;
+        }
+        ConfigService.Current.Online.GdApiUrl = value.Trim();
+        ConfigService.Save();
+    }
+
+    /// <summary>网易云（ChKSz）API 地址（空 = 官方默认）。改即生效。</summary>
+    [ObservableProperty]
+    private string _chkszApiUrl = string.Empty;
+
+    partial void OnChkszApiUrlChanged(string value)
+    {
+        if (_loading) return;
+        if (!Player.Core.Online.OnlineUrl.IsHttp(value.Trim()) && !string.IsNullOrWhiteSpace(value))
+        {
+            KeyStatus = "网易云地址必须以 http:// 或 https:// 开头（当前未保存）。";
+            return;
+        }
+        ConfigService.Current.Online.ChkszApiUrl = value.Trim();
+        ConfigService.Save();
+    }
+
+    /// <summary>选择下载目录（.NET 8 WPF 自带 OpenFolderDialog）。</summary>
+    [RelayCommand]
+    private void BrowseDownloadDir()
+    {
+        var dialog = new Microsoft.Win32.OpenFolderDialog
+        {
+            Title = "选择下载目录",
+            InitialDirectory = string.IsNullOrWhiteSpace(DownloadDir)
+                ? Environment.GetFolderPath(Environment.SpecialFolder.UserProfile)
+                : DownloadDir
+        };
+        if (dialog.ShowDialog() == true)
+            DownloadDir = dialog.FolderName;
     }
 }

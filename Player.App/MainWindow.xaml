@@ -674,6 +674,55 @@
 
                                 <TextBlock Margin="0,8,0,0" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
                                            Text="Key 只保存在本地 data/config.json（不会出现在日志里）。歌词自动匹配、在线搜索、歌单同步都依赖它；今日免费额度以服务端响应头为准，见上方今日额度。" />
+
+                                <Grid Margin="0,16,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="下载位置" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ui:TextBox Grid.Column="1" PlaceholderText="未设置（点击下载时提示）"
+                                                Text="{Binding DownloadDir, UpdateSourceTrigger=PropertyChanged}" />
+                                    <ui:Button Grid.Column="2" Content="浏览…" Margin="8,0,0,0"
+                                               Command="{Binding BrowseDownloadDirCommand}" />
+                                </Grid>
+                                <TextBlock Text="{Binding DownloadDirHint}" Margin="110,0,0,8"
+                                           Style="{StaticResource SubTextStyle}" TextWrapping="Wrap" />
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="音质档" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding BrOptions}"
+                                              SelectedItem="{Binding PreviewBr}"
+                                              ToolTip="在线搜索 / 试听 / 下载的默认音质档（结果页可临时切换）" />
+                                </Grid>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="GD 音源地址" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ui:TextBox Grid.Column="1" PlaceholderText="https://music-api.gdstudio.xyz/api.php（留空 = 官方默认）"
+                                                Text="{Binding GdApiUrl, UpdateSourceTrigger=PropertyChanged}" />
+                                </Grid>
+
+                                <Grid Margin="0,0,0,8">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="网易云地址" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ui:TextBox Grid.Column="1" PlaceholderText="https://api.chksz.com（留空 = 官方默认）"
+                                                Text="{Binding ChkszApiUrl, UpdateSourceTrigger=PropertyChanged}" />
+                                </Grid>
+
+                                <TextBlock Margin="110,0,0,0" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
+                                           Text="地址与 Key 一样只存本地 data/config.json，改动即时生效，无需重启；留空或非法地址自动回落官方默认。" />
                             </StackPanel>
                         </Border>
 
@@ -869,15 +918,6 @@
                                     <TextBlock Grid.Column="1" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
                                                Text="WPF-UI（MIT）、CommunityToolkit.Mvvm（MIT）、Serilog（Apache-2.0）、TagLibSharp（LGPL-2.1）、ManagedBass（MIT）、Microsoft.Data.Sqlite（MIT）。" />
                                 </Grid>
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="在线接口" VerticalAlignment="Top" Style="{StaticResource TitleTextStyle}" />
-                                    <TextBlock Grid.Column="1" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
-                                               Text="歌词 / 搜索 / 歌单同步使用 ChKSz（api.chksz.com）接口，GD Studio 音源计划在 P4 接入；额度与限流以服务端响应头为准。" />
-                                </Grid>
                             </StackPanel>
                         </Border>
 
@@ -918,8 +958,8 @@
                               DisplayMemberPath="Name" />
                     <ui:ToggleSwitch Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"
                                      IsChecked="{Binding IsAlbumMode}" Content="专辑" />
-                    <ComboBox Grid.Column="3" MinWidth="76" Margin="12,0,0,0"
-                              ItemsSource="{Binding BrOptions}" SelectedItem="{Binding SelectedBr}" />
+                    <ComboBox Grid.Column="3" MinWidth="110" Margin="12,0,0,0"
+                              ItemsSource="{Binding BrOptions}" SelectedItem="{Binding SelectedBrOption}" />
                     <ui:Button Grid.Column="4" Margin="8,0,0,0" Appearance="Primary"
                                Content="搜索" Command="{Binding SearchCommand}"
                                IsEnabled="{Binding CanSearch}" />
@@ -949,6 +989,8 @@
                     <ListBox Grid.Row="1" ItemsSource="{Binding Results}" SelectedItem="{Binding SelectedItem}"
                              Background="Transparent" BorderThickness="0"
                              MouseDoubleClick="OnOnlineSearchDoubleClick"
+                             PreviewMouseRightButtonDown="OnOnlineSearchPreviewMouseRightButtonDown"
+                             ContextMenuOpening="OnOnlineSearchContextMenuOpening"
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">

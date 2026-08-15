@@ -93,6 +93,15 @@ public sealed class OnlineConfig
     public string DownloadDir { get; set; } = string.Empty;
 
     public string NamingTemplate { get; set; } = "{AlbumArtist}/{Album}/{TrackNo} - {Title}";
+
+    /// <summary>GD 音源 API 地址（P4 实机反馈：设置页可改，空 = 官方默认）。</summary>
+    public string GdApiUrl { get; set; } = "https://music-api.gdstudio.xyz/api.php";
+
+    /// <summary>网易云（ChKSz）API 地址（设置页可改，空 = 官方默认）。</summary>
+    public string ChkszApiUrl { get; set; } = "https://api.chksz.com";
+
+    /// <summary>在线搜索默认音质档（999/740/320/128）。</summary>
+    public int PreviewBr { get; set; } = 999;
 }
 
 public sealed class UiConfig

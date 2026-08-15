@@ -486,13 +486,13 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         Artist = track.ArtistLine;
         Album = track.Album;
         OnPropertyChanged(nameof(ArtistAndAlbum));
-        TechnicalInfo = $"在线试听 · 实际 {stream.Data.ActualBr} kbps";
+        TechnicalInfo = $"在线试听 · 实际 {QualityFormat.Br(stream.Data.ActualBr)}";
         CoverImage = null;
         Lyrics.Reset();
         RefreshWindowTitle();
 
         _engine.Play();
-        StatusText = $"试听：{track.Name} · {track.ArtistLine}（{stream.Data.ActualBr} kbps）";
+        StatusText = $"试听：{track.Name} · {track.ArtistLine}（{QualityFormat.Br(stream.Data.ActualBr)}）";
         return true;
     }
 

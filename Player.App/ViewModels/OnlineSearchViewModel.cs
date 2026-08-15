@@ -51,7 +51,10 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
         // 默认选中网易云（PLAN：默认音源 netease）；无 Key/不可用则自动落回 GD
         var preferred = sources.FirstOrDefault(s => s.Key == "netease" && s.IsAvailable) ?? sources.FirstOrDefault(s => s.IsAvailable) ?? sources.FirstOrDefault();
         _selectedSource = preferred is null ? null : new SourceOption(preferred);
-        _selectedBr = 999;
+
+        // 默认音质档：设置页-在线可改（P4 实机反馈）
+        var cfgBr = Player.Core.Infra.ConfigService.Current.Online.PreviewBr;
+        _selectedBrOption = BrOptions.FirstOrDefault(o => o.Value == cfgBr) ?? BrOptions[0];
     }
 
     public string Title => "在线搜索";
@@ -67,7 +70,19 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
 
     public IReadOnlyList<SourceOption> Sources => _sources.Select(s => new SourceOption(s)).ToList();
 
-    public IReadOnlyList<int> BrOptions { get; } = new[] { 999, 740, 320, 128 };
+    /// <summary>音质档位下拉（P4 实机反馈：裸数字 999 看不懂，改可读标签）。</summary>
+    public sealed record BrOption(int Value, string Label)
+    {
+        public override string ToString() => Label;
+    }
+
+    public IReadOnlyList<BrOption> BrOptions { get; } = new[]
+    {
+        new BrOption(999, QualityFormat.Br(999)),
+        new BrOption(740, QualityFormat.Br(740)),
+        new BrOption(320, QualityFormat.Br(320)),
+        new BrOption(128, QualityFormat.Br(128)),
+    };
 
     [ObservableProperty]
     private SourceOption? _selectedSource;
@@ -80,7 +95,10 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
     private bool _isAlbumMode;
 
     [ObservableProperty]
-    private int _selectedBr = 999;
+    private BrOption _selectedBrOption = null!;
+
+    /// <summary>当前音质档（默认取设置页-在线-音质档，未设置回 999）。</summary>
+    public int SelectedBr => SelectedBrOption?.Value ?? 999;
 
     [ObservableProperty]
     private int _page = 1;
@@ -218,7 +236,7 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
                     SourceKey = source.Key,
                     SourceName = source.DisplayName,
                     DurationText = t.DurationMs > 0 ? FormatDuration(t.DurationMs) : string.Empty,
-                    BrText = SelectedBr.ToString()
+                    BrText = QualityFormat.Br(SelectedBr)
                 });
             }
 

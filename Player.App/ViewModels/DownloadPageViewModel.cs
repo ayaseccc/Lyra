@@ -43,7 +43,7 @@ public sealed partial class DownloadPageViewModel : ObservableObject
         {
             DownloadStatus.Queued => "排队中",
             DownloadStatus.Downloading => $"下载中 {Item.ProgressPercent}%",
-            DownloadStatus.Completed => $"完成（实际 {Item.ActualBr}）",
+            DownloadStatus.Completed => $"完成（实际 {QualityFormat.Br(Item.ActualBr)}）",
             DownloadStatus.Failed => "失败：" + Item.Error,
             DownloadStatus.Duplicate => "与媒体库重复：" + Item.Error,
             _ => string.Empty

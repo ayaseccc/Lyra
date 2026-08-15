@@ -42,7 +42,8 @@ public sealed class ChkszResult<T>
 /// </summary>
 public sealed partial class ChkszClient : IDisposable
 {
-    private const string BaseAddress = "https://api.chksz.com";
+    /// <summary>官方默认地址；设置页可改（空/非法回落默认）。</summary>
+    private const string DefaultBaseAddress = "https://api.chksz.com";
 
     private readonly HttpClient _http;
     private readonly TokenBucket _bucket = new(18, TimeSpan.FromMinutes(1));
@@ -103,7 +104,9 @@ public sealed partial class ChkszClient : IDisposable
         if (string.IsNullOrWhiteSpace(apiKey))
             return ChkszResult<T>.Fail("还没有填 API Key，请到设置页的在线功能里填写", auth: true);
 
-        var url = $"{BaseAddress}{path}?apikey={Uri.EscapeDataString(apiKey)}&{query}";
+        var baseUrl = ConfigService.Current.Online.ChkszApiUrl;
+        if (!OnlineUrl.IsHttp(baseUrl)) baseUrl = DefaultBaseAddress;
+        var url = $"{baseUrl.Trim().TrimEnd('/')}{path}?apikey={Uri.EscapeDataString(apiKey)}&{query}";
         var safeUrl = Redact(url);
 
         try
