@@ -809,12 +809,13 @@ public partial class MainWindow : FluentWindow
         return window;
     }
 
-    /// <summary>桌面歌词右键菜单"字体设置…"：跳设置页歌词组。</summary>
+    /// <summary>桌面歌词右键菜单"字体设置…"：跳设置页外观区（歌词组在此区，L3.0-3 分区重构）。</summary>
     private void OpenLyricSettingsFromDesktopLyrics()
     {
         if (Shell is not { } shell) return;
         if (shell.OpenSettingsCommand.CanExecute(null)) shell.OpenSettingsCommand.Execute(null);
-        if (shell.CurrentPage is SettingsPageViewModel settings) settings.IsLyricTab = true;
+        if (shell.CurrentPage is SettingsPageViewModel settings)
+            settings.SelectedSection = settings.Sections.FirstOrDefault(s => s.Key == "appearance") ?? settings.Sections[0];
     }
 
     private void OnDesktopLyricsButtonClick(object sender, RoutedEventArgs e) => ToggleDesktopLyrics();

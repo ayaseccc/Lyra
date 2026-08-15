@@ -144,6 +144,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             ApiEndpoints.Add(row);
         }
         _previewBr = BrOptions.FirstOrDefault(o => o.Value == ConfigService.Current.Online.PreviewBr) ?? BrOptions[0];
+        _selectedSection = Sections[0];
 
         // L2 行为组：关闭到托盘（默认关闭）
         _closeToTray = ConfigService.Current.Ui.CloseToTray;
@@ -181,31 +182,43 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             : version;
     }
 
-    // ================= 分页（UI-R3 反馈） =================
+    // ================= 分区导航（L3.0-3：左侧竖排窄导航，五大区） =================
+
+    public sealed record SettingsSection(string Key, string Name)
+    {
+        public override string ToString() => Name;
+    }
+
+    public IReadOnlyList<SettingsSection> Sections { get; } = new[]
+    {
+        new SettingsSection("appearance", "外观"),
+        new SettingsSection("playback", "播放"),
+        new SettingsSection("library", "资料库"),
+        new SettingsSection("online", "在线"),
+        new SettingsSection("system", "系统"),
+    };
 
     [ObservableProperty]
-    private bool _isThemeTab = true;
+    private SettingsSection _selectedSection = null!;
 
-    [ObservableProperty]
-    private bool _isOutputTab;
+    public bool IsAppearanceSec => SelectedSection?.Key == "appearance";
 
-    [ObservableProperty]
-    private bool _isLibraryTab;
+    public bool IsPlaybackSec => SelectedSection?.Key == "playback";
 
-    [ObservableProperty]
-    private bool _isOnlineTab;
+    public bool IsLibrarySec => SelectedSection?.Key == "library";
 
-    [ObservableProperty]
-    private bool _isLyricTab;
+    public bool IsOnlineSec => SelectedSection?.Key == "online";
 
-    [ObservableProperty]
-    private bool _isShortcutTab;
+    public bool IsSystemSec => SelectedSection?.Key == "system";
 
-    [ObservableProperty]
-    private bool _isBehaviorTab;
-
-    [ObservableProperty]
-    private bool _isAboutTab;
+    partial void OnSelectedSectionChanged(SettingsSection value)
+    {
+        OnPropertyChanged(nameof(IsAppearanceSec));
+        OnPropertyChanged(nameof(IsPlaybackSec));
+        OnPropertyChanged(nameof(IsLibrarySec));
+        OnPropertyChanged(nameof(IsOnlineSec));
+        OnPropertyChanged(nameof(IsSystemSec));
+    }
 
     // ================= 行为（L2：关闭行为 + 启动恢复策略） =================
 

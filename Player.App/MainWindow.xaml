@@ -427,31 +427,29 @@
                     <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
                 </StackPanel>
 
-                <!-- 分页按钮 -->
-                <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,0,0,12">
-                    <RadioButton GroupName="SettingsTab" Content="主题" Style="{StaticResource TabRadioStyle}"
-                                 IsChecked="{Binding IsThemeTab}" />
-                    <RadioButton GroupName="SettingsTab" Content="输出" Style="{StaticResource TabRadioStyle}"
-                                 Margin="6,0,0,0" IsChecked="{Binding IsOutputTab}" />
-                    <RadioButton GroupName="SettingsTab" Content="媒体库" Style="{StaticResource TabRadioStyle}"
-                                 Margin="6,0,0,0" IsChecked="{Binding IsLibraryTab}" />
-                    <RadioButton GroupName="SettingsTab" Content="在线" Style="{StaticResource TabRadioStyle}"
-                                 Margin="6,0,0,0" IsChecked="{Binding IsOnlineTab}" />
-                    <RadioButton GroupName="SettingsTab" Content="歌词" Style="{StaticResource TabRadioStyle}"
-                                 Margin="6,0,0,0" IsChecked="{Binding IsLyricTab}" />
-                    <RadioButton GroupName="SettingsTab" Content="快捷键" Style="{StaticResource TabRadioStyle}"
-                                 Margin="6,0,0,0" IsChecked="{Binding IsShortcutTab}" />
-                    <RadioButton GroupName="SettingsTab" Content="行为" Style="{StaticResource TabRadioStyle}"
-                                 Margin="6,0,0,0" IsChecked="{Binding IsBehaviorTab}" />
-                    <RadioButton GroupName="SettingsTab" Content="关于" Style="{StaticResource TabRadioStyle}"
-                                 Margin="6,0,0,0" IsChecked="{Binding IsAboutTab}" />
-                </StackPanel>
+                <!-- L3.0-3 左侧竖排窄导航（外观/播放/资料库/在线/系统五大区） -->
+                <Grid Grid.Row="2">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="150" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <ListBox Grid.Column="0" ItemsSource="{Binding Sections}"
+                             SelectedItem="{Binding SelectedSection}"
+                             ItemContainerStyle="{StaticResource SimpleRowStyle}"
+                             Background="Transparent" BorderThickness="0"
+                             ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding}" Style="{StaticResource TitleTextStyle}" />
+                            </DataTemplate>
+                        </ListBox.ItemTemplate>
+                    </ListBox>
 
-                <ScrollViewer Grid.Row="2" VerticalScrollBarVisibility="Auto">
-                    <StackPanel MaxWidth="720" HorizontalAlignment="Left">
+                <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
+                    <StackPanel MaxWidth="560" HorizontalAlignment="Left" Margin="14,0,0,0">
 
                         <!-- ===== 主题页（UI-R3） ===== -->
-                        <Border Visibility="{Binding IsThemeTab, Converter={StaticResource BoolToVis}}"
+                        <Border Visibility="{Binding IsAppearanceSec, Converter={StaticResource BoolToVis}}"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
@@ -478,7 +476,7 @@
                         </Border>
 
                         <!-- ===== 输出页（P2） ===== -->
-                        <Border Visibility="{Binding IsOutputTab, Converter={StaticResource BoolToVis}}"
+                        <Border Visibility="{Binding IsPlaybackSec, Converter={StaticResource BoolToVis}}"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
@@ -569,7 +567,7 @@
                         </Border>
 
                         <!-- ===== 媒体库页 ===== -->
-                        <Border Visibility="{Binding IsLibraryTab, Converter={StaticResource BoolToVis}}"
+                        <Border Visibility="{Binding IsLibrarySec, Converter={StaticResource BoolToVis}}"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
@@ -610,7 +608,7 @@
                         </Border>
 
                         <!-- ===== 在线页（P3） ===== -->
-                        <Border Visibility="{Binding IsOnlineTab, Converter={StaticResource BoolToVis}}"
+                        <Border Visibility="{Binding IsOnlineSec, Converter={StaticResource BoolToVis}}"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
@@ -670,7 +668,7 @@
                         </Border>
 
                         <!-- ===== 歌词页（L1 第三步 + L1.1 打磨） ===== -->
-                        <Border Visibility="{Binding IsLyricTab, Converter={StaticResource BoolToVis}}"
+                        <Border Visibility="{Binding IsAppearanceSec, Converter={StaticResource BoolToVis}}" Margin="0,12,0,0"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
@@ -734,7 +732,7 @@
                         </Border>
 
                         <!-- ===== 快捷键页（L2：可改绑清单 + 全局热键） ===== -->
-                        <Border Visibility="{Binding IsShortcutTab, Converter={StaticResource BoolToVis}}"
+                        <Border Visibility="{Binding IsSystemSec, Converter={StaticResource BoolToVis}}"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
@@ -793,7 +791,7 @@
                         </Border>
 
                         <!-- ===== 行为页（L2：关闭行为） ===== -->
-                        <Border Visibility="{Binding IsBehaviorTab, Converter={StaticResource BoolToVis}}"
+                        <Border Visibility="{Binding IsSystemSec, Converter={StaticResource BoolToVis}}" Margin="0,12,0,0"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
@@ -822,7 +820,7 @@
                         </Border>
 
                         <!-- ===== 关于页（L2 设置页补全） ===== -->
-                        <Border Visibility="{Binding IsAboutTab, Converter={StaticResource BoolToVis}}"
+                        <Border Visibility="{Binding IsSystemSec, Converter={StaticResource BoolToVis}}" Margin="0,12,0,0"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
@@ -859,6 +857,7 @@
                         <Border Height="20" />
                     </StackPanel>
                 </ScrollViewer>
+                </Grid>
             </Grid>
         </DataTemplate>
 
