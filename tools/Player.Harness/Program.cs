@@ -64,8 +64,12 @@ public static class Program
                 RunShortcutChecks();
                 break;
 
+            case "gdprobe":
+                await RunGdProbeAsync();
+                break;
+
             default:
-                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme / shortcuts）");
+                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme / shortcuts / gdprobe）");
                 return 2;
         }
 
@@ -747,6 +751,79 @@ public static class Program
     {
         _skipped++;
         Console.WriteLine($"  ⏭ 跳过  {what}（原因：{reason}）");
+    }
+
+    // ================= GD 源真实链路探测（P4-2；联网，非主线断言） =================
+
+    private static async Task RunGdProbeAsync()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== GD 源真实链路（P4-2 打样模型验证，需联网） ===");
+
+        using var gd = new GdSource();
+        await gd.ProbeAsync(CancellationToken.None);
+        Console.WriteLine($"可用子源：{string.Join(", ", gd.AvailableSubSources)}");
+
+        // 搜索
+        var search = await gd.SearchAsync("晴天", limit: 5, page: 1, CancellationToken.None);
+        Console.WriteLine($"搜索「晴天」：success={search.Success} count={search.Data?.Count ?? 0} err={search.Error}");
+        if (search.Data is { Count: > 0 })
+        {
+            var t = search.Data[0];
+            Console.WriteLine($"  第 1 条：id={t.Id} name={t.Name} artist={t.ArtistLine} album={t.Album} source={t.Source}");
+
+            // 取流（条目自带 source）
+            var stream = await gd.GetStreamAsync(t, preferredBr: 999, CancellationToken.None);
+            Console.WriteLine($"  取流 br999：success={stream.Success} actualBr={stream.Data?.ActualBr} size={stream.Data?.SizeBytes} err={stream.Error}");
+            if (stream.Success)
+            {
+                Console.WriteLine($"    直链前 80 字符：{stream.Data!.Url[..Math.Min(80, stream.Data.Url.Length)]}");
+                var down = await TryHeadAsync(stream.Data.Url);
+                Console.WriteLine($"    直链 HEAD：{down}");
+            }
+
+            // 降级验证：999 失败时试 320
+            if (!stream.Success)
+            {
+                var s320 = await gd.GetStreamAsync(t, preferredBr: 320, CancellationToken.None);
+                Console.WriteLine($"  降级 br320：success={s320.Success} actualBr={s320.Data?.ActualBr} err={s320.Error}");
+            }
+
+            // 歌词
+            var lyric = await gd.GetLyricAsync(t, CancellationToken.None);
+            Console.WriteLine($"  歌词：success={lyric.Success} len={lyric.Data?.Lrc?.Length ?? 0} 翻译={lyric.Data?.Translation is { Length: > 0 }} err={lyric.Error}");
+
+            // 封面
+            var pic = await gd.GetPicUrlAsync(t, 300, CancellationToken.None);
+            Console.WriteLine($"  封面：success={pic.Success} url={pic.Data} err={pic.Error}");
+        }
+        else
+        {
+            Console.WriteLine("  搜索为空（子源全部不可用？）——真实链路验证跳过");
+            Skip("GD 真实链路（搜索/取流/歌词/封面）", "所有子源搜索为空或网络不可达");
+        }
+
+        // 专辑
+        var album = await gd.SearchAlbumAsync("叶惠美", limit: 5, page: 1, CancellationToken.None);
+        Console.WriteLine($"专辑拉取「叶惠美」：success={album.Success} count={album.Data?.Count ?? 0} err={album.Error}");
+
+        Console.WriteLine();
+    }
+
+    private static async Task<string> TryHeadAsync(string url)
+    {
+        try
+        {
+            using var client = new HttpClient();
+            using var req = new HttpRequestMessage(HttpMethod.Get, url);
+            req.Headers.Range = new System.Net.Http.Headers.RangeHeaderValue(0, 0);
+            using var resp = await client.SendAsync(req, HttpCompletionOption.ResponseHeadersRead);
+            return $"HTTP {(int)resp.StatusCode}";
+        }
+        catch (Exception ex)
+        {
+            return "失败：" + ex.Message;
+        }
     }
 
     // ================= 专辑分组（UI-R2） =================
