@@ -501,6 +501,15 @@ ChkszClient（四端点封装、令牌桶 18 次/分、额度响应头解析、�
 - 与托盘/桌面歌词/主窗的显隐与退出语义统一：托盘菜单-退出仍是唯一完全退出路径；迷你窗/桌面歌词/主窗任意组合下无残留进程。
 - 验收：小巧美观以用户目验为准；ASIO 播放全程不受影响。
 
+
+**L3 实施记录（2026-08-15）**：
+- L3.0-1 焦点框全局根治 ✔：统一 ThemeFocusVisualStyle（主题色圆角细框；无 TargetType + Control.Template 限定——FocusVisualStyle 应用到内部非 Control 焦点元素，带 TargetType 会抛 UnsetValue，实测教训）；10 类隐式样式（Button/ToggleButton/CheckBox/RadioButton/ListBoxItem/ListViewItem/ComboBoxItem/TextBox/PasswordBox/Slider/ListBox，BasedOn 系统键）；11 个 keyed 样式 + 搜索页内联样式补 FocusVisualStyle（显式 keyed 样式架空隐式样式的 WPF 规则）；DynamicResource 引用防主题重建失效。实测教训：ListViewItem/ListView/ComboBox 等没有 {x:Type} 系统样式键，BasedOn 会抛 StaticResourceHolder——ListViewItem 改 BasedOn ListBoxItem 键；容器类默认不可聚焦不补。子代理核销：唯一显式 FocusVisualStyle（大歌词覆盖层 x:Null）保持。实测：艺术家视图方向键=主题色焦点框无虚线无报错。
+- L3.0-2 下载页与对话框主题化 ✔：ProgressBar 全局主题样式（前景=强调色/背景=半透明表面，深浅+染色四组合协调）；DownloadDirDialog 改 FluentWindow（圆角）；InputDialog/RematchDialog 已主题化。
+- L3.0-3 设置页左侧竖排窄导航 ✔：外观（主题+歌词+列表+列+字体+颜色）/播放（输出）/资料库（媒体库）/在线（API列表+音质档）/系统（快捷键+行为+关于）五区，内容区 MaxWidth 560；桌面歌词字体设置跳转改外观区。
+- L3.1 个性化 ✔：①行高三挡 56/72/110（平铺+分组，DynamicResource 资源即时生效）；②分组默认折叠/展开配置 + 组头点击折叠（会话内记住每组）+ 组头封面缩略图开关；③列自定义 8 列（标题/歌手/专辑/时长/格式/采样率/位深/码率）显示+顺序+列宽持久化，列头与行模板动态绑定（Grid.Column 绑索引、列宽绑 VM）；④全局 UI 字体下拉 + 字号缩放 90–125%；⑤染色关闭时自定义强调色色板 + 选中/悬停透明度微调（ThemeService.Personalize 每帧应用，动画中间帧一致）。全部持久化 + harness downloads 扩至 19 项（10 项 JSON 往返断言全过）。
+- L3.2 迷你悬浮窗 ✔：340×104 置顶圆角卡片（封面/跑马灯标题/进度线/悬停淡入：上一曲播放暂停下一曲回主窗），双击/Esc/回主窗=主窗恢复，拖动+位置记忆（Ui.MiniPos），播放条按钮④开关（开=主窗隐藏），显隐与托盘统一（托盘退出唯一退出；主窗 OnClosing 清理迷你窗）。频谱（设置可关 Ui.MiniSpectrum）：**探针先行**（harness dsp 模式 2 项：mixer 挂 DSP tap 复制样本不抢播放数据——DSP 回调直接拿样本指针只读复制，绝不对解码/混音流 ChannelGetData 消费数据）；引擎环形缓冲 4096 + 256 点 Hann 窗 FFT + 16 柱对数映射，30fps 拉取。实测修复：FluentWindow + AllowsTransparency 冲突（WindowStyle.None 要求，移除——FluentWindow 自带 Mica/圆角）。实测：按钮④→迷你窗开+主窗隐藏→Esc→主窗恢复。
+- 遗留待用户目验：迷你窗外观细节（封面/悬停控件/频谱柱效果）、行高/列设置/折叠交互、设置页新分区整体观感、深浅两挡+染色四组合下的新控件配色。
+
 **L2 实施记录（2026-08-15，实测回写）**：
 - step1 SMTC 预研 ✔（TFM 升级 + GetForWindow 选型，见上）。
 - step2 应用内快捷键 ✔：Player.Core/Hotkeys/ShortcutPolicy 统一裁决（文本输入聚焦一律不响应；按钮聚焦 Space 归按钮；滑条聚焦方向键归滑条；列表 Enter/Delete 放行），Window_OnPreviewKeyDown 单入口 + 大歌词页规则合并；harness 新增 shortcuts 模式 13 项全过；设置「快捷键」页只读清单。
