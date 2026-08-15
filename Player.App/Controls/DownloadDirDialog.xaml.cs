@@ -7,7 +7,7 @@ using Microsoft.Win32;
 namespace Player.App.Controls;
 
 /// <summary>下载目标选择（P4 实机反馈）：媒体库根/子文件夹 + 自定义位置。</summary>
-public partial class DownloadDirDialog : Window
+public partial class DownloadDirDialog : Wpf.Ui.Controls.FluentWindow
 {
     private readonly List<string> _candidates;
 

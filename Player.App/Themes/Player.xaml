@@ -676,4 +676,11 @@
         <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
     </Style>
 
+    <!-- L3.0-2 下载页/侧栏进度条主题化：深浅两挡+染色组合下协调（前景=强调色，背景=半透明表面色） -->
+    <Style TargetType="ProgressBar">
+        <Setter Property="Foreground" Value="{DynamicResource AccentBrush}" />
+        <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+    </Style>
+
 </ResourceDictionary>
