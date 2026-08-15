@@ -48,6 +48,16 @@ public partial class MainWindow : FluentWindow
     private int _smtcRetryCount;
     private System.Windows.Threading.DispatcherTimer? _smtcRetryTimer;
 
+    /// <summary>L2 快捷键映射（可改绑；配置改动时重建）。</summary>
+    private ShortcutMap? _shortcutMap;
+
+    /// <summary>改绑捕获状态：非空 = 等待按键。</summary>
+    private ShortcutKey? _rebindAction;
+    private string? _rebindGlobalName;
+
+    /// <summary>当前打开着的设置页 VM（改绑结果回写用）。</summary>
+    private ViewModels.SettingsPageViewModel? _settingsVm;
+
     public MainWindow()
     {
         InitializeComponent();
@@ -77,6 +87,7 @@ public partial class MainWindow : FluentWindow
                 HookDesktopLyricsUpdates();
                 HookSettingsLyricsUpdates();
                 InitTray();
+                RebuildShortcutMap();
                 // 恢复桌面歌词（L1 第三步：开关持久化）
                 if (ConfigService.Current.Ui.DesktopLyricsEnabled && _desktopLyrics is null)
                 {
@@ -225,16 +236,18 @@ public partial class MainWindow : FluentWindow
     /// L2 全局热键：按配置开/关注册。开启时被占用的组合不抢（其余照常生效），
     /// 逐条列给用户明确提示，不静默。
     /// </summary>
-    private void ApplyGlobalHotkeys()
+    private void ApplyGlobalHotkeys(bool force = false)
     {
         if (Player is null) return;
         var enabled = ConfigService.Current.Ui.GlobalHotkeysEnabled;
-        if (enabled && _globalHotkeys is null)
+        if (enabled && (_globalHotkeys is null || force))
         {
+            _globalHotkeys?.Dispose();
+            _globalHotkeys = null;
             try
             {
                 _globalHotkeys = new Player.App.GlobalHotkeys.GlobalHotkeyService(
-                    new WindowInteropHelper(this).Handle, Player);
+                    new WindowInteropHelper(this).Handle, Player, BuildGlobalHotkeyCombos());
                 if (_globalHotkeys.Conflicts.Count > 0)
                 {
                     System.Windows.MessageBox.Show(this,
@@ -255,6 +268,15 @@ public partial class MainWindow : FluentWindow
             _globalHotkeys.Dispose();
             _globalHotkeys = null;
         }
+    }
+
+    /// <summary>预设组合 + 配置覆盖（GlobalHotkeyCombos 按名字覆盖）。</summary>
+    private static IReadOnlyList<(string Name, string Combo)> BuildGlobalHotkeyCombos()
+    {
+        var overrides = ConfigService.Current.Ui.GlobalHotkeyCombos;
+        return GlobalHotkeys.GlobalHotkeyService.DefaultCombos
+            .Select(c => (c.Name, overrides.TryGetValue(c.Name, out var over) ? over : c.Combo))
+            .ToList();
     }
 
     /// <summary>关窗前记下窗口尺寸，退出时随配置落盘。</summary>
@@ -454,26 +476,25 @@ public partial class MainWindow : FluentWindow
             return;
         }
 
-        // ===== L2 应用内快捷键 =====
-        var shortcut = e.Key switch
-        {
-            Key.Space => ShortcutKey.Space,
-            Key.Left => (Keyboard.Modifiers & ModifierKeys.Control) != 0 ? ShortcutKey.PrevTrack : ShortcutKey.SeekBack,
-            Key.Right => (Keyboard.Modifiers & ModifierKeys.Control) != 0 ? ShortcutKey.NextTrack : ShortcutKey.SeekForward,
-            Key.F when (Keyboard.Modifiers & ModifierKeys.Control) != 0 => ShortcutKey.FocusSearch,
-            Key.Enter => ShortcutKey.Enter,
-            Key.Delete => ShortcutKey.Delete,
-            Key.L when (Keyboard.Modifiers & ModifierKeys.Control) != 0 => ShortcutKey.Locate,
-            Key.F5 => ShortcutKey.Rescan,
-            _ => (ShortcutKey?)null
-        };
-        if (shortcut is not { } key) return;
+        // ===== L2 应用内快捷键（可改绑，ShortcutMap 裁决） =====
 
-        // 焦点策略：文本框/下拉框聚焦一律放行（不响应）；按钮 Space、滑条方向键归控件
-        if (!ShortcutPolicy.ShouldHandle(CurrentFocusKind(), key)) return;
+        // 改绑捕获优先：任何按键都进捕获流程，不再走正常分发
+        if (_rebindAction is not null || _rebindGlobalName is not null)
+        {
+            HandleRebindCapture(e);
+            e.Handled = true;
+            return;
+        }
+
+        var keyName = e.Key == Key.System ? e.SystemKey.ToString() : e.Key.ToString();
+        if (_shortcutMap is null
+            || !_shortcutMap.TryResolve(keyName, ModsFrom(Keyboard.Modifiers), CurrentFocusKind(), out var shortcut))
+        {
+            return;
+        }
 
         e.Handled = true;
-        switch (key)
+        switch (shortcut)
         {
             case ShortcutKey.Space:
                 Player?.PlayPauseCommand.Execute(null);   // 全局播放/暂停（与大歌词页同一条规则）
@@ -515,6 +536,102 @@ public partial class MainWindow : FluentWindow
         if (Player is null || !Player.HasTrack) return;
         var target = Math.Clamp(Player.PositionSeconds + seconds, 0, Math.Max(1, Player.DurationSeconds));
         Player.EndSeek(target);
+    }
+
+    // ================= L2 快捷键自定义改绑 =================
+
+    /// <summary>按配置重建应用内快捷键映射（改绑后立即生效）。</summary>
+    private void RebuildShortcutMap()
+    {
+        _shortcutMap = new ShortcutMap(ConfigService.Current.Ui.ShortcutBindings);
+    }
+
+    private static ModifierMask ModsFrom(ModifierKeys m)
+    {
+        var mask = ModifierMask.None;
+        if (m.HasFlag(ModifierKeys.Control)) mask |= ModifierMask.Ctrl;
+        if (m.HasFlag(ModifierKeys.Shift)) mask |= ModifierMask.Shift;
+        if (m.HasFlag(ModifierKeys.Alt)) mask |= ModifierMask.Alt;
+        return mask;
+    }
+
+    private void OnRebindRequested(ShortcutKey action)
+    {
+        _rebindAction = action;
+        _rebindGlobalName = null;
+    }
+
+    private void OnRebindGlobalRequested(string name)
+    {
+        _rebindGlobalName = name;
+        _rebindAction = null;
+    }
+
+    /// <summary>捕获按键：校验 → 落盘 → 重建映射/重注册全局热键。</summary>
+    private void HandleRebindCapture(KeyEventArgs e)
+    {
+        var key = e.Key == Key.System ? e.SystemKey : e.Key;
+        if (key is Key.Escape or Key.Tab)
+        {
+            CancelRebind("已取消改绑");
+            return;
+        }
+
+        var mods = ModsFrom(Keyboard.Modifiers);
+        var combo = ShortcutMap.Format(mods, key.ToString());
+        if (!ShortcutMap.TryParse(combo, out _, out var keyName) || !KeyNames.IsAllowed(keyName))
+        {
+            _settingsVm?.SetRebindStatus("不支持该按键，请按其他组合（Esc 取消）");
+            return;
+        }
+
+        if (_rebindAction is { } action)
+        {
+            var map = new ShortcutMap(ConfigService.Current.Ui.ShortcutBindings);
+            if (map.TryAddOverride(action, combo))
+            {
+                ConfigService.Current.Ui.ShortcutBindings[action.ToString()] = combo;
+                ConfigService.Save();
+                RebuildShortcutMap();
+                _rebindAction = null;
+                _settingsVm?.EndRebind(true, $"已改绑：{ShortcutMap.Describe(action)} → {combo}");
+            }
+            else
+            {
+                _settingsVm?.SetRebindStatus("组合无效或已被其他动作占用，请换一个（Esc 取消）");
+            }
+            return;
+        }
+
+        if (_rebindGlobalName is { } name)
+        {
+            // 全局热键必须带修饰键，且不能与其他全局组合重复
+            if (mods == ModifierMask.None)
+            {
+                _settingsVm?.SetRebindStatus("全局热键需要至少一个修饰键（Ctrl/Shift/Alt），请重按（Esc 取消）");
+                return;
+            }
+            var duplicates = ConfigService.Current.Ui.GlobalHotkeyCombos
+                .Where(kv => kv.Key != name)
+                .Any(kv => kv.Value == combo);
+            if (duplicates)
+            {
+                _settingsVm?.SetRebindStatus("该组合已用于其他全局热键，请换一个（Esc 取消）");
+                return;
+            }
+            ConfigService.Current.Ui.GlobalHotkeyCombos[name] = combo;
+            ConfigService.Save();
+            _rebindGlobalName = null;
+            ApplyGlobalHotkeys(force: true);
+            _settingsVm?.EndRebind(true, $"全局热键已改绑：{combo}");
+        }
+    }
+
+    private void CancelRebind(string message)
+    {
+        _rebindAction = null;
+        _rebindGlobalName = null;
+        _settingsVm?.EndRebind(false, message);
     }
 
     /// <summary>当前键盘焦点类别（沿可视树向上归类；文本框/下拉/按钮/滑条/列表优先于普通区）。</summary>
@@ -614,7 +731,16 @@ public partial class MainWindow : FluentWindow
         Shell.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName != nameof(ShellViewModel.CurrentPage)) return;
-            if (Shell.CurrentPage is not SettingsPageViewModel settings) return;
+            if (Shell.CurrentPage is not SettingsPageViewModel settings)
+            {
+                // 离开设置页：取消进行中的改绑捕获
+                CancelRebind("已取消改绑");
+                _settingsVm = null;
+                return;
+            }
+            _settingsVm = settings;
+            settings.RebindRequested += OnRebindRequested;
+            settings.RebindGlobalRequested += OnRebindGlobalRequested;
             settings.PropertyChanged += (_, se) =>
             {
                 switch (se.PropertyName)
@@ -970,3 +1096,5 @@ public partial class MainWindow : FluentWindow
         };
     }
 }
+
+

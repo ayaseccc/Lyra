@@ -954,6 +954,50 @@ public static class Program
         Check("无焦点/普通区：全部快捷键响应", allKeys.All(k => ShortcutPolicy.ShouldHandle(FocusKind.None, k)));
         Check("无焦点/普通区：Space 响应", ShortcutPolicy.ShouldHandle(FocusKind.None, ShortcutKey.Space));
 
+        // ================= 快捷键映射（ShortcutMap，L2 自定义改绑） =================
+        Console.WriteLine();
+        Console.WriteLine("=== 快捷键映射（ShortcutMap 改绑） ===");
+
+        var map = new ShortcutMap();
+        Check("默认 Space → 播放暂停", map.TryResolve("Space", ModifierMask.None, FocusKind.None, out var a) && a == ShortcutKey.Space);
+        Check("默认 Ctrl+Left → 上一曲", map.TryResolve("Left", ModifierMask.Ctrl, FocusKind.None, out a) && a == ShortcutKey.PrevTrack);
+        Check("默认 Ctrl+F → 聚焦搜索", map.TryResolve("F", ModifierMask.Ctrl, FocusKind.None, out a) && a == ShortcutKey.FocusSearch);
+        Check("默认 F5 → 重扫", map.TryResolve("F5", ModifierMask.None, FocusKind.None, out a) && a == ShortcutKey.Rescan);
+        Check("未绑定的组合不命中", !map.TryResolve("X", ModifierMask.Ctrl, FocusKind.None, out _));
+
+        // 改绑
+        var overridden = new Dictionary<string, string> { ["NextTrack"] = "Ctrl+Right", ["Rescan"] = "F6" };
+        var map2 = new ShortcutMap(overridden);
+        Check("改绑后 Ctrl+Right → 下一曲", map2.TryResolve("Right", ModifierMask.Ctrl, FocusKind.None, out a) && a == ShortcutKey.NextTrack);
+        Check("改绑后 Ctrl+Left 仍是上一曲", map2.TryResolve("Left", ModifierMask.Ctrl, FocusKind.None, out a) && a == ShortcutKey.PrevTrack);
+        Check("改绑后 F6 → 重扫", map2.TryResolve("F6", ModifierMask.None, FocusKind.None, out a) && a == ShortcutKey.Rescan);
+        Check("未改绑的默认仍在", map2.TryResolve("Space", ModifierMask.None, FocusKind.None, out a) && a == ShortcutKey.Space);
+
+        // 覆盖校验：非法组合/冲突/字母键无修饰 → 回退默认
+        var bad = new Dictionary<string, string>
+        {
+            ["NextTrack"] = "??bad??",
+            ["Locate"] = "Ctrl+L",
+            ["Rescan"] = "Q",
+        };
+        var map3 = new ShortcutMap(bad);
+        Check("非法组合回退默认", map3.GetCombo(ShortcutKey.NextTrack) == "Ctrl+Right");
+        Check("冲突组合回退默认", map3.GetCombo(ShortcutKey.Locate) == "Ctrl+L");
+        Check("字母键无修饰回退默认", map3.GetCombo(ShortcutKey.Rescan) == "F5");
+        Check("冲突的默认组合不受影响", map3.TryResolve("F", ModifierMask.Ctrl, FocusKind.None, out a) && a == ShortcutKey.FocusSearch);
+
+        // 解析/格式化往返
+        Check("Format 顺序 Ctrl+Shift+Alt", ShortcutMap.Format(ModifierMask.Ctrl | ModifierMask.Alt | ModifierMask.Shift, "K") == "Ctrl+Shift+Alt+K");
+        Check("Parse 往返一致", ShortcutMap.TryParse("Ctrl+Shift+Alt+K", out var mods, out var key) && mods == (ModifierMask.Ctrl | ModifierMask.Shift | ModifierMask.Alt) && key == "K");
+        Check("Parse 拒绝未知修饰", !ShortcutMap.TryParse("Super+K", out _, out _));
+        Check("Parse 拒绝非法键", !ShortcutMap.TryParse("Ctrl+Banana", out _, out _));
+
+        // 焦点规则在改绑后依然生效（文本输入/按钮 Space）
+        var map4 = new ShortcutMap(new Dictionary<string, string> { ["Space"] = "Ctrl+Space" });
+        Check("改绑后 Space 仍归按钮（文本输入不响应）", !map4.TryResolve("Space", ModifierMask.Ctrl, FocusKind.TextInput, out _)
+              && !ShortcutPolicy.ShouldHandle(FocusKind.ButtonBase, ShortcutKey.Space));
+        Check("改绑后 Ctrl+Space 命中播放暂停", map4.TryResolve("Space", ModifierMask.Ctrl, FocusKind.None, out a) && a == ShortcutKey.Space);
+
         Console.WriteLine();
     }
 }

@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
 using Player.Core.Audio;
+using Player.Core.Hotkeys;
 using Player.Core.Infra;
 using Player.Core.Library;
 using Player.App.Controls;
@@ -231,7 +232,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         ConfigService.Save();
     }
 
-    // ================= 快捷键（L2：只读清单 + 全局热键开关） =================
+    // ================= 快捷键（L2：可改绑清单 + 全局热键） =================
 
     /// <summary>全局热键（RegisterHotKey）：默认全关；开启后任何窗口下 Ctrl+Alt+P/←/→ 控制播放。</summary>
     [ObservableProperty]
@@ -244,22 +245,92 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         ConfigService.Save();
     }
 
-    public sealed record ShortcutItem(string Keys, string Description);
+    public sealed record ShortcutItem(string Keys, string Description, bool CanRebind, string ActionName);
 
-    public IReadOnlyList<ShortcutItem> ShortcutItems { get; } = new[]
+    public sealed record GlobalHotkeyItem(string Name, string Keys, string Description);
+
+    /// <summary>改绑状态提示（"按新组合…"/"已改绑…"/"已取消…"）。</summary>
+    public string RebindStatus { get; private set; } = string.Empty;
+
+    public bool IsRebinding { get; private set; }
+
+    public event Action<ShortcutKey>? RebindRequested;
+
+    public event Action<string>? RebindGlobalRequested;
+
+    [RelayCommand]
+    private void BeginRebind(string? actionName)
     {
-        new ShortcutItem("Space", "播放 / 暂停（全局；大歌词页内同样生效）"),
-        new ShortcutItem("← / →", "后退 / 前进 5 秒"),
-        new ShortcutItem("Ctrl+← / Ctrl+→", "上一曲 / 下一曲"),
-        new ShortcutItem("Ctrl+F", "聚焦搜索框"),
-        new ShortcutItem("Enter", "播放选中曲目（列表聚焦时）"),
-        new ShortcutItem("Delete", "从歌单移除（歌单页）"),
-        new ShortcutItem("Ctrl+L", "定位正在播放的曲目"),
-        new ShortcutItem("F5", "重扫媒体库"),
-        new ShortcutItem("Tab", "平铺 / 专辑分组切换（L1 已占用）"),
-        new ShortcutItem("Esc", "退出大歌词页 / 设置页"),
-        new ShortcutItem("大歌词页", "双击或 Esc 退出；空格暂停；滚轮/拖动浏览；点歌词行跳转；点空白左/右半切曲")
-    };
+        if (!Enum.TryParse<ShortcutKey>(actionName, out var action)) return;
+        IsRebinding = true;
+        RebindStatus = "按新组合…（Esc 取消）";
+        OnPropertyChanged(nameof(IsRebinding));
+        OnPropertyChanged(nameof(RebindStatus));
+        RebindRequested?.Invoke(action);
+    }
+
+    [RelayCommand]
+    private void BeginRebindGlobal(string? name)
+    {
+        if (string.IsNullOrEmpty(name)) return;
+        IsRebinding = true;
+        RebindStatus = "按新组合…（Esc 取消）";
+        OnPropertyChanged(nameof(IsRebinding));
+        OnPropertyChanged(nameof(RebindStatus));
+        RebindGlobalRequested?.Invoke(name);
+    }
+
+    public void SetRebindStatus(string message)
+    {
+        RebindStatus = message;
+        OnPropertyChanged(nameof(RebindStatus));
+    }
+
+    public void EndRebind(bool ok, string message)
+    {
+        IsRebinding = false;
+        RebindStatus = message;
+        OnPropertyChanged(nameof(IsRebinding));
+        OnPropertyChanged(nameof(RebindStatus));
+        OnPropertyChanged(nameof(ShortcutItems));
+        OnPropertyChanged(nameof(GlobalHotkeyItems));
+    }
+
+    /// <summary>应用内快捷键清单（动态：配置改绑后立即反映；Tab/Esc/大歌词页为固定项）。</summary>
+    public IReadOnlyList<ShortcutItem> ShortcutItems
+    {
+        get
+        {
+            var map = new ShortcutMap(ConfigService.Current.Ui.ShortcutBindings);
+            var items = Enum.GetValues<ShortcutKey>()
+                .Select(k => new ShortcutItem(map.GetCombo(k), ShortcutMap.Describe(k), true, k.ToString()))
+                .ToList();
+            items.Add(new ShortcutItem("Tab", "平铺 / 专辑分组切换（固定）", false, string.Empty));
+            items.Add(new ShortcutItem("Esc", "退出大歌词页 / 设置页（固定）", false, string.Empty));
+            items.Add(new ShortcutItem("大歌词页", "双击或 Esc 退出；空格暂停；滚轮/拖动浏览；点歌词行跳转；点空白左/右半切曲", false, string.Empty));
+            return items;
+        }
+    }
+
+    /// <summary>全局热键清单（名字 → 当前组合；配置改绑后立即反映）。</summary>
+    public IReadOnlyList<GlobalHotkeyItem> GlobalHotkeyItems
+    {
+        get
+        {
+            var over = ConfigService.Current.Ui.GlobalHotkeyCombos;
+            return GlobalHotkeys.GlobalHotkeyService.DefaultCombos
+                .Select(c => new GlobalHotkeyItem(c.Name,
+                    over.TryGetValue(c.Name, out var o) ? o : c.Combo,
+                    c.Name switch
+                    {
+                        "PlayPause" => "播放 / 暂停",
+                        "PrevTrack" => "上一曲",
+                        "NextTrack" => "下一曲",
+                        _ => string.Empty
+                    }))
+                .ToList();
+        }
+    }
 
     // ================= 歌词（L1 第三步 + L1.1 打磨） =================
 

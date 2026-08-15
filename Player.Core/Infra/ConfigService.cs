@@ -163,6 +163,12 @@ public sealed class UiConfig
     /// <summary>L2 全局热键：默认全关；开启后 Ctrl+Alt+P 播放/暂停、Ctrl+Alt+←/→ 上下曲。</summary>
     public bool GlobalHotkeysEnabled { get; set; }
 
+    /// <summary>L2 快捷键自定义：动作名 → 组合串（如 "NextTrack" → "Ctrl+Right"）。空 = 用默认。</summary>
+    public Dictionary<string, string> ShortcutBindings { get; set; } = new();
+
+    /// <summary>L2 全局热键自定义：名字 → 组合串（"PlayPause"/"PrevTrack"/"NextTrack"）。空 = 用默认。</summary>
+    public Dictionary<string, string> GlobalHotkeyCombos { get; set; } = new();
+
     /// <summary>L2 行为页-启动恢复策略：启动时恢复上次播放的曲目信息（不自动播放）。</summary>
     public bool RestoreLastTrack { get; set; } = true;
 

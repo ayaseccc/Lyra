@@ -743,7 +743,7 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- ===== 快捷键页（L2：只读清单） ===== -->
+                        <!-- ===== 快捷键页（L2：可改绑清单 + 全局热键） ===== -->
                         <Border Visibility="{Binding IsShortcutTab, Converter={StaticResource BoolToVis}}"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
@@ -755,27 +755,56 @@
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="150" />
                                                     <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <TextBlock Text="{Binding Keys}" FontWeight="SemiBold"
                                                            Style="{StaticResource TitleTextStyle}" />
-                                                <TextBlock Grid.Column="1" Text="{Binding Description}"
+                                                <TextBlock Grid.Column="1" Text="{Binding Description}" Margin="8,0,0,0"
                                                            Style="{StaticResource SubTextStyle}" TextWrapping="Wrap" />
+                                                <Button Grid.Column="2" Style="{StaticResource ModeButtonStyle}" Content="改绑"
+                                                        Margin="8,0,0,0" Padding="8,2"
+                                                        Visibility="{Binding CanRebind, Converter={StaticResource BoolToVis}}"
+                                                        Command="{Binding DataContext.BeginRebindCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                        CommandParameter="{Binding ActionName}" />
                                             </Grid>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
                                 <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,12,0,0" TextWrapping="Wrap"
-                                           Text="任何输入框（搜索/Key 输入等）聚焦时快捷键一律不响应；按钮聚焦时 Space 归按钮；滑条聚焦时方向键归滑条。自定义改绑进 backlog。" />
+                                           Text="点「改绑」后直接按新组合（字母键需带 Ctrl/Shift/Alt；Esc 取消）。任何输入框（搜索/Key 输入等）聚焦时快捷键一律不响应；按钮聚焦时 Space 归按钮；滑条聚焦时方向键归滑条。" />
                                 <Grid Margin="0,16,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="110" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
-                                    <TextBlock Text="全局热键" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <TextBlock Text="全局热键" VerticalAlignment="Top" Style="{StaticResource TitleTextStyle}" />
                                     <StackPanel Grid.Column="1">
                                         <ui:ToggleSwitch IsChecked="{Binding GlobalHotkeysEnabled}" Content="启用（默认关闭）" />
+                                        <ItemsControl ItemsSource="{Binding GlobalHotkeyItems}" Focusable="False" Margin="0,6,0,0">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate>
+                                                    <Grid Margin="0,3">
+                                                        <Grid.ColumnDefinitions>
+                                                            <ColumnDefinition Width="150" />
+                                                            <ColumnDefinition Width="*" />
+                                                            <ColumnDefinition Width="Auto" />
+                                                        </Grid.ColumnDefinitions>
+                                                        <TextBlock Text="{Binding Keys}" FontWeight="SemiBold"
+                                                                   Style="{StaticResource TitleTextStyle}" />
+                                                        <TextBlock Grid.Column="1" Text="{Binding Description}" Margin="8,0,0,0"
+                                                                   Style="{StaticResource SubTextStyle}" VerticalAlignment="Center" />
+                                                        <Button Grid.Column="2" Style="{StaticResource ModeButtonStyle}" Content="改绑"
+                                                                Margin="8,0,0,0" Padding="8,2"
+                                                                Command="{Binding DataContext.BeginRebindGlobalCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
+                                                                CommandParameter="{Binding Name}" />
+                                                    </Grid>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                        <TextBlock Text="{Binding RebindStatus}" Style="{StaticResource SubTextStyle}" Margin="0,8,0,0"
+                                                   TextWrapping="Wrap" FontWeight="SemiBold" />
                                         <TextBlock Style="{StaticResource SubTextStyle}" Margin="0,6,0,0" TextWrapping="Wrap"
-                                                   Text="播放/暂停 Ctrl+Alt+P · 上一曲 Ctrl+Alt+← · 下一曲 Ctrl+Alt+→。任何窗口下都生效；组合键被其他程序占用时，启用会逐条提示并跳过被占用的组合。" />
+                                                   Text="任何窗口下都生效；组合键被其他程序占用时，启用/改绑会逐条提示并跳过被占用的组合。全局热键必须带修饰键。" />
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
