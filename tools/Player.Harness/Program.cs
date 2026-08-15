@@ -27,6 +27,7 @@ public static class Program
 {
     private static int _passed;
     private static int _failed;
+    private static int _skipped;
 
     public static async Task<int> Main(string[] args)
     {
@@ -69,7 +70,7 @@ public static class Program
         }
 
         Console.WriteLine();
-        Console.WriteLine($"===== 通过 {_passed} 项，失败 {_failed} 项 =====");
+        Console.WriteLine($"===== 通过 {_passed} 项，失败 {_failed} 项，跳过 {_skipped} 项 =====");
         return _failed == 0 ? 0 : 1;
     }
 
@@ -536,7 +537,7 @@ public static class Program
         var sample = Path.Combine(sampleDir, "flac_44k_440Hz.flac");
         if (!File.Exists(sample))
         {
-            Console.WriteLine("  跳过：找不到 format-test 样本（publish/format-test/hires/flac_44k_440Hz.flac）");
+            Skip("内嵌标签歌词全部断言", "找不到 format-test 样本（publish/format-test/hires/flac_44k_440Hz.flac）");
             return;
         }
 
@@ -723,7 +724,7 @@ public static class Program
             }
             else
             {
-                Console.WriteLine("  跳过：内嵌优先级断言（找不到 format-test 样本）");
+                Skip("内嵌优先级断言（LRC/内嵌/自动 3 项）", "找不到 format-test 样本");
             }
         }
         finally
@@ -739,6 +740,13 @@ public static class Program
     {
         if (ok) _passed++; else _failed++;
         Console.WriteLine($"  {(ok ? "✓" : "✗ 失败")}  {what}");
+    }
+
+    /// <summary>环境不具备条件时显式记账跳过（审计：跳过项要打印数量与原因，结尾汇总）。</summary>
+    private static void Skip(string what, string reason)
+    {
+        _skipped++;
+        Console.WriteLine($"  ⏭ 跳过  {what}（原因：{reason}）");
     }
 
     // ================= 专辑分组（UI-R2） =================
@@ -795,8 +803,10 @@ public static class Program
         var orderedArtists = groups.Select(g => g.Artist).ToList();
         Check("组按艺术家排序（乐队A 在 乐队B 前）",
             orderedArtists.IndexOf("乐队A") < orderedArtists.IndexOf("乐队B"));
-        Check("组排序稳定（同一艺术家按专辑名）",
-            groups.Where(g => g.Artist == "乐队A").Select(g => g.Album).SequenceEqual(new[] { "多碟专辑", "同名专辑" }));
+        // 排序固定 OrdinalIgnoreCase（审计：任何环境断言必须过）——
+        // 码位序："多"(U+591A) > "同"(U+540C)，故同名专辑在前（拼音序只在 zh-CN 文化下成立，不可依赖）
+        Check("组排序稳定（同一艺术家按专辑名，Ordinal 序）",
+            groups.Where(g => g.Artist == "乐队A").Select(g => g.Album).SequenceEqual(new[] { "同名专辑", "多碟专辑" }));
 
         // ③ 空输入与退化
         Check("空输入返回空列表", TrackGrouper.Group(Array.Empty<TrackRecord>()).Count == 0);

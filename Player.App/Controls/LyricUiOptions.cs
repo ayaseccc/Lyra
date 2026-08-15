@@ -80,7 +80,7 @@ public static class LyricUiOptions
         foreach (var preferred in PreferredFonts)
             if (installed.Remove(preferred)) list.Add(preferred);
 
-        foreach (var name in installed.OrderBy(s => s, StringComparer.CurrentCultureIgnoreCase))
+        foreach (var name in installed.OrderBy(s => s, StringComparer.OrdinalIgnoreCase))
             list.Add(name);
         return list;
     }
@@ -107,3 +107,4 @@ public static class LyricUiOptions
             ? new FontFamily("Microsoft YaHei UI, Segoe UI")
             : new FontFamily(familyName);
 }
+

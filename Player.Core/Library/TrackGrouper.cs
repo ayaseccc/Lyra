@@ -49,7 +49,7 @@ public static class TrackGrouper
             var sorted = bucket.Tracks
                 .OrderBy(t => t.DiscNo <= 0 ? int.MaxValue : t.DiscNo)
                 .ThenBy(t => t.TrackNo <= 0 ? int.MaxValue : t.TrackNo)
-                .ThenBy(t => t.Path, StringComparer.CurrentCultureIgnoreCase)
+                .ThenBy(t => t.Path, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             groups.Add(new TrackGroup(
@@ -60,8 +60,9 @@ public static class TrackGrouper
         }
 
         return groups
-            .OrderBy(g => g.Artist, StringComparer.CurrentCultureIgnoreCase)
-            .ThenBy(g => g.Album, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(g => g.Artist, StringComparer.OrdinalIgnoreCase)
+            .ThenBy(g => g.Album, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 }
+

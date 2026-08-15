@@ -214,7 +214,7 @@ public sealed class LibraryService : IDisposable
                 {
                     result.AddRange(Directory.EnumerateFiles(path, "*", options)
                         .Where(Audio.AudioFormats.IsSupported)
-                        .OrderBy(p => p, StringComparer.CurrentCultureIgnoreCase));
+                        .OrderBy(p => p, StringComparer.OrdinalIgnoreCase));
                 }
                 else if (File.Exists(path) && Audio.AudioFormats.IsSupported(path))
                 {
@@ -327,7 +327,7 @@ public sealed class LibraryService : IDisposable
                 var ordered = group
                     .OrderBy(t => t.DiscNo)
                     .ThenBy(t => t.TrackNo)
-                    .ThenBy(t => t.DisplayTitle, StringComparer.CurrentCultureIgnoreCase)
+                    .ThenBy(t => t.DisplayTitle, StringComparer.OrdinalIgnoreCase)
                     .ToList();
 
                 var first = ordered[0];
@@ -341,18 +341,18 @@ public sealed class LibraryService : IDisposable
                     Tracks = ordered
                 };
             })
-            .OrderBy(a => a.Album, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(a => a.Album, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
     private static List<ArtistGroup> BuildArtists(List<TrackRecord> tracks)
     {
         return tracks
-            .GroupBy(t => t.DisplayArtist, StringComparer.CurrentCultureIgnoreCase)
+            .GroupBy(t => t.DisplayArtist, StringComparer.OrdinalIgnoreCase)
             .Select(group =>
             {
                 var ordered = group
-                    .OrderBy(t => t.DisplayAlbum, StringComparer.CurrentCultureIgnoreCase)
+                    .OrderBy(t => t.DisplayAlbum, StringComparer.OrdinalIgnoreCase)
                     .ThenBy(t => t.DiscNo)
                     .ThenBy(t => t.TrackNo)
                     .ToList();
@@ -361,12 +361,12 @@ public sealed class LibraryService : IDisposable
                 {
                     Name = group.Key,
                     AlbumCount = ordered.Select(t => t.DisplayAlbum)
-                        .Distinct(StringComparer.CurrentCultureIgnoreCase).Count(),
+                        .Distinct(StringComparer.OrdinalIgnoreCase).Count(),
                     CoverHash = ordered.FirstOrDefault(t => t.CoverHash is not null)?.CoverHash,
                     Tracks = ordered
                 };
             })
-            .OrderBy(a => a.Name, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -423,17 +423,17 @@ public sealed class LibraryService : IDisposable
                 kv.Value.Name,
                 kv.Value.Root,
                 Tracks = (IReadOnlyList<TrackRecord>)kv.Value.Tracks
-                    .OrderBy(t => t.Path, StringComparer.CurrentCultureIgnoreCase)
+                    .OrderBy(t => t.Path, StringComparer.OrdinalIgnoreCase)
                     .ToList()
             })
             .ToList();
 
         // 不同根目录下出现同名文件夹时，补上根目录名以便区分
         var duplicateNames = playlists
-            .GroupBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)
+            .GroupBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
             .Where(g => g.Count() > 1)
             .Select(g => g.Key)
-            .ToHashSet(StringComparer.CurrentCultureIgnoreCase);
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
 
         return playlists
             .Select(p => new FolderPlaylist
@@ -446,7 +446,7 @@ public sealed class LibraryService : IDisposable
                 CoverHash = p.Tracks.FirstOrDefault(t => t.CoverHash is not null)?.CoverHash,
                 Tracks = p.Tracks
             })
-            .OrderBy(p => p.Name, StringComparer.CurrentCultureIgnoreCase)
+            .OrderBy(p => p.Name, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
@@ -471,3 +471,4 @@ public sealed class LibraryService : IDisposable
         _scanLock.Dispose();
     }
 }
+

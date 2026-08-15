@@ -835,7 +835,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             {
                 return Directory.EnumerateFiles(folder, "*", SearchOption.AllDirectories)
                     .Where(AudioFormats.IsSupported)
-                    .OrderBy(f => f, StringComparer.CurrentCultureIgnoreCase)
+                    .OrderBy(f => f, StringComparer.OrdinalIgnoreCase)
                     .Select(f => _library.GetByPath(f) ?? TagReader.Read(f))
                     .Where(r => r is not null)
                     .Select(r => r!)
@@ -928,7 +928,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             var target = folders[0].TrimEnd(Path.DirectorySeparatorChar);
             var tracks = _library.Tracks
                 .Where(t => t.Path.StartsWith(target + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase))
-                .OrderBy(t => t.Path, StringComparer.CurrentCultureIgnoreCase)
+                .OrderBy(t => t.Path, StringComparer.OrdinalIgnoreCase)
                 .ToList();
 
             if (tracks.Count > 0)
@@ -974,3 +974,4 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         Player.PropertyChanged -= OnPlayerPropertyChanged;
     }
 }
+
