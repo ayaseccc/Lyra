@@ -195,14 +195,14 @@
                                         </Grid>
                                     </Border>
                                     <TextBlock Grid.Column="1" Text="{Binding IsCollapsed, Converter={StaticResource BoolToCollapseArrow}}"
-                                               FontSize="10" Foreground="{DynamicResource TextTertiaryBrush}"
+                                               FontSize="{DynamicResource UiFontSizeSmall}" Foreground="{DynamicResource TextTertiaryBrush}"
                                                VerticalAlignment="Center" Margin="0,0,6,0" />
-                                    <TextBlock Grid.Column="2" Text="{Binding AlbumText}" FontSize="13" FontWeight="SemiBold"
+                                    <TextBlock Grid.Column="2" Text="{Binding AlbumText}" FontSize="{DynamicResource UiFontSizeTitle}" FontWeight="SemiBold"
                                                Foreground="{DynamicResource TextSecondaryBrush}"
                                                TextTrimming="CharacterEllipsis" VerticalAlignment="Center" Margin="6,0,0,0" />
                                     <Border Grid.Column="3" Width="96" Height="1" VerticalAlignment="Center"
                                             Background="{DynamicResource BorderSoftBrush}" Margin="0,0,10,0" />
-                                    <TextBlock Grid.Column="4" Text="{Binding YearText}" FontSize="11"
+                                    <TextBlock Grid.Column="4" Text="{Binding YearText}" FontSize="{DynamicResource UiFontSizeSmall}"
                                                Foreground="{DynamicResource TextTertiaryBrush}"
                                                VerticalAlignment="Center" Margin="0,0,8,0" />
                                 </Grid>
@@ -249,7 +249,7 @@
                         
                                     <StackPanel Grid.Column="{Binding DataContext.ColIndexTitle, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexTitle, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
                                                 Orientation="Horizontal" VerticalAlignment="Center">
-                                        <ui:SymbolIcon Symbol="Play24" FontSize="11" Foreground="{DynamicResource AccentBrush}"
+                                        <ui:SymbolIcon Symbol="Play24" FontSize="{DynamicResource UiFontSizeSmall}" Foreground="{DynamicResource AccentBrush}"
                                                        VerticalAlignment="Center" Margin="0,0,8,0">
                                             <ui:SymbolIcon.Style>
                                                 <Style TargetType="ui:SymbolIcon">
@@ -270,39 +270,39 @@
                                             </ui:SymbolIcon.Style>
                                         </ui:SymbolIcon>
                                         <StackPanel>
-                                            <TextBlock Text="{Binding Track.DisplayTitle}" FontSize="12"
+                                            <TextBlock Text="{Binding Track.DisplayTitle}" FontSize="{DynamicResource UiFontSizeBody}"
                                                        Foreground="{DynamicResource TextPrimaryBrush}" TextTrimming="CharacterEllipsis" />
-                                            <TextBlock Text="{Binding Track.DisplayArtist}" FontSize="10.5"
+                                            <TextBlock Text="{Binding Track.DisplayArtist}" FontSize="{DynamicResource UiFontSizeSmall}"
                                                        Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                        Margin="0,2,0,0" />
                                         </StackPanel>
                                     </StackPanel>
                                     <TextBlock Grid.Column="{Binding DataContext.ColIndexArtist, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexArtist, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
-                                               Text="{Binding Track.DisplayArtist}" FontSize="10.5"
+                                               Text="{Binding Track.DisplayArtist}" FontSize="{DynamicResource UiFontSizeSmall}"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="{Binding DataContext.ColIndexAlbum, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexAlbum, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
-                                               Text="{Binding Track.DisplayAlbum}" FontSize="10.5"
+                                               Text="{Binding Track.DisplayAlbum}" FontSize="{DynamicResource UiFontSizeSmall}"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="{Binding DataContext.ColIndexDuration, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexDuration, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
-                                               Text="{Binding Track.DurationText}" FontSize="10.5"
+                                               Text="{Binding Track.DurationText}" FontSize="{DynamicResource UiFontSizeSmall}"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Right"
                                                VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="{Binding DataContext.ColIndexFormat, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexFormat, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
-                                               Text="{Binding Track.Format}" FontSize="10.5"
+                                               Text="{Binding Track.Format}" FontSize="{DynamicResource UiFontSizeSmall}"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="{Binding DataContext.ColIndexSampleRate, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexSampleRate, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
-                                               Text="{Binding Track.SampleRateText}" FontSize="10.5"
+                                               Text="{Binding Track.SampleRateText}" FontSize="{DynamicResource UiFontSizeSmall}"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="{Binding DataContext.ColIndexBitDepth, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexBitDepth, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
-                                               Text="{Binding Track.BitDepthText}" FontSize="10.5"
+                                               Text="{Binding Track.BitDepthText}" FontSize="{DynamicResource UiFontSizeSmall}"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
                                     <TextBlock Grid.Column="{Binding DataContext.ColIndexBitrate, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexBitrate, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
-                                               Text="{Binding Track.BitrateText}" FontSize="10.5"
+                                               Text="{Binding Track.BitrateText}" FontSize="{DynamicResource UiFontSizeSmall}"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
                                 </Grid>
@@ -1414,7 +1414,7 @@
                         </Grid>
                     </Border>
                     <StackPanel Grid.Row="1">
-                        <TextBlock Text="{Binding Player.Title}" Style="{StaticResource TitleTextStyle}" FontSize="14" />
+                        <TextBlock Text="{Binding Player.Title}" Style="{StaticResource TitleTextStyle}" />
                         <TextBlock Text="{Binding Player.ArtistAndAlbum}" Style="{StaticResource SubTextStyle}" Margin="0,3,0,0" />
                         <!-- UI-R4 制作信息区块：标签优先，LRC 头部补位，有才显示 -->
                         <StackPanel Orientation="Horizontal" Margin="0,7,0,0"
@@ -1422,11 +1422,11 @@
                             <ui:SymbolIcon Symbol="Edit24" FontSize="12" VerticalAlignment="Center"
                                            Foreground="{DynamicResource TextTertiaryBrush}" />
                             <TextBlock Text="{Binding Player.Credits}" Margin="6,0,0,0" VerticalAlignment="Center"
-                                       FontSize="10.5" Foreground="{DynamicResource TextTertiaryBrush}"
+                                       FontSize="{DynamicResource UiFontSizeSmall}" Foreground="{DynamicResource TextTertiaryBrush}"
                                        TextWrapping="Wrap" />
                         </StackPanel>
                         <TextBlock Text="{Binding Player.Lyrics.LyricCreditsText}" Margin="0,4,0,0"
-                                   FontSize="10.5" Foreground="{DynamicResource TextTertiaryBrush}"
+                                   FontSize="{DynamicResource UiFontSizeSmall}" Foreground="{DynamicResource TextTertiaryBrush}"
                                    TextWrapping="Wrap"
                                    Visibility="{Binding Player.Credits, Converter={StaticResource EmptyToVis}}" />
                         <!-- 来源信息已移入歌词右键菜单（UI-R1.5 ⑥） -->
