@@ -967,6 +967,15 @@
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                 <Setter Property="Background" Value="Transparent" />
                                 <Setter Property="Focusable" Value="True" />
+                                <Setter Property="ContextMenu">
+                                    <Setter.Value>
+                                        <!-- 右键菜单是独立弹出树，RelativeSource 跨树绑定必然哑（P1.1 老坑）；用 PlacementTarget + Click -->
+                                        <ContextMenu PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
+                                            <MenuItem Header="试听（临时播放）" Click="OnOnlineSearchMenuPreview" />
+                                            <MenuItem Header="下载" Click="OnOnlineSearchMenuDownload" />
+                                        </ContextMenu>
+                                    </Setter.Value>
+                                </Setter>
                                 <Style.Triggers>
                                     <Trigger Property="IsSelected" Value="True">
                                         <Setter Property="Background" Value="{DynamicResource HoverBrush}" />
@@ -1013,6 +1022,84 @@
                     <TextBlock Grid.Row="3" Text="{Binding StatusText}" Style="{StaticResource SubTextStyle}"
                                Margin="0,8,0,0" TextWrapping="Wrap" />
                 </Grid>
+            </Grid>
+        </DataTemplate>
+
+        <!-- ============ 下载管理页（P4-5） ============ -->
+        <DataTemplate DataType="{x:Type vm:DownloadPageViewModel}">
+            <Grid Margin="18,8,18,0">
+                <Grid.RowDefinitions>
+                    <RowDefinition Height="Auto" />
+                    <RowDefinition Height="*" />
+                </Grid.RowDefinitions>
+
+                <StackPanel>
+                    <TextBlock Text="{Binding Title}" Style="{StaticResource PageTitleStyle}" />
+                    <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
+                </StackPanel>
+
+                <ListBox Grid.Row="1" ItemsSource="{Binding Items}" Margin="0,10,0,0"
+                         Background="Transparent" BorderThickness="0"
+                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                    <ListBox.Template>
+                        <ControlTemplate TargetType="ListBox">
+                            <Border Background="{TemplateBinding Background}" BorderThickness="0">
+                                <ScrollViewer Focusable="False" Padding="0" Margin="0">
+                                    <ItemsPresenter />
+                                </ScrollViewer>
+                            </Border>
+                        </ControlTemplate>
+                    </ListBox.Template>
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0,6" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                            <Setter Property="Background" Value="Transparent" />
+                            <Setter Property="Focusable" Value="False" />
+                            <Style.Triggers>
+                                <Trigger Property="IsSelected" Value="True">
+                                    <Setter Property="Background" Value="Transparent" />
+                                </Trigger>
+                            </Style.Triggers>
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
+                        <DataTemplate>
+                            <Border CornerRadius="8" Padding="12,8" Margin="0,3"
+                                    Background="{DynamicResource SurfaceBrush}"
+                                    BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <Grid>
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="Auto" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Title}" Style="{StaticResource TitleTextStyle}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                            <TextBlock Text="{Binding ArtistLine}" Style="{StaticResource SubTextStyle}"
+                                                       TextTrimming="CharacterEllipsis" />
+                                        </StackPanel>
+                                        <TextBlock Grid.Column="1" Text="{Binding StatusText}"
+                                                   Style="{StaticResource SubTextStyle}" VerticalAlignment="Center" />
+                                    </Grid>
+                                    <ProgressBar Grid.Row="1" Height="3" Margin="0,6,0,0" Minimum="0" Maximum="100"
+                                                 Value="{Binding Progress}"
+                                                 Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVis}}" />
+                                    <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,0"
+                                                Visibility="{Binding IsDuplicate, Converter={StaticResource BoolToVis}}">
+                                        <ui:Button Content="继续下载" Appearance="Primary" Click="OnDownloadConfirmClick" />
+                                        <ui:Button Content="取消" Margin="8,0,0,0" Click="OnDownloadCancelClick" />
+                                    </StackPanel>
+                                </Grid>
+                            </Border>
+                        </DataTemplate>
+                    </ListBox.ItemTemplate>
+                </ListBox>
             </Grid>
         </DataTemplate>
 

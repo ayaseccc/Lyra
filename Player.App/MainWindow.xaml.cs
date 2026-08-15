@@ -212,6 +212,58 @@ public partial class MainWindow : FluentWindow
         _ = Player?.PlayOnlinePreviewAsync(item.Track, item.SourceKey, vm.SelectedBr);
     }
 
+    /// <summary>P4 搜索结果右键菜单：从鼠标命中点找回搜索页 VM 与行数据（ContextMenu 独立弹出树，不能用 RelativeSource）。</summary>
+    private (ViewModels.OnlineSearchItem? Item, ViewModels.OnlineSearchViewModel? Vm) SearchFromMenu()
+    {
+        var pos = System.Windows.Input.Mouse.GetPosition(this);
+        var hit = System.Windows.Media.VisualTreeHelper.HitTest(this, pos)?.VisualHit;
+        var item = FindAncestor<System.Windows.Controls.ListBoxItem>(hit);
+        var list = FindAncestor<System.Windows.Controls.ListBox>(hit);
+        return (item?.DataContext as ViewModels.OnlineSearchItem,
+                list?.DataContext as ViewModels.OnlineSearchViewModel);
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? node) where T : DependencyObject
+    {
+        while (node is not null)
+        {
+            if (node is T match) return match;
+            node = System.Windows.Media.VisualTreeHelper.GetParent(node);
+        }
+        return null;
+    }
+
+    private void OnOnlineSearchMenuPreview(object sender, RoutedEventArgs e)
+    {
+        var (item, vm) = SearchFromMenu();
+        if (item is not null && vm is not null)
+            _ = Player?.PlayOnlinePreviewAsync(item.Track, item.SourceKey, vm.SelectedBr);
+    }
+
+    private void OnOnlineSearchMenuDownload(object sender, RoutedEventArgs e)
+    {
+        var (item, vm) = SearchFromMenu();
+        if (item is not null && vm is not null)
+        {
+            vm.SelectedItem = item;   // 命令作用于选中项
+            vm.DownloadSelectedCommand.Execute(null);
+        }
+    }
+
+    /// <summary>P4-5 下载管理：重复确认「继续下载」。</summary>
+    private void OnDownloadConfirmClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.FrameworkElement { DataContext: ViewModels.DownloadPageViewModel.DownloadRow row })
+            (Shell?.CurrentPage as ViewModels.DownloadPageViewModel)?.Confirm(row);
+    }
+
+    /// <summary>P4-5 下载管理：重复确认「取消」。</summary>
+    private void OnDownloadCancelClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is System.Windows.FrameworkElement { DataContext: ViewModels.DownloadPageViewModel.DownloadRow row })
+            (Shell?.CurrentPage as ViewModels.DownloadPageViewModel)?.Cancel(row);
+    }
+
     /// <summary>L2 设置页-在线组：Key 输入框眼睛按钮（密文/明文切换）。</summary>
     private void OnToggleKeyReveal(object sender, RoutedEventArgs e)
     {

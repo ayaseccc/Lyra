@@ -38,12 +38,15 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
 {
     private readonly IReadOnlyList<IOnlineSource> _sources;
     private readonly PlayerViewModel _player;
+    private readonly Player.Core.Downloads.DownloadService? _downloads;
     private CancellationTokenSource? _searchCts;
 
-    public OnlineSearchViewModel(IReadOnlyList<IOnlineSource> sources, PlayerViewModel player)
+    public OnlineSearchViewModel(IReadOnlyList<IOnlineSource> sources, PlayerViewModel player,
+        Player.Core.Downloads.DownloadService? downloads = null)
     {
         _sources = sources;
         _player = player;
+        _downloads = downloads;
 
         // 默认选中网易云（PLAN：默认音源 netease）；无 Key/不可用则自动落回 GD
         var preferred = sources.FirstOrDefault(s => s.Key == "netease" && s.IsAvailable) ?? sources.FirstOrDefault(s => s.IsAvailable) ?? sources.FirstOrDefault();
@@ -156,6 +159,25 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
     private void PlaySelected()
     {
         if (SelectedItem is { } item) PlayRequested?.Invoke(item);
+    }
+
+    /// <summary>下载选中结果（P4-5）。库内重复会进下载管理页等待确认。</summary>
+    [RelayCommand]
+    private void DownloadSelected()
+    {
+        if (SelectedItem is not { } item || _downloads is null) return;
+        var duplicate = _downloads.Enqueue(item.Track, item.SourceKey, SelectedBr);
+        if (duplicate.Status == Player.Core.Downloads.DownloadStatus.Duplicate)
+        {
+            StatusText = "该曲目与媒体库重复，已加入下载管理页等待确认";
+            return;
+        }
+
+        // ChKSz 操作保留额度预估（PLAN P4 v2）
+        var isFree = _sources.FirstOrDefault(s => s.Key == item.SourceKey)?.IsFree ?? true;
+        StatusText = isFree
+            ? $"已加入下载队列：{item.Track.Name}（GD 零额度）"
+            : $"已加入下载队列：{item.Track.Name}（将消耗 1 次网易云额度）";
     }
 
     private async Task LoadAsync(int page)

@@ -31,19 +31,24 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     /// <summary>P4 在线源注册表（在线搜索页/试听用）。</summary>
     private readonly Player.Core.Online.OnlineSources? _onlineSources;
+
+    /// <summary>P4 下载服务（下载管理页/搜索页下载用）。</summary>
+    private readonly Player.Core.Downloads.DownloadService? _downloads;
     private bool _rebuildQueued;
     private bool _pendingLibraryChanged;
     private long? _pendingPlaylistSelection;
     private bool _disposed;
 
     public ShellViewModel(LibraryService library, PlaylistService playlists, PlayerViewModel player,
-        IPlaybackEngine engine, ChkszClient client, Player.Core.Online.OnlineSources? onlineSources = null)
+        IPlaybackEngine engine, ChkszClient client, Player.Core.Online.OnlineSources? onlineSources = null,
+        Player.Core.Downloads.DownloadService? downloads = null)
     {
         _library = library;
         _playlists = playlists;
         _engine = engine;
         _client = client;
         _onlineSources = onlineSources;
+        _downloads = downloads;
         Player = player;
         _dispatcher = Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher;
 
@@ -232,6 +237,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             Kind = NavKind.OnlineSearch, Title = "在线搜索", Icon = SymbolRegular.Cloud24,
             CountText = "GD / 网易云"
         });
+        NavItems.Add(new NavItemViewModel
+        {
+            Kind = NavKind.Downloads, Title = "下载管理", Icon = SymbolRegular.ArrowDownload24,
+            CountText = "串行队列"
+        });
 
         var manual = _playlists.Playlists;
         NavItems.Add(new NavItemViewModel
@@ -379,7 +389,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
             case NavKind.OnlineSearch:
                 CurrentPage = new OnlineSearchViewModel(
-                    _onlineSources?.All ?? Array.Empty<Player.Core.Online.IOnlineSource>(), Player);
+                    _onlineSources?.All ?? Array.Empty<Player.Core.Online.IOnlineSource>(), Player, _downloads);
+                break;
+
+            case NavKind.Downloads:
+                CurrentPage = new DownloadPageViewModel(_downloads!);
                 break;
 
             case NavKind.Settings:

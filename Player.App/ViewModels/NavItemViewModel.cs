@@ -13,6 +13,7 @@ public enum NavKind
     Playlist,
     FolderPlaylist,
     OnlineSearch,
+    Downloads,
     Settings
 }
 

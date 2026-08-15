@@ -20,6 +20,7 @@ public partial class App : Application
     private ChkszClient? _client;
     private LyricsService? _lyrics;
     private Player.Core.Online.OnlineSources? _onlineSources;
+    private Player.Core.Downloads.DownloadService? _downloads;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -83,9 +84,13 @@ public partial class App : Application
         _onlineSources = new Player.Core.Online.OnlineSources(_client);
         _ = _onlineSources.ProbeAllAsync(CancellationToken.None);
 
+        // P4-5：下载服务（串行队列）；下载完成后触发媒体库增量扫描自动入库
+        _downloads = new Player.Core.Downloads.DownloadService(_onlineSources, _library);
+        _downloads.BatchCompleted += OnDownloadBatchCompleted;
+
         _player = new PlayerViewModel(_engine, _lyrics, _client);
         _player.SetOnlineSources(_onlineSources);
-        _shell = new ShellViewModel(_library, _playlists, _player, _engine, _client, _onlineSources);
+        _shell = new ShellViewModel(_library, _playlists, _player, _engine, _client, _onlineSources, _downloads);
 
         var window = new MainWindow { DataContext = _shell };
         MainWindow = window;
@@ -111,6 +116,7 @@ public partial class App : Application
         _shell?.Dispose();
         _player?.Dispose();
         _lyrics?.Dispose();
+        _downloads?.Dispose();
         _onlineSources?.Dispose();
         _client?.Dispose();
         _library?.StopWatching();
@@ -121,6 +127,12 @@ public partial class App : Application
         LogSetup.Shutdown();
 
         base.OnExit(e);
+    }
+
+    /// <summary>P4-5：一批下载完成后触发增量扫描自动入库。</summary>
+    private void OnDownloadBatchCompleted()
+    {
+        _ = _shell?.ScanAsync(fullRescan: false);
     }
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)

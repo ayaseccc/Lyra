@@ -1,4 +1,5 @@
 using Player.Core.Audio;
+using Player.Core.Downloads;
 using Player.Core.Hotkeys;
 using Player.Core.Infra;
 using Player.Core.Library;
@@ -66,6 +67,14 @@ public static class Program
 
             case "gdprobe":
                 await RunGdProbeAsync();
+                break;
+
+            case "downloads":
+                RunDownloadTemplateChecks();
+                break;
+
+            case "dlprobe":
+                await RunDownloadProbeAsync();
                 break;
 
             case "urlprobe":
@@ -812,6 +821,100 @@ public static class Program
         var album = await gd.SearchAlbumAsync("叶惠美", limit: 5, page: 1, CancellationToken.None);
         Console.WriteLine($"专辑拉取「叶惠美」：success={album.Success} count={album.Data?.Count ?? 0} err={album.Error}");
 
+        Console.WriteLine();
+    }
+
+    // ================= 下载命名模板（P4-5） =================
+
+    private static void RunDownloadTemplateChecks()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 下载命名模板（DownloadTemplater） ===");
+
+        var values = new Dictionary<string, string>
+        {
+            ["AlbumArtist"] = "周杰伦",
+            ["Album"] = "叶惠美",
+            ["TrackNo"] = "01",
+            ["Title"] = "晴天: 完整版?"
+        };
+        var path = DownloadTemplater.Render("{AlbumArtist}/{Album}/{TrackNo} - {Title}", values);
+        Check("模板渲染替换占位符", path == "周杰伦/叶惠美/01 - 晴天_ 完整版_");
+        Check("未知占位符原样保留", DownloadTemplater.Render("x {Unknown} y", values).Contains("{Unknown}"));
+        Check("空 TrackNo 时去掉 - 段", DownloadTemplater.Render(
+            "{AlbumArtist}/{Album}/{TrackNo} - {Title}",
+            new Dictionary<string, string> { ["AlbumArtist"] = "YOASOBI", ["Album"] = "夜に駆ける", ["TrackNo"] = "", ["Title"] = "夜に駆ける" })
+            == "YOASOBI/夜に駆ける/夜に駆ける");
+
+        var sanitized = DownloadTemplater.SanitizeComponent("a/b:c*d?" + (char)34 + "f<g>h|i");
+        Console.WriteLine($"  debug sanitized='{sanitized}'");
+        Check("非法文件名字符替换为下划线", sanitized == "a_b_c_d__f_g_h_i");   // ? 与 " 各一个下划线
+        Console.WriteLine($"  debug CON.='{DownloadTemplater.SanitizeComponent("CON.")}'");
+        Check("保留名与尾点处理", DownloadTemplater.SanitizeComponent("CON.") == "CON_");
+        Console.WriteLine($"  debug blank='{DownloadTemplater.SanitizeComponent("   ")}'");
+        Check("空白组件回退下划线", DownloadTemplater.SanitizeComponent("   ") == "_");
+
+        Check("扩展名从 URL 推断", DownloadTemplater.ExtensionFromUrl("https://x.com/a/b.flac?v=1") == ".flac");
+        Check("未知扩展名回退 bin", DownloadTemplater.ExtensionFromUrl("https://x.com/a") == ".bin");
+        Check("URL 带路径保留最后扩展", DownloadTemplater.ExtensionFromUrl("http://host/abc.MP3?k=1") == ".mp3");
+
+        Console.WriteLine();
+    }
+
+    /// <summary>下载全链路探测（P4-5；需联网；GD 零 Key）。</summary>
+    private static async Task RunDownloadProbeAsync()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 下载全链路探测（P4-5） ===");
+
+        Db.Initialize();
+        var lib = new LibraryService();
+        using var sources = new OnlineSources(new ChkszClient());
+        using var dl = new DownloadService(sources, lib);
+
+        var dir = Path.Combine(Path.GetTempPath(), "player-dl-probe");
+        if (Directory.Exists(dir)) Directory.Delete(dir, true);
+        Directory.CreateDirectory(dir);
+        ConfigService.Current.Online.DownloadDir = dir;
+
+        var gd = (GdSource)sources.Default;
+        var search = await gd.SearchAsync("夜に駆ける", limit: 5, page: 1, CancellationToken.None);
+        var track = search.Data?.FirstOrDefault();
+        if (track is null)
+        {
+            Console.WriteLine("搜索为空，跳过");
+            Skip("下载全链路（取流/落盘/标签/lrc）", "GD 搜索为空或网络不可达");
+            return;
+        }
+
+        Console.WriteLine($"目标曲目：{track.Name} / {track.ArtistLine}（{track.Source}）");
+        var item = dl.Enqueue(track, gd.Key, 999);
+
+        for (var i = 0; i < 120 && !item.IsDone; i++) await Task.Delay(1000);
+
+        Console.WriteLine($"状态={item.Status} 错误={item.Error} 实际音质={item.ActualBr}");
+        if (item.TargetPath is not null && File.Exists(item.TargetPath))
+        {
+            var info = new FileInfo(item.TargetPath);
+            Console.WriteLine($"文件：{item.TargetPath}（{info.Length} bytes）");
+            var lrc = Path.ChangeExtension(item.TargetPath, ".lrc");
+            Console.WriteLine($"lrc 存在：{File.Exists(lrc)}（{new FileInfo(lrc).Length} bytes）");
+            using var tf = TagLib.File.Create(item.TargetPath);
+            Console.WriteLine($"标签：标题={tf.Tag.Title} 歌手={string.Join("/", tf.Tag.Performers)} 专辑={tf.Tag.Album} 封面={tf.Tag.Pictures.Length} 张");
+            Check("下载完成且文件存在", item.Status == DownloadStatus.Completed && File.Exists(item.TargetPath));
+            Check("标签标题正确", tf.Tag.Title == track.Name);
+            Check("有歌词时 lrc 落盘", !File.Exists(lrc) || new FileInfo(lrc).Length > 0);
+        }
+        else
+        {
+            Check("下载完成且文件存在", false);
+        }
+
+        // 重复检测：刚下载未入库的曲目再入队 → 不误拦（Duplicate 只对库内已有曲目）
+        var dup = dl.Enqueue(track, gd.Key, 999);
+        Check("未入库曲目再入队不误标记重复", dup.Status == DownloadStatus.Queued);
+
+        try { Directory.Delete(dir, true); } catch { /* 忽略 */ }
         Console.WriteLine();
     }
 
