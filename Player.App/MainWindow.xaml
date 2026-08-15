@@ -940,6 +940,7 @@
                         </ListBox.Template>
                         <ListBox.ItemContainerStyle>
                             <Style TargetType="ListBoxItem">
+                                <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
                                 <Setter Property="Padding" Value="0,4" />
                                 <Setter Property="HorizontalContentAlignment" Value="Stretch" />
                                 <Setter Property="Background" Value="Transparent" />

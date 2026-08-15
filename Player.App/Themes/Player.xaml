@@ -63,6 +63,7 @@
 
     <!-- 设置页分页按钮（UI-R3 反馈）：文字胶囊，选中=强调填充 -->
     <Style x:Key="TabRadioStyle" TargetType="RadioButton">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="FontSize" Value="12" />
         <Setter Property="Cursor" Value="Hand" />
@@ -89,6 +90,7 @@
 
     <!-- = 播放条控制键 = -->
     <Style x:Key="TransportButtonStyle" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="Width" Value="32" />
         <Setter Property="Height" Value="32" />
         <Setter Property="Background" Value="Transparent" />
@@ -244,6 +246,7 @@
     </Style>
 
     <Style x:Key="SeekSliderStyle" TargetType="Slider">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="Focusable" Value="False" />
         <Setter Property="IsMoveToPointEnabled" Value="True" />
         <Setter Property="Minimum" Value="0" />
@@ -306,6 +309,7 @@
 
     <!-- = 左侧栏导航 = -->
     <Style x:Key="NavItemStyle" TargetType="ListBoxItem">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Padding" Value="0" />
         <Setter Property="Margin" Value="6,1" />
@@ -361,6 +365,7 @@
 
     <!-- = 左侧栏分组标题上的操作（UI-R1.5 ⑧/⑩）：悬浮 + 按钮、可点击的「＋ 新建歌单」 = -->
     <Style x:Key="HeaderAddButtonStyle" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="Width" Value="24" />
         <Setter Property="Height" Value="22" />
         <Setter Property="Padding" Value="4,2" />
@@ -388,6 +393,7 @@
     </Style>
 
     <Style x:Key="HeaderActionStyle" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="Background" Value="Transparent" />
         <Setter Property="Padding" Value="12,4" />
         <Setter Property="Margin" Value="12,10,0,2" />
@@ -412,6 +418,7 @@
 
     <!-- = 曲目列表（UI-R2：分组 112px 一页约 6 曲 / 平铺 56px 紧凑，互不影响） = -->
     <Style x:Key="TrackRowStyle" TargetType="ListBoxItem">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="Height" Value="84" />
         <Setter Property="Foreground" Value="{DynamicResource TextSecondaryBrush}" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
@@ -501,6 +508,7 @@
 
     <!-- 普通单列列表（设置页的目录列表等）：没有 GridView，不能用带 GridViewRowPresenter 的模板 -->
     <Style x:Key="SimpleRowStyle" TargetType="ListBoxItem">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="Height" Value="32" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
         <Setter Property="Template">
@@ -524,6 +532,7 @@
 
     <!-- = 专辑 / 艺术家 / 大行列表 = -->
     <Style x:Key="CardRowStyle" TargetType="ListViewItem">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="Height" Value="60" />
         <Setter Property="Margin" Value="0,1" />
         <Setter Property="HorizontalContentAlignment" Value="Stretch" />
@@ -554,6 +563,7 @@
 
     <!-- = 播放模式图标组按钮（UI-R1）：小方钮，选中由 BoolToAccent 给强调色背景 -->
     <Style x:Key="ModeButtonStyle" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="Width" Value="30" />
         <Setter Property="Height" Value="28" />
         <Setter Property="Padding" Value="0" />
@@ -582,6 +592,7 @@
 
     <!-- = 主播放键（UI-R1）：圆形强调色 -->
     <Style x:Key="PrimaryPlayButtonStyle" TargetType="Button">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
         <Setter Property="Width" Value="40" />
         <Setter Property="Height" Value="40" />
         <Setter Property="Background" Value="{DynamicResource AccentBrush}" />
@@ -605,6 +616,64 @@
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
+    </Style>
+
+
+    <!-- ============================================================
+         L3.0-1 焦点框全局根治（第三次出没）：统一主题化焦点视觉，
+         替换系统虚线焦点框；键盘导航（方向键/空格/Enter）不受影响。
+         隐式样式 BasedOn 系统默认样式，只覆盖 FocusVisualStyle 一个属性。
+         ============================================================ -->
+    <!-- FocusVisualStyle 会被应用到内部焦点视觉元素（非 Control），样式必须无 TargetType，
+          setter 用 Control.Template 限定；带 TargetType 会抛 UnsetValue（实测教训）。 -->
+    <Style x:Key="ThemeFocusVisualStyle">
+        <Setter Property="Control.Template">
+            <Setter.Value>
+                <ControlTemplate>
+                    <Border BorderBrush="{DynamicResource AccentBrush}" BorderThickness="1"
+                            CornerRadius="3" Margin="1" SnapsToDevicePixels="True" />
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <Style TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
+    </Style>
+    <Style TargetType="ToggleButton" BasedOn="{StaticResource {x:Type ToggleButton}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
+    </Style>
+    <Style TargetType="CheckBox" BasedOn="{StaticResource {x:Type CheckBox}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
+    </Style>
+    <Style TargetType="RadioButton" BasedOn="{StaticResource {x:Type RadioButton}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
+    </Style>
+    <Style TargetType="ListBoxItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
+    </Style>
+    <!-- ListViewItem 没有 {x:Type ListViewItem} 系统样式键（其默认样式继承 ListBoxItem），
+         BasedOn 引用 ListBoxItem 键才能解析（实测 StaticResourceHolder 报错教训） -->
+    <Style TargetType="ListViewItem" BasedOn="{StaticResource {x:Type ListBoxItem}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
+    </Style>
+    <Style TargetType="ComboBoxItem" BasedOn="{StaticResource {x:Type ComboBoxItem}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
+    </Style>
+    <Style TargetType="TextBox" BasedOn="{StaticResource {x:Type TextBox}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
+    </Style>
+    <Style TargetType="PasswordBox" BasedOn="{StaticResource {x:Type PasswordBox}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
+    </Style>
+    <Style TargetType="Slider" BasedOn="{StaticResource {x:Type Slider}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
+    </Style>
+    <!-- 容器类（ListView/ComboBox/GridSplitter 等）实测没有 {x:Type} 系统样式键，
+         BasedOn 会抛 StaticResourceHolder（教训），且这些容器默认 Focusable=false 不参与
+         Tab 导航（子代理核销确认），不补隐式样式；内部可聚焦元素已由上面条目样式覆盖。 -->
+    <Style TargetType="ListBox" BasedOn="{StaticResource {x:Type ListBox}}">
+        <Setter Property="FocusVisualStyle" Value="{DynamicResource ThemeFocusVisualStyle}" />
     </Style>
 
 </ResourceDictionary>
