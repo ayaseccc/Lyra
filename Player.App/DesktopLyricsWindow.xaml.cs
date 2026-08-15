@@ -313,6 +313,7 @@ public partial class DesktopLyricsWindow : Window
         if (_locked) return;
         var start = e.GetPosition(this);
         var startWidth = Width;
+        Mouse.Capture(ResizeHandle);   // 显式捕获：拖动跨窗口边缘也不丢事件（用户反馈拖不动）
         void OnMove(object? s, MouseEventArgs args)
         {
             var delta = args.GetPosition(this).X - start.X;
@@ -320,13 +321,14 @@ public partial class DesktopLyricsWindow : Window
         }
         void OnUp(object? s, MouseButtonEventArgs args)
         {
-            Mouse.RemoveMouseMoveHandler(this, OnMove);
-            Mouse.RemoveMouseUpHandler(this, OnUp);
+            Mouse.Capture(null);
+            Mouse.RemoveMouseMoveHandler(ResizeHandle, OnMove);
+            Mouse.RemoveMouseUpHandler(ResizeHandle, OnUp);
             ConfigService.Current.Ui.DesktopLyricsWidth = Width;
             ConfigService.Save();
         }
-        Mouse.AddMouseMoveHandler(this, OnMove);
-        Mouse.AddMouseUpHandler(this, OnUp);
+        Mouse.AddMouseMoveHandler(ResizeHandle, OnMove);
+        Mouse.AddMouseUpHandler(ResizeHandle, OnUp);
         e.Handled = true;
     }
 

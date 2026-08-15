@@ -119,11 +119,17 @@
                            HorizontalAlignment="Center" VerticalAlignment="Center" />
         </Border>
 
-        <!-- 解锁态：调宽柄（右侧；背景隐藏时一并隐藏，避免悬浮小条——目验三修复） -->
-        <Border x:Name="ResizeHandle" Width="10" Height="36" CornerRadius="5"
-                HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-6,0"
+        <!-- 解锁态：调宽柄（右侧；背景隐藏时一并隐藏，避免悬浮小条——目验三修复）
+             用户反馈加大：18×48、窗口内露出更多，拖动显式捕获 -->
+        <Border x:Name="ResizeHandle" Width="18" Height="48" CornerRadius="6"
+                HorizontalAlignment="Right" VerticalAlignment="Center" Margin="0,0,-2,0"
                 Background="{DynamicResource AccentBrush}" Cursor="SizeWE"
-                Visibility="Collapsed" MouseLeftButtonDown="OnResizeHandleDown" />
+                AutomationProperties.Name="调整宽度"
+                Visibility="Collapsed" MouseLeftButtonDown="OnResizeHandleDown">
+            <Border.Effect>
+                <DropShadowEffect BlurRadius="4" ShadowDepth="0" Opacity="0.35" />
+            </Border.Effect>
+        </Border>
 
         <!-- 自定义悬浮设置面板（目验三修复：平铺行 + 色板，无系统子菜单走廊问题；右键解锁态打开） -->
         <Popup x:Name="SettingsPopup" Placement="MousePoint" StaysOpen="False" AllowsTransparency="True">

@@ -1153,6 +1153,69 @@ public partial class MainWindow : FluentWindow
             : CurrentTrackPage?.GetDragPayload(_draggingTrack).ToArray() ?? new[] { _draggingTrack };
     }
 
+    /// <summary>右键不会改变 ListBox 选中项：手动选中命中的那一行（多选时保持既有选区，作用整组）。</summary>
+    private void OnTrackListPreviewRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not ListBox list) return;
+        var row = FindAncestor<ListBoxItem>(e.OriginalSource as DependencyObject);
+        if (row is null || row.DataContext is not TrackRowItem item) return;
+        if (item.IsGroupHeader) return;
+        var track = item.Track;
+        if (track is null) return;
+        var already = list.SelectedItems.Cast<object>().Any(x => ReferenceEquals(x, row));
+        if (!already) list.SelectedItem = row;
+    }
+
+    /// <summary>主列表右键菜单打开：填充「添加到歌单」子菜单、移出歌单可见性、挂 Click（只挂一次）。</summary>
+    private void OnTrackListContextMenuOpening(object sender, ContextMenuEventArgs e)
+    {
+        if (sender is not ListBox list || list.ContextMenu is not { } menu) return;
+        if (CurrentTrackPage is not { } page) return;
+
+        // 「添加到歌单」子菜单动态填充（独立弹出树，Command 都挂在条目实例上）。
+        // 注意：菜单命名作用域不可靠，按 Tag 遍历 Items 定位
+        var addRoot = menu.Items.OfType<System.Windows.Controls.MenuItem>()
+            .FirstOrDefault(m => m.Tag as string == "addtoplaylist");
+        if (addRoot is not null)
+        {
+            addRoot.ItemsSource = page.PlaylistMenuItems;
+            addRoot.Visibility = page.HasPlaylistTargets ? Visibility.Visible : Visibility.Collapsed;
+        }
+        var removeItem = menu.Items.OfType<System.Windows.Controls.MenuItem>()
+            .FirstOrDefault(m => m.Tag as string == "removefromplaylist");
+        if (removeItem is not null)
+            removeItem.Visibility = page.IsPlaylistPage ? Visibility.Visible : Visibility.Collapsed;
+
+        if (_wiredTrackMenu != menu)
+        {
+            _wiredTrackMenu = menu;
+            menu.AddHandler(System.Windows.Controls.MenuItem.ClickEvent,
+                new RoutedEventHandler(OnTrackListMenuItemClick));
+        }
+    }
+
+    private ContextMenu? _wiredTrackMenu;
+
+    private void OnTrackListMenuItemClick(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is not System.Windows.Controls.MenuItem mi) return;
+        var page = CurrentTrackPage;
+        if (page is null) return;
+        switch (mi.Tag as string)
+        {
+            case "play": page.PlaySelectedCommand.Execute(null); break;
+            case "next": page.PlayNextSelectedCommand.Execute(null); break;
+            case "folder": page.OpenContainingFolderCommand.Execute(null); break;
+            case "copy": page.CopyFilesCommand.Execute(null); break;
+            case "move": page.MoveFilesCommand.Execute(null); break;
+            case "rename": page.RenameFileCommand.Execute(null); break;
+            case "delete": page.DeleteFilesCommand.Execute(null); break;
+            case "props": page.ShowPropertiesCommand.Execute(null); break;
+            case "removefromplaylist": page.RemoveFromPlaylistCommand.Execute(null); break;
+            // "addtoplaylist" 的子菜单项直接走条目自带的 Command（PlaylistMenuItem）
+        }
+    }
+
     private void OnTrackListMouseMove(object sender, MouseEventArgs e)
     {
         if (e.LeftButton != MouseButtonState.Pressed || _draggingTrack is null) return;

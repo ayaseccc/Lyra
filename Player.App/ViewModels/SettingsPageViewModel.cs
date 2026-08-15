@@ -158,6 +158,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         _selectedOpacity = ui.SelectedOpacity;
         _hoverOpacity = ui.HoverOpacity;
         _miniSpectrum = ui.MiniSpectrum;
+        _classicMenus = ui.ClassicMenus;
         RefreshColumnRows();
 
         // L2 行为组：关闭到托盘（默认关闭）
@@ -836,6 +837,18 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         ConfigService.Save();
     }
 
+    /// <summary>右键菜单风格：true = 复古原生（Win32 质感），false = WPF-UI 现代。</summary>
+    [ObservableProperty]
+    private bool _classicMenus;
+
+    partial void OnClassicMenusChanged(bool value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.ClassicMenus = value;
+        ConfigService.Save();
+        Theming.ThemeService.ApplyUiPersonalization();
+    }
+
     /// <summary>下一个 UTC+8 零点（额度重置时刻）。</summary>
     private static DateTimeOffset NextResetUtc8()
     {
@@ -1051,6 +1064,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
                 string.Equals(a.Color, ui.CustomAccent, StringComparison.OrdinalIgnoreCase)) ?? AccentColors[0];
             _selectedOpacity = ui.SelectedOpacity;
             _hoverOpacity = ui.HoverOpacity;
+            _classicMenus = ui.ClassicMenus;
             RefreshColumnRows();
             OnPropertyChanged(nameof(SelectedRowHeight));
             OnPropertyChanged(nameof(GroupsExpandedByDefault));

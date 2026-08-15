@@ -221,6 +221,9 @@ public sealed class UiConfig
     /// <summary>L3.2 迷你窗频谱（mixer DSP tap，设置可关）。</summary>
     public bool MiniSpectrum { get; set; }
 
+    /// <summary>右键菜单风格：true = 复古原生（Win32 质感），false = WPF-UI 现代。</summary>
+    public bool ClassicMenus { get; set; }
+
     /// <summary>各列宽度（Key → 像素，缺省用默认宽度）。</summary>
     public Dictionary<string, double> ColumnWidths { get; set; } = new();
 

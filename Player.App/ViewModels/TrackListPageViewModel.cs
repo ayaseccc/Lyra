@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
 using System.ComponentModel;
+using System.IO;
+using System.Windows;
 using System.Windows.Data;
 using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
@@ -375,6 +377,140 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     public bool HasPlaylistTargets => PlaylistTargets.Count > 0;
 
     private IReadOnlyList<PlaylistMenuItem>? _playlistMenuItems;
+
+    // ---------------- 右键菜单命令（2026-08-16 用户要求） ----------------
+
+    /// <summary>「下一首播放」回调（Shell 转发 PlayerViewModel.PlayNextTracks）。</summary>
+    public Action<IReadOnlyList<TrackRecord>, string>? PlayNextRequested { get; set; }
+
+    /// <summary>「移出歌单」回调（Shell 从歌单移除选中曲目并刷新）。</summary>
+    public Action? RemoveFromPlaylistRequested { get; set; }
+
+    /// <summary>文件操作（移动/重命名/删除）后通知 Shell 重扫刷新。</summary>
+    public Action? FilesChangedRequested { get; set; }
+
+    [RelayCommand]
+    private void PlayNextSelected()
+    {
+        var tracks = SelectedTracks;
+        if (tracks.Count == 0) return;
+        PlayNextRequested?.Invoke(tracks, SourceName);
+    }
+
+    [RelayCommand]
+    private void OpenContainingFolder()
+    {
+        var first = SelectedTracks.FirstOrDefault();
+        if (first is null) return;
+        try
+        {
+            System.Diagnostics.Process.Start(new System.Diagnostics.ProcessStartInfo("explorer.exe", $"/select,\"{first.Path}\""));
+        }
+        catch { /* 资源管理器打不开时静默 */ }
+    }
+
+    [RelayCommand]
+    private void CopyFiles()
+    {
+        var files = SelectedTracks.Select(t => t.Path).Where(File.Exists).ToList();
+        if (files.Count == 0) return;
+        var col = new System.Collections.Specialized.StringCollection();
+        col.AddRange(files.ToArray());
+        System.Windows.Clipboard.SetFileDropList(col);
+    }
+
+    [RelayCommand]
+    private void MoveFiles()
+    {
+        var files = SelectedTracks.Select(t => t.Path).Where(File.Exists).ToList();
+        if (files.Count == 0) return;
+        var dlg = new Microsoft.Win32.OpenFolderDialog { Title = "选择目标文件夹（移动曲目文件）" };
+        if (dlg.ShowDialog() != true) return;
+        var errors = 0;
+        foreach (var f in files)
+        {
+            try { File.Move(f, Path.Combine(dlg.FolderName, Path.GetFileName(f))); }
+            catch { errors++; }
+        }
+        if (errors > 0)
+            System.Windows.MessageBox.Show($"有 {errors} 个文件移动失败", "移动文件",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        else FilesChangedRequested?.Invoke();
+    }
+
+    [RelayCommand]
+    private void RenameFile()
+    {
+        var first = SelectedTracks.FirstOrDefault();
+        if (first is null || !File.Exists(first.Path)) return;
+        var dir = Path.GetDirectoryName(first.Path);
+        var ext = Path.GetExtension(first.Path);
+        var input = Player.App.Views.InputDialog.Show("重命名文件", "新文件名（不含扩展名）",
+            Path.GetFileNameWithoutExtension(first.Path));
+        if (string.IsNullOrWhiteSpace(input)) return;
+        var target = Path.Combine(dir ?? string.Empty, input.Trim() + ext);
+        if (string.Equals(target, first.Path, StringComparison.OrdinalIgnoreCase)) return;
+        try
+        {
+            File.Move(first.Path, target);
+            FilesChangedRequested?.Invoke();
+        }
+        catch (Exception ex)
+        {
+            System.Windows.MessageBox.Show($"重命名失败：{ex.Message}", "重命名",
+                MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+    }
+
+    [RelayCommand]
+    private void DeleteFiles()
+    {
+        var files = SelectedTracks.Select(t => t.Path).Where(File.Exists).ToList();
+        if (files.Count == 0) return;
+        var msg = files.Count == 1
+            ? $"确定删除文件？\n{files[0]}"
+            : $"确定删除这 {files.Count} 个文件？";
+        if (System.Windows.MessageBox.Show(msg, "删除文件", MessageBoxButton.YesNo, MessageBoxImage.Warning) != MessageBoxResult.Yes)
+            return;
+        var errors = 0;
+        foreach (var f in files)
+        {
+            try { File.Delete(f); }
+            catch { errors++; }
+        }
+        if (errors > 0)
+            System.Windows.MessageBox.Show($"有 {errors} 个文件删除失败", "删除文件",
+                MessageBoxButton.OK, MessageBoxImage.Warning);
+        else FilesChangedRequested?.Invoke();
+    }
+
+    [RelayCommand]
+    private void ShowProperties()
+    {
+        var first = SelectedTracks.FirstOrDefault();
+        if (first is null || !File.Exists(first.Path)) return;
+        NativeShell.ShowFileProperties(first.Path);
+    }
+
+    [RelayCommand]
+    private void RemoveFromPlaylist()
+    {
+        if (!IsPlaylistPage) return;
+        RemoveFromPlaylistRequested?.Invoke();
+    }
+
+    /// <summary>Shell 属性页（原生资源管理器属性对话框）。</summary>
+    private static class NativeShell
+    {
+        [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
+        private static extern int SHObjectProperties(IntPtr hwnd, uint dwType, string lpObject, string lpPage);
+
+        public static void ShowFileProperties(string path)
+        {
+            try { SHObjectProperties(IntPtr.Zero, 0, path, null); } catch { /* 属性页打不开时静默 */ }
+        }
+    }
+
 
     /// <summary>从专辑/艺术家页钻进来时显示的返回按钮文案。</summary>
     public string? BackTitle { get; init; }

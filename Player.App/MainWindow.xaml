@@ -129,9 +129,38 @@
                              PreviewMouseLeftButtonDown="OnTrackListPreviewMouseLeftButtonDown"
                              PreviewMouseLeftButtonUp="OnTrackListPreviewMouseLeftButtonUp"
                              MouseMove="OnTrackListMouseMove"
+                             PreviewMouseRightButtonDown="OnTrackListPreviewRightButtonDown"
+                             ContextMenuOpening="OnTrackListContextMenuOpening"
                              VirtualizingPanel.IsVirtualizing="True"
                              VirtualizingPanel.VirtualizationMode="Recycling"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                        <ListBox.ContextMenu>
+                            <!-- 右键菜单（2026-08-16 用户要求）：静态项 + 动态「添加到歌单」子菜单；
+                                 Click 统一在 ContextMenuOpening AddHandler（Style Setter 里 XAML Click 不触发） -->
+                            <ContextMenu PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                         Style="{DynamicResource MenuStyleOverride}">
+                                <MenuItem Header="播放" Tag="play" />
+                                <MenuItem Header="下一首播放" Tag="next" />
+                                <MenuItem Header="打开所在文件夹" Tag="folder" />
+                                <Separator Style="{DynamicResource SeparatorStyleOverride}" />
+                                <MenuItem Header="复制" Tag="copy" />
+                                <MenuItem Header="移动到…" Tag="move" />
+                                <MenuItem Header="重命名" Tag="rename" />
+                                <MenuItem Header="删除" Tag="delete" />
+                                <Separator Style="{DynamicResource SeparatorStyleOverride}" />
+                                <MenuItem Header="属性" Tag="props" />
+                                <Separator Style="{DynamicResource SeparatorStyleOverride}" />
+                                <MenuItem x:Name="AddToPlaylistRoot" Header="添加到歌单" Tag="addtoplaylist">
+                                    <MenuItem.ItemTemplate>
+                                        <DataTemplate>
+                                            <MenuItem Header="{Binding Name}" Command="{Binding Command}"
+                                                      CommandParameter="{Binding Playlist}" />
+                                        </DataTemplate>
+                                    </MenuItem.ItemTemplate>
+                                </MenuItem>
+                                <MenuItem x:Name="RemoveFromPlaylistItem" Header="移出歌单" Tag="removefromplaylist" />
+                            </ContextMenu>
+                        </ListBox.ContextMenu>
                         <ListBox.Template>
                             <!-- 显式标准模板：WPF-UI 对 ListBox 的隐式模板不生成滚动条（UI-R2 bug 修复） -->
                             <ControlTemplate TargetType="ListBox">
@@ -616,6 +645,15 @@
                                     <TextBlock Text="字号缩放" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding FontScales}"
                                               SelectedItem="{Binding SelectedFontScale}" />
+                                </Grid>
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="菜单风格" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ui:ToggleSwitch Grid.Column="1" IsChecked="{Binding ClassicMenus}"
+                                                     Content="复古原生菜单（Win32 质感，切换后需重新打开菜单）" />
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -1138,7 +1176,8 @@
                                 <Setter Property="ContextMenu">
                                     <Setter.Value>
                                         <!-- 右键菜单是独立弹出树，RelativeSource 跨树绑定必然哑（P1.1 老坑）；用 PlacementTarget + Click -->
-                                        <ContextMenu PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
+                                        <ContextMenu PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}}"
+                                                    Style="{DynamicResource MenuStyleOverride}">
                                             <!-- 注意：Style Setter 里的 ContextMenu 上写 XAML Click 处理器不生效（实测不触发），
                                                  统一在 ListBox.ContextMenuOpening 里 AddHandler 挂 MenuItem.ClickEvent -->
                                             <MenuItem Header="试听（临时播放）" />
@@ -1356,7 +1395,7 @@
                                     <!-- 普通条目 -->
                                     <Grid Visibility="{Binding IsHeader, Converter={StaticResource InverseBoolToVisibility}}">
 <Grid.ContextMenu>
-                            <ContextMenu>
+                            <ContextMenu Style="{DynamicResource MenuStyleOverride}">
                                 <MenuItem Header="导出 m3u8" Icon="{ui:SymbolIcon ArrowExport24}"
                                           Command="{Binding ExportCommand}" />
                                 <Separator />
@@ -1443,7 +1482,7 @@
                                           SubTextBrush="{DynamicResource TextSecondaryBrush}"
                                           LineClicked="OnSideLyricClicked">
                         <ctrl:LyricCanvas.ContextMenu>
-                            <ContextMenu>
+                            <ContextMenu Style="{DynamicResource MenuStyleOverride}">
                                 <MenuItem Header="显示模式" IsEnabled="{Binding Player.Lyrics.HasTimeline}">
                                     <MenuItem Header="原文" IsCheckable="True"
                                               IsChecked="{Binding Player.Lyrics.IsOriginalMode, Mode=OneWay}"
@@ -1611,7 +1650,8 @@
                                                Visibility="{Binding IsShuffleMode, Converter={StaticResource BoolToVis}}" />
                             </Grid>
                             <Button.ContextMenu>
-                                <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                <ContextMenu DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                             Style="{DynamicResource MenuStyleOverride}">
                                     <MenuItem Header="顺序播放" IsCheckable="True"
                                               IsChecked="{Binding IsSequentialMode, Mode=OneWay}"
                                               Command="{Binding SetPlayModeCommand}"
@@ -1641,7 +1681,8 @@
                                            Foreground="{Binding IsBitPerfect, Converter={StaticResource BoolToTintBrush}}" />
                             <Button.ContextMenu>
                                 <ContextMenu ItemsSource="{Binding OutputDevices}"
-                                             DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}">
+                                             DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                                             Style="{DynamicResource MenuStyleOverride}">
                                     <ContextMenu.ItemContainerStyle>
                                         <Style TargetType="MenuItem">
                                             <Setter Property="Header" Value="{Binding DisplayName}" />

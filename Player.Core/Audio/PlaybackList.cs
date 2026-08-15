@@ -67,6 +67,17 @@ public sealed class PlaybackList
         RebuildShuffleOrder();
     }
 
+    /// <summary>「下一首播放」：把曲目插到当前曲目之后（队列空则成为唯一曲目）。
+    /// 当前播放位置不变；返回插入后第一首的位置，供调用方决定是否立即切换。</summary>
+    public int InsertAfterCurrent(IReadOnlyList<TrackRecord> tracks)
+    {
+        if (tracks.Count == 0) return -1;
+        var at = CurrentIndex < 0 ? 0 : CurrentIndex + 1;
+        _items.InsertRange(at, tracks);
+        RebuildShuffleOrder();
+        return at;
+    }
+
     public TrackRecord? MoveTo(int index)
     {
         if (index < 0 || index >= _items.Count) return null;

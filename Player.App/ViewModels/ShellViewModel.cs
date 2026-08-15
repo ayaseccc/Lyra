@@ -444,7 +444,13 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                 : items => _playlists.SetTracks(playlistId.Value, items),
             InsertRequested = playlistId is null
                 ? null
-                : (index, incoming) => _playlists.InsertTracks(playlistId.Value, index, incoming)
+                : (index, incoming) => _playlists.InsertTracks(playlistId.Value, index, incoming),
+            // 右键菜单（2026-08-16 用户要求）：下一首播放 / 移出歌单 / 文件操作后重扫
+            PlayNextRequested = (tracks, name) => Player.PlayNextTracks(tracks, name),
+            RemoveFromPlaylistRequested = playlistId is null
+                ? null
+                : () => RemoveTracksFromPlaylist(playlistId.Value),
+            FilesChangedRequested = () => _ = ScanAsync(true)
         };
 
         if (!string.IsNullOrEmpty(filter)) page.FilterText = filter;
@@ -697,6 +703,21 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
         _playlists.AddTracks(playlistId, tracks);
         ScanStatus = $"已添加 {tracks.Count} 首到歌单「{page.Title}」";
+    }
+
+    /// <summary>右键「移出歌单」：从歌单移除选中曲目（不删文件），并刷新当前页。</summary>
+    private void RemoveTracksFromPlaylist(long playlistId)
+    {
+        if (CurrentPage is not TrackListPageViewModel page || !page.IsPlaylistPage) return;
+        var removed = page.SelectedTracks.ToList();
+        if (removed.Count == 0) return;
+
+        _playlists.RemoveTracks(playlistId, removed);
+        ScanStatus = $"已从歌单移出 {removed.Count} 首（文件未删除）";
+
+        // 重建当前页（读数据库新内容）
+        var fresh = _playlists.GetTracks(playlistId);
+        CurrentPage = CreateTrackPage(page.Title, fresh, page.SourceName, playlistId);
     }
 
     /// <summary>拖到侧边栏某个歌单上：文件/文件夹先并入曲库，曲目行直接加入。</summary>

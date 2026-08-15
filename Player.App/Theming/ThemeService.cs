@@ -108,6 +108,14 @@ public static class ThemeService
         res["UiFontSizeTitle"] = 14 * scale;
         res["UiFontSizeBody"] = 12 * scale;
         res["UiFontSizeSmall"] = 11 * scale;
+
+        // 右键菜单风格：经典（keyed 样式）或 null（回退 WPF-UI 现代隐式样式）
+        res["MenuStyleOverride"] = ui.ClassicMenus
+            ? (Style?)app.Resources["ClassicContextMenuStyle"]
+            : null;
+        res["SeparatorStyleOverride"] = ui.ClassicMenus
+            ? (Style?)app.Resources["ClassicSeparatorStyle"]
+            : null;
     }
 
     /// <summary>按当前配置重新应用主题（L3.1 自定义强调色/透明度变化后调用）。</summary>

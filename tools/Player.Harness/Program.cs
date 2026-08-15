@@ -165,6 +165,18 @@ public static class Program
         list.Replace(tracks, "测试", 0);
         Check("换列表后预测重新生效", list.PeekNext()?.Id == 2);
 
+        // 「下一首播放」插队（2026-08-16 右键菜单）
+        list.Replace(tracks, "测试", 0);   // 当前 T1
+        var insert = new List<TrackRecord> { tracks[3], tracks[4] };   // T4, T5
+        var at = list.InsertAfterCurrent(insert);
+        Check("插队：插入位置在当前之后", at == 1);
+        Check("插队：当前曲目不变", list.Current?.Id == 1);
+        list.MoveTo(at);
+        Check("插队：切到插入的第一首", list.Current?.Id == 4);
+        Check("插队：下一曲是插入的第二首", list.PeekNext()?.Id == 5);
+        list.MoveNext(userInitiated: true);
+        Check("插队：播完插队回到原队列", list.PeekNext()?.Id == 2);
+
         Console.WriteLine();
         Console.WriteLine("=== 输出设置往返 ===");
         var config = new OutputConfig();

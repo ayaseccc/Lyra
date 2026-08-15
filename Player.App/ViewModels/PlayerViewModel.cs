@@ -543,6 +543,22 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         PlayTracks(context, index < 0 ? 0 : index, sourceName);
     }
 
+    /// <summary>「下一首播放」：选中曲目插到当前之后并立即播放；队列空则直接起播。</summary>
+    public void PlayNextTracks(IReadOnlyList<TrackRecord> tracks, string sourceName)
+    {
+        if (tracks.Count == 0) return;
+        ExitOnlinePreview();
+        if (_list.Count == 0)
+        {
+            _list.Replace(tracks, sourceName, 0);
+            PlayCurrentOrSkip();
+            return;
+        }
+        var at = _list.InsertAfterCurrent(tracks);
+        _list.MoveTo(at);          // 立即播放插入的第一首
+        PlayCurrentOrSkip();
+    }
+
     // ---------------- 命令 ----------------
 
     [RelayCommand]
