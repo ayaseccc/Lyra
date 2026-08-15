@@ -978,7 +978,8 @@ public sealed class PlaybackEngine : IPlaybackEngine
         }
     }
 
-    /// <summary>DSP 回调（音频线程）：把样本复制进环形缓冲（立体声→单声道平均）。只读不修改。</summary>
+    /// <summary>DSP 回调（音频线程）：把样本复制进环形缓冲（立体声→单声道平均）。只读不修改。
+    /// 锁外做解码与声道平均，锁内只做批量拷贝（审查优化：缩短音频回调锁持有时间）。</summary>
     private void OnSpectrumDsp(int handle, int channel, IntPtr buffer, int length, IntPtr user)
     {
         var count = length / 4;
@@ -987,20 +988,23 @@ public sealed class PlaybackEngine : IPlaybackEngine
         var src = new float[count];
         System.Runtime.InteropServices.Marshal.Copy(buffer, src, 0, count);
 
+        // 双声道（mixer 固定 2 声道输出）→ 单声道平均
+        var mono = count % 2 == 0 ? count / 2 : count / 2 + 1;
+        var samples = new float[mono];
+        for (var i = 0; i < count; i += 2)
+            samples[i / 2] = (src[i] + (i + 1 < count ? src[i + 1] : src[i])) * 0.5f;
+
         lock (_spectrumGate)
         {
             if (!_spectrumEnabled) return;
             var ring = _spectrumRing;
             var w = _spectrumWrite;
-            for (var i = 0; i < count; i++)
-            {
-                var sample = src[i];
-                // 双声道（mixer 固定 2 声道输出）：成对平均
-                if (i + 1 < count) sample = (sample + src[i + 1]) * 0.5f;
-                ring[w] = sample;
-                w = (w + 1) % ring.Length;
-            }
-            _spectrumWrite = w;
+            // 环形批量拷贝（两段）
+            var first = Math.Min(samples.Length, ring.Length - w);
+            Array.Copy(samples, 0, ring, w, first);
+            if (samples.Length > first)
+                Array.Copy(samples, first, ring, 0, samples.Length - first);
+            _spectrumWrite = (w + samples.Length) % ring.Length;
         }
     }
 
