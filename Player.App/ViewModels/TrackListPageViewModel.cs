@@ -389,6 +389,17 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     /// <summary>文件操作（移动/重命名/删除）后通知 Shell 重扫刷新。</summary>
     public Action? FilesChangedRequested { get; set; }
 
+    /// <summary>歌词来源偏好（Shell 注入：按曲目持久化 + 当前播放曲目即时重载）。</summary>
+    public Action<Player.Core.Lyrics.LyricPreference, IReadOnlyList<TrackRecord>>? LyricPreferenceRequested { get; set; }
+
+    [RelayCommand]
+    private void SetLyricPreference(Player.Core.Lyrics.LyricPreference preference)
+    {
+        var tracks = SelectedTracks;
+        if (tracks.Count == 0) return;
+        LyricPreferenceRequested?.Invoke(preference, tracks);
+    }
+
     [RelayCommand]
     private void PlayNextSelected()
     {
@@ -488,8 +499,16 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     private void ShowProperties()
     {
         var first = SelectedTracks.FirstOrDefault();
-        if (first is null || !File.Exists(first.Path)) return;
-        NativeShell.ShowFileProperties(first.Path);
+        if (first is null)
+        {
+            Serilog.Log.Debug("属性：无选中曲目");
+            return;
+        }
+        Serilog.Log.Debug("属性：显示 {Path}", first.Path);
+        // 自绘属性窗（用户反馈：系统 SHObjectProperties 在 Win11 不弹窗）
+        var owner = System.Windows.Application.Current?.MainWindow;
+        Player.App.Views.TrackPropertiesDialog.Show(first, owner);
+        Serilog.Log.Debug("属性：对话框已关闭");
     }
 
     [RelayCommand]
@@ -497,18 +516,6 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     {
         if (!IsPlaylistPage) return;
         RemoveFromPlaylistRequested?.Invoke();
-    }
-
-    /// <summary>Shell 属性页（原生资源管理器属性对话框）。</summary>
-    private static class NativeShell
-    {
-        [System.Runtime.InteropServices.DllImport("shell32.dll", CharSet = System.Runtime.InteropServices.CharSet.Unicode)]
-        private static extern int SHObjectProperties(IntPtr hwnd, uint dwType, string lpObject, string lpPage);
-
-        public static void ShowFileProperties(string path)
-        {
-            try { SHObjectProperties(IntPtr.Zero, 0, path, null); } catch { /* 属性页打不开时静默 */ }
-        }
     }
 
 

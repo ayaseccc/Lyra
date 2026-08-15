@@ -543,7 +543,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         PlayTracks(context, index < 0 ? 0 : index, sourceName);
     }
 
-    /// <summary>「下一首播放」：选中曲目插到当前之后并立即播放；队列空则直接起播。</summary>
+    /// <summary>「下一首播放」：选中曲目插到当前之后，**不打断当前播放**（播完当前曲自然轮到）；
+    /// 队列空则直接起播。用户反馈：立即播放=「播放」，插队=「下一首播放」。</summary>
     public void PlayNextTracks(IReadOnlyList<TrackRecord> tracks, string sourceName)
     {
         if (tracks.Count == 0) return;
@@ -554,9 +555,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             PlayCurrentOrSkip();
             return;
         }
-        var at = _list.InsertAfterCurrent(tracks);
-        _list.MoveTo(at);          // 立即播放插入的第一首
-        PlayCurrentOrSkip();
+        _list.InsertAfterCurrent(tracks);
+        StatusText = $"已将 {tracks.Count} 首插入「下一首播放」";
     }
 
     // ---------------- 命令 ----------------

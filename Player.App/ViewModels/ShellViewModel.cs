@@ -9,6 +9,7 @@ using Player.App.Views;
 using Player.Core.Audio;
 using Player.Core.Infra;
 using Player.Core.Library;
+using Player.Core.Lyrics;
 using Player.Core.Online;
 using Serilog;
 using Wpf.Ui.Controls;
@@ -450,7 +451,16 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             RemoveFromPlaylistRequested = playlistId is null
                 ? null
                 : () => RemoveTracksFromPlaylist(playlistId.Value),
-            FilesChangedRequested = () => _ = ScanAsync(true)
+            FilesChangedRequested = () => _ = ScanAsync(true),
+            // 歌词来源（右键菜单）：按曲目持久化；当前播放曲目即时按新来源重载
+            LyricPreferenceRequested = (preference, tracks) =>
+            {
+                foreach (var t in tracks)
+                    LyricsCacheStore.SaveLyricPreference(t.Path, preference.ToString());
+                if (Player.CurrentTrack is { } cur && tracks.Any(t => ReferenceEquals(t, cur)))
+                    Player.Lyrics.SetSourcePreferenceCommand.Execute(preference);
+                ScanStatus = $"歌词来源已更新（{tracks.Count} 首）";
+            }
         };
 
         if (!string.IsNullOrEmpty(filter)) page.FilterText = filter;

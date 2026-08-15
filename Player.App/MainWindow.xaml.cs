@@ -12,6 +12,7 @@ using Player.Core.Audio;
 using Player.Core.Hotkeys;
 using Player.Core.Infra;
 using Player.Core.Library;
+using Player.Core.Lyrics;
 using Wpf.Ui.Controls;
 
 namespace Player.App;
@@ -285,6 +286,7 @@ public partial class MainWindow : FluentWindow
         _onlineMenuVm = FindAncestor<System.Windows.Controls.ListBox>(row)?.DataContext as ViewModels.OnlineSearchViewModel;
 
         if (row.ContextMenu is not { } menu) return;
+        ApplyMenuStyle(menu);
         if (!ReferenceEquals(menu, _wiredOnlineMenu))
         {
             menu.AddHandler(System.Windows.Controls.MenuItem.ClickEvent,
@@ -1166,10 +1168,19 @@ public partial class MainWindow : FluentWindow
         if (!already) list.SelectedItem = row;
     }
 
+    /// <summary>菜单打开时显式应用风格（用户反馈：DynamicResource 切换后不生效，改为每次打开读配置决定）。</summary>
+    private static void ApplyMenuStyle(System.Windows.Controls.ContextMenu menu)
+    {
+        menu.Style = ConfigService.Current.Ui.ClassicMenus
+            ? System.Windows.Application.Current.Resources["ClassicContextMenuStyle"] as Style
+            : null;
+    }
+
     /// <summary>主列表右键菜单打开：填充「添加到歌单」子菜单、移出歌单可见性、挂 Click（只挂一次）。</summary>
     private void OnTrackListContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
         if (sender is not ListBox list || list.ContextMenu is not { } menu) return;
+        ApplyMenuStyle(menu);
         if (CurrentTrackPage is not { } page) return;
 
         // 「添加到歌单」子菜单动态填充（独立弹出树，Command 都挂在条目实例上）。
@@ -1212,6 +1223,14 @@ public partial class MainWindow : FluentWindow
             case "delete": page.DeleteFilesCommand.Execute(null); break;
             case "props": page.ShowPropertiesCommand.Execute(null); break;
             case "removefromplaylist": page.RemoveFromPlaylistCommand.Execute(null); break;
+            case "lyric_auto":
+                page.SetLyricPreferenceCommand.Execute(LyricPreference.Auto); break;
+            case "lyric_lrcfile":
+                page.SetLyricPreferenceCommand.Execute(LyricPreference.LrcFile); break;
+            case "lyric_embedded":
+                page.SetLyricPreferenceCommand.Execute(LyricPreference.Embedded); break;
+            case "lyric_online":
+                page.SetLyricPreferenceCommand.Execute(LyricPreference.Online); break;
             // "addtoplaylist" 的子菜单项直接走条目自带的 Command（PlaylistMenuItem）
         }
     }

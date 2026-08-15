@@ -224,6 +224,9 @@ public sealed class UiConfig
     /// <summary>右键菜单风格：true = 复古原生（Win32 质感），false = WPF-UI 现代。</summary>
     public bool ClassicMenus { get; set; }
 
+    /// <summary>未单独设置来源的曲目默认歌词来源（Auto/LrcFile/Embedded/Online，默认 Online=网易云）。</summary>
+    public string LyricDefaultPreference { get; set; } = "Online";
+
     /// <summary>各列宽度（Key → 像素，缺省用默认宽度）。</summary>
     public Dictionary<string, double> ColumnWidths { get; set; } = new();
 

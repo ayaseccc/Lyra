@@ -149,6 +149,12 @@
                                 <MenuItem Header="删除" Tag="delete" />
                                 <Separator Style="{DynamicResource SeparatorStyleOverride}" />
                                 <MenuItem Header="属性" Tag="props" />
+                                <MenuItem Header="歌词来源" Tag="lyricsrc">
+                                    <MenuItem Header="自动（.lrc＞内嵌＞缓存＞在线）" Tag="lyric_auto" />
+                                    <MenuItem Header="优先本地 .lrc 文件" Tag="lyric_lrcfile" />
+                                    <MenuItem Header="优先内嵌标签" Tag="lyric_embedded" />
+                                    <MenuItem Header="仅在线（网易云）" Tag="lyric_online" />
+                                </MenuItem>
                                 <Separator Style="{DynamicResource SeparatorStyleOverride}" />
                                 <MenuItem x:Name="AddToPlaylistRoot" Header="添加到歌单" Tag="addtoplaylist">
                                     <MenuItem.ItemTemplate>
@@ -927,6 +933,15 @@
                                     <TextBlock Text="桌面歌词字号" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding LyricFontSizes}"
                                               SelectedItem="{Binding SelectedLyricFontSize}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="歌词来源" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding LyricSourceOptions}"
+                                              SelectedItem="{Binding SelectedLyricSource}" />
                                 </Grid>
                                 <Grid Margin="0,0,0,12">
                                     <Grid.ColumnDefinitions>

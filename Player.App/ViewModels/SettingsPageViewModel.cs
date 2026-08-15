@@ -159,6 +159,9 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         _hoverOpacity = ui.HoverOpacity;
         _miniSpectrum = ui.MiniSpectrum;
         _classicMenus = ui.ClassicMenus;
+        _selectedLyricSource = LyricSourceOptions.FirstOrDefault(o =>
+            string.Equals(o.Value, ui.LyricDefaultPreference, StringComparison.OrdinalIgnoreCase))
+            ?? LyricSourceOptions[3];
         RefreshColumnRows();
 
         // L2 行为组：关闭到托盘（默认关闭）
@@ -388,6 +391,30 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     public IReadOnlyList<FontWeightOption> Weights => LyricUiOptions.Weights;
 
     public IReadOnlyList<int> LyricFontSizes { get; } = new[] { 16, 20, 24 };
+
+    /// <summary>歌词来源默认值（未单独设置来源的曲目生效）。</summary>
+    public sealed record LyricSourceOption(string Value, string Name)
+    {
+        public override string ToString() => Name;
+    }
+
+    public IReadOnlyList<LyricSourceOption> LyricSourceOptions { get; } = new[]
+    {
+        new LyricSourceOption("Auto", "自动（.lrc＞内嵌＞缓存＞在线）"),
+        new LyricSourceOption("LrcFile", "优先本地 .lrc"),
+        new LyricSourceOption("Embedded", "优先内嵌标签"),
+        new LyricSourceOption("Online", "仅在线（网易云）"),
+    };
+
+    [ObservableProperty]
+    private LyricSourceOption _selectedLyricSource = null!;
+
+    partial void OnSelectedLyricSourceChanged(LyricSourceOption value)
+    {
+        if (_loading || value is null) return;
+        ConfigService.Current.Ui.LyricDefaultPreference = value.Value;
+        ConfigService.Save();
+    }
 
     [ObservableProperty]
     private string _selectedLyricFontFamily = string.Empty;
@@ -1065,6 +1092,9 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             _selectedOpacity = ui.SelectedOpacity;
             _hoverOpacity = ui.HoverOpacity;
             _classicMenus = ui.ClassicMenus;
+            _selectedLyricSource = LyricSourceOptions.FirstOrDefault(o =>
+                string.Equals(o.Value, ui.LyricDefaultPreference, StringComparison.OrdinalIgnoreCase))
+                ?? LyricSourceOptions[3];
             RefreshColumnRows();
             OnPropertyChanged(nameof(SelectedRowHeight));
             OnPropertyChanged(nameof(GroupsExpandedByDefault));
