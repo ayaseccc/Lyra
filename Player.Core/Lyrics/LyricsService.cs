@@ -82,6 +82,9 @@ public sealed class LyricsLoadResult
 public sealed class LyricsService : IDisposable
 {
     private readonly ChkszClient _client;
+
+    /// <summary>P4-6：GD 源（零额度优先于 ChKSz 拉歌词）；未注入时为 null。</summary>
+    private readonly GdSource? _gdSource;
     private readonly object _gate = new();
 
     /// <summary>path（不区分大小写）→ 网易云 ID。启动时从库加载，匹配后即时更新。</summary>
@@ -95,9 +98,10 @@ public sealed class LyricsService : IDisposable
     private int _loadVersion;
     private bool _disposed;
 
-    public LyricsService(ChkszClient client)
+    public LyricsService(ChkszClient client, GdSource? gdSource = null)
     {
         _client = client;
+        _gdSource = gdSource;
         _neteaseIds = LyricsCacheStore.LoadNeteaseIds();
         _client.Quota.Changed += OnQuotaChanged;
     }
@@ -260,7 +264,26 @@ public sealed class LyricsService : IDisposable
             }
         }
 
-        // API
+        // API——P4-6：GD(netease) 零额度优先（复用已匹配 id），失败/无词再落回 ChKSz
+        if (_gdSource is not null)
+        {
+            var gdResult = await _gdSource.GetLyricByNeteaseIdAsync(neteaseId.Value, cancellationToken).ConfigureAwait(false);
+            if (gdResult.Success && !string.IsNullOrWhiteSpace(gdResult.Data?.Lrc))
+            {
+                var gdFresh = new CachedLyric
+                {
+                    Lrc = gdResult.Data.Lrc,
+                    TranslatedLrc = gdResult.Data.Translation ?? string.Empty,
+                    RomajiLrc = string.Empty
+                };
+                LyricsCacheStore.SaveCached(cacheKey, gdFresh);
+                SaveLrcToDisk(track.Path, gdFresh.Lrc);
+                return BuildResult(MergeLyrics(gdFresh), LyricSource.Online, track.Path);
+            }
+            // GD 无词/失败 → 落回 ChKSz（不打断，仅 Debug 记录）
+            Serilog.Log.Debug("GD 歌词未命中（{Id}），落回 ChKSz", neteaseId.Value);
+        }
+
         if (!IsOnlineAvailable) return LyricsLoadResult.Empty;
 
         var lyricResult = await _client.GetLyricAsync(neteaseId.Value, cancellationToken).ConfigureAwait(false);

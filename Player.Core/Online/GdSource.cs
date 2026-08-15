@@ -69,6 +69,9 @@ public sealed class GdSource : IOnlineSource
             return OnlineResult<IReadOnlyList<OnlineTrack>>.Fail("搜索关键词是空的");
 
         // 逐子源探测：第一个返回非空列表的子源作为结果；空结果/不支持标记该子源不可用
+        OnlineResult<IReadOnlyList<OnlineTrack>>? lastFailure = null;
+        var anyReached = false;   // 是否有子源正常返回（网络通、只是没结果）
+
         foreach (var source in SubSources)
         {
             if (!_subSourceOk.TryGetValue(source, out var ok) || !ok) continue;
@@ -76,10 +79,12 @@ public sealed class GdSource : IOnlineSource
             var result = await SearchSubSourceAsync(source, keyword, limit, page, ct, albumMode).ConfigureAwait(false);
             if (!result.Success)
             {
+                lastFailure ??= result;
                 Mark(source, available: false, $"搜索失败：{result.Error}");
                 continue;
             }
 
+            anyReached = true;
             if (result.Data is { Count: > 0 })
             {
                 Mark(source, available: true, null);
@@ -90,7 +95,10 @@ public sealed class GdSource : IOnlineSource
             Log.Debug("GD 子源 {Source} 搜索为空", source);
         }
 
-        return OnlineResult<IReadOnlyList<OnlineTrack>>.Ok(Array.Empty<OnlineTrack>());
+        // 全部子源没搜到：若全部是网络/接口失败 → 报失败原因（断网降级）；有源可达则报"没找到"
+        return anyReached
+            ? OnlineResult<IReadOnlyList<OnlineTrack>>.Ok(Array.Empty<OnlineTrack>())
+            : (lastFailure ?? OnlineResult<IReadOnlyList<OnlineTrack>>.Fail("所有音源都不可用"));
     }
 
     public async Task<OnlineResult<OnlineStream>> GetStreamAsync(
@@ -181,6 +189,21 @@ public sealed class GdSource : IOnlineSource
     public async Task<OnlineResult<OnlineLyric>> GetLyricAsync(OnlineTrack track, CancellationToken ct)
     {
         var query = $"types=lyric&source={Uri.EscapeDataString(track.Source)}&id={Uri.EscapeDataString(track.LyricId)}";
+        var result = await GetJsonAsync<GdModels.Lyric>(query, ct).ConfigureAwait(false);
+        if (!result.Success)
+            return OnlineResult<OnlineLyric>.Fail(result.Error);
+
+        var lyric = result.Data!;
+        if (string.IsNullOrWhiteSpace(lyric.Text))
+            return OnlineResult<OnlineLyric>.Fail("该曲目没有歌词", notFound: true);
+
+        return OnlineResult<OnlineLyric>.Ok(new OnlineLyric(lyric.Text, lyric.Translation));
+    }
+
+    /// <summary>P4-6：按网易云曲目 id 直接拉 GD(netease) 歌词——本地歌词链复用已匹配 id，零额度优先于 ChKSz。</summary>
+    public async Task<OnlineResult<OnlineLyric>> GetLyricByNeteaseIdAsync(long neteaseId, CancellationToken ct)
+    {
+        var query = $"types=lyric&source=netease&id={neteaseId}";
         var result = await GetJsonAsync<GdModels.Lyric>(query, ct).ConfigureAwait(false);
         if (!result.Success)
             return OnlineResult<OnlineLyric>.Fail(result.Error);

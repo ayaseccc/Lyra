@@ -77,6 +77,10 @@ public static class Program
                 await RunDownloadProbeAsync();
                 break;
 
+            case "netfail":
+                RunNetFailChecks();
+                break;
+
             case "urlprobe":
                 if (args.Length < 2) { Console.WriteLine("用法：urlprobe <url>"); return 2; }
                 RunUrlProbe(args[1]);
@@ -916,6 +920,36 @@ public static class Program
 
         try { Directory.Delete(dir, true); } catch { /* 忽略 */ }
         Console.WriteLine();
+    }
+
+    /// <summary>模拟断网：网络层失败必须降级为 OnlineResult.Fail，绝不能抛异常（P4 验收：断网本地零影响）。</summary>
+    private static void RunNetFailChecks()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 网络失败降级（断网模拟） ===");
+
+        var failing = new FailingHandler();
+        using var gd = new GdSource(failing);
+        var search = gd.SearchAsync("test", 5, 1, CancellationToken.None).GetAwaiter().GetResult();
+        Check("搜索网络失败 → Fail 不抛异常", !search.Success);
+        Check("失败带可读原因", !string.IsNullOrWhiteSpace(search.Error));
+
+        var track = new OnlineTrack("1", "test", new[] { "a" }, "album", "", "1", "netease");
+        var stream = gd.GetStreamAsync(track, 999, CancellationToken.None).GetAwaiter().GetResult();
+        Check("取流网络失败 → Fail 不抛异常", !stream.Success);
+
+        var lyric = gd.GetLyricByNeteaseIdAsync(1, CancellationToken.None).GetAwaiter().GetResult();
+        Check("GD 歌词网络失败 → Fail 不抛异常", !lyric.Success);
+
+        Console.WriteLine();
+    }
+
+    /// <summary>立即抛网络异常的 handler（模拟断网）。</summary>
+    private sealed class FailingHandler : System.Net.Http.HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
+            => throw new System.Net.Http.HttpRequestException("模拟断网：网络不可达");
     }
 
     /// <summary>BASS URL 流 flags 诊断（P4-4；需联网 + BASS 初始化）。</summary>
