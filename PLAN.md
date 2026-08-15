@@ -509,6 +509,7 @@ ChkszClient（四端点封装、令牌桶 18 次/分、额度响应头解析、�
 - L3.1 个性化 ✔：①行高三挡 56/72/110（平铺+分组，DynamicResource 资源即时生效）；②分组默认折叠/展开配置 + 组头点击折叠（会话内记住每组）+ 组头封面缩略图开关；③列自定义 8 列（标题/歌手/专辑/时长/格式/采样率/位深/码率）显示+顺序+列宽持久化，列头与行模板动态绑定（Grid.Column 绑索引、列宽绑 VM）；④全局 UI 字体下拉 + 字号缩放 90–125%；⑤染色关闭时自定义强调色色板 + 选中/悬停透明度微调（ThemeService.Personalize 每帧应用，动画中间帧一致）。全部持久化 + harness downloads 扩至 19 项（10 项 JSON 往返断言全过）。
 - L3.2 迷你悬浮窗 ✔：340×104 置顶圆角卡片（封面/跑马灯标题/进度线/悬停淡入：上一曲播放暂停下一曲回主窗），双击/Esc/回主窗=主窗恢复，拖动+位置记忆（Ui.MiniPos），播放条按钮④开关（开=主窗隐藏），显隐与托盘统一（托盘退出唯一退出；主窗 OnClosing 清理迷你窗）。频谱（设置可关 Ui.MiniSpectrum）：**探针先行**（harness dsp 模式 2 项：mixer 挂 DSP tap 复制样本不抢播放数据——DSP 回调直接拿样本指针只读复制，绝不对解码/混音流 ChannelGetData 消费数据）；引擎环形缓冲 4096 + 256 点 Hann 窗 FFT + 16 柱对数映射，30fps 拉取。实测修复：FluentWindow + AllowsTransparency 冲突（WindowStyle.None 要求，移除——FluentWindow 自带 Mica/圆角）。实测：按钮④→迷你窗开+主窗隐藏→Esc→主窗恢复。
 - 遗留待用户目验：迷你窗外观细节（封面/悬停控件/频谱柱效果）、行高/列设置/折叠交互、设置页新分区整体观感、深浅两挡+染色四组合下的新控件配色。
+- L3 子代理审查（2026-08-15，3 高 4 中 6 低，全部处理并随 69361e7 提交）：H1 迷你窗 Border 未绑拖动/双击事件；H2 主窗退出路径迷你窗 OnClosing 拦截+回主窗会 Show 已销毁窗口（加 AllowRealClose）；H3 频谱清理在 Closed（拦截路径永不触发）→ 改 OnClosing 统一执行；M1 隐藏列 Grid.Column=-1 堆叠到列 0 → 全列元素加 ColumnIndexToVis 可见性绑定；M2 默认折叠用 Count==0 判据（用户展开全部后重复折叠）→ 一次性标志；M3 迷你窗频谱开关补设置页播放区 UI；L5 FFT 位反转算法错误（原累加式）→ 修正为标准推演，频谱正确性；L4/L1/L2 小修。审查确认无问题：EnableSpectrum 幂等/mixer 重建重挂/Dispose/五区分组/列绑定一致性/FocusVisualStyle 引用。全 harness 232 项（8 模式）零失败，发布已重建。
 
 **L2 实施记录（2026-08-15，实测回写）**：
 - step1 SMTC 预研 ✔（TFM 升级 + GetForWindow 选型，见上）。
