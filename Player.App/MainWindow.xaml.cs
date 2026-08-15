@@ -212,27 +212,19 @@ public partial class MainWindow : FluentWindow
         _ = Player?.PlayOnlinePreviewAsync(item.Track, item.SourceKey, vm.SelectedBr);
     }
 
-    /// <summary>P4 搜索结果右键菜单：右键按下那一刻捕获所在行（实机反馈：菜单弹出后
-    /// 点击位置偏移/命中偏差导致事后取行不可靠），菜单项 Click 直接用捕获值。</summary>
+    /// <summary>P4 搜索结果右键菜单。菜单项 Click 优先取 ContextMenu.PlacementTarget——
+    /// 框架打开菜单时自动设为所属行（独立弹出树也可靠），不依赖点击时刻的鼠标命中；
+    /// 右键按下那一刻的捕获值做兜底（实测：菜单在右键抬起后才弹出，弹后再取位置不可靠）。</summary>
     private ViewModels.OnlineSearchItem? _onlineMenuItem;
     private ViewModels.OnlineSearchViewModel? _onlineMenuVm;
 
     private void OnOnlineSearchPreviewMouseRightButtonDown(object sender, MouseButtonEventArgs e)
     {
+        // 捕获兜底（右键按下即记下所在行；菜单打开时 ContextMenuOpening 会再覆盖一次）
         if (e.OriginalSource is not DependencyObject d) return;
         var row = FindAncestor<System.Windows.Controls.ListBoxItem>(d);
         _onlineMenuItem = row?.DataContext as ViewModels.OnlineSearchItem;
         _onlineMenuVm = FindAncestor<System.Windows.Controls.ListBox>(d)?.DataContext as ViewModels.OnlineSearchViewModel;
-    }
-
-    /// <summary>键盘（菜单键）打开菜单时没有右键动作，清掉捕获值避免误操作。</summary>
-    private void OnOnlineSearchContextMenuOpening(object sender, ContextMenuEventArgs e)
-    {
-        if (System.Windows.Input.Mouse.RightButton != System.Windows.Input.MouseButtonState.Pressed)
-        {
-            _onlineMenuItem = null;
-            _onlineMenuVm = null;
-        }
     }
 
     private static T? FindAncestor<T>(DependencyObject? node) where T : DependencyObject
@@ -245,18 +237,64 @@ public partial class MainWindow : FluentWindow
         return null;
     }
 
-    private void OnOnlineSearchMenuPreview(object sender, RoutedEventArgs e)
+    private sealed record OnlineMenuTarget(ViewModels.OnlineSearchItem Item, ViewModels.OnlineSearchViewModel Vm);
+
+    private OnlineMenuTarget? ResolveOnlineMenuTarget(object sender)
     {
-        if (_onlineMenuItem is { } item && _onlineMenuVm is { } vm)
-            _ = Player?.PlayOnlinePreviewAsync(item.Track, item.SourceKey, vm.SelectedBr);
+        if (sender is not System.Windows.Controls.MenuItem mi || mi.Parent is not ContextMenu menu) return null;
+
+        // 首选：PlacementTarget = 打开菜单的行（框架在打开时设置）
+        if (menu.PlacementTarget is System.Windows.Controls.ListBoxItem row
+            && row.DataContext is ViewModels.OnlineSearchItem item
+            && FindAncestor<System.Windows.Controls.ListBox>(row)?.DataContext is ViewModels.OnlineSearchViewModel vm)
+            return new OnlineMenuTarget(item, vm);
+
+        // 兜底：右键按下时的捕获值
+        if (_onlineMenuItem is { } captured && _onlineMenuVm is { } capturedVm)
+            return new OnlineMenuTarget(captured, capturedVm);
+
+        return null;
     }
 
-    private void OnOnlineSearchMenuDownload(object sender, RoutedEventArgs e)
+    /// <summary>
+    /// 右键菜单打开时：①从 OriginalSource 向上找到所属行（OriginalSource 是行内元素，不是 ListBoxItem），
+    /// 顺便捕获行数据；②把 Click 处理器挂到菜单实例上。WPF 铁律：Style Setter 里的 XAML Click 事件处理器
+    /// 会被静默丢弃（实测 2026-08-15 不触发），必须程序化 AddHandler；同一实例只挂一次。
+    /// </summary>
+    private ContextMenu? _wiredOnlineMenu;
+
+    private void OnOnlineSearchContextMenuOpening(object sender, ContextMenuEventArgs e)
     {
-        if (_onlineMenuItem is { } item && _onlineMenuVm is { } vm)
+        var row = FindAncestor<System.Windows.Controls.ListBoxItem>(e.OriginalSource as DependencyObject);
+        if (row is null) return;
+
+        _onlineMenuItem = row.DataContext as ViewModels.OnlineSearchItem;
+        _onlineMenuVm = FindAncestor<System.Windows.Controls.ListBox>(row)?.DataContext as ViewModels.OnlineSearchViewModel;
+
+        if (row.ContextMenu is not { } menu) return;
+        if (!ReferenceEquals(menu, _wiredOnlineMenu))
         {
-            vm.SelectedItem = item;   // 命令作用于选中项
-            vm.DownloadSelectedCommand.Execute(null);
+            menu.AddHandler(System.Windows.Controls.MenuItem.ClickEvent,
+                new RoutedEventHandler(OnOnlineSearchMenuItemClick));
+            _wiredOnlineMenu = menu;
+        }
+    }
+
+    private void OnOnlineSearchMenuItemClick(object sender, RoutedEventArgs e)
+    {
+        if (e.OriginalSource is not System.Windows.Controls.MenuItem mi) return;
+        switch (mi.Header as string)
+        {
+            case "试听（临时播放）":
+                if (ResolveOnlineMenuTarget(mi) is { } t)
+                    _ = Player?.PlayOnlinePreviewAsync(t.Item.Track, t.Item.SourceKey, t.Vm.SelectedBr);
+                break;
+            case "下载":
+                var dl = ResolveOnlineMenuTarget(mi);
+                if (dl is null) break;
+                dl.Vm.SelectedItem = dl.Item;   // 命令作用于选中项
+                dl.Vm.DownloadSelectedCommand.Execute(null);
+                break;
         }
     }
 

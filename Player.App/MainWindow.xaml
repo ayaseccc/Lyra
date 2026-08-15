@@ -1013,8 +1013,10 @@
                                     <Setter.Value>
                                         <!-- 右键菜单是独立弹出树，RelativeSource 跨树绑定必然哑（P1.1 老坑）；用 PlacementTarget + Click -->
                                         <ContextMenu PlacementTarget="{Binding RelativeSource={RelativeSource AncestorType=ListBoxItem}}">
-                                            <MenuItem Header="试听（临时播放）" Click="OnOnlineSearchMenuPreview" />
-                                            <MenuItem Header="下载" Click="OnOnlineSearchMenuDownload" />
+                                            <!-- 注意：Style Setter 里的 ContextMenu 上写 XAML Click 处理器不生效（实测不触发），
+                                                 统一在 ListBox.ContextMenuOpening 里 AddHandler 挂 MenuItem.ClickEvent -->
+                                            <MenuItem Header="试听（临时播放）" />
+                                            <MenuItem Header="下载" />
                                         </ContextMenu>
                                     </Setter.Value>
                                 </Setter>
