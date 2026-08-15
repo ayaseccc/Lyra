@@ -59,7 +59,7 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
 
     public string Title => "在线搜索";
 
-    public string Subtitle => "GD Studio 零 Key 零额度 · 网易云需 API Key";
+    public string Subtitle => string.Empty;
 
     public sealed record SourceOption(IOnlineSource Source)
     {
@@ -110,7 +110,7 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
     private bool _isSearching;
 
     [ObservableProperty]
-    private string _statusText = "输入关键词搜索，双击结果试听（临时播放，不写入歌单/队列）。";
+    private string _statusText = string.Empty;
 
     [ObservableProperty]
     private OnlineSearchItem? _selectedItem;
@@ -184,6 +184,14 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
     private void DownloadSelected()
     {
         if (SelectedItem is not { } item || _downloads is null) return;
+
+        // 实机反馈：未设下载目录时入队只会立刻失败，直接提示去设置
+        if (string.IsNullOrWhiteSpace(Player.Core.Infra.ConfigService.Current.Online.DownloadDir))
+        {
+            StatusText = "请先在 设置-在线 里设置下载位置";
+            return;
+        }
+
         var duplicate = _downloads.Enqueue(item.Track, item.SourceKey, SelectedBr);
         if (duplicate.Status == Player.Core.Downloads.DownloadStatus.Duplicate)
         {
@@ -194,8 +202,8 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
         // ChKSz 操作保留额度预估（PLAN P4 v2）
         var isFree = _sources.FirstOrDefault(s => s.Key == item.SourceKey)?.IsFree ?? true;
         StatusText = isFree
-            ? $"已加入下载队列：{item.Track.Name}（GD 零额度）"
-            : $"已加入下载队列：{item.Track.Name}（将消耗 1 次网易云额度）";
+            ? $"已加入下载队列：{item.Track.Name}"
+            : $"已加入下载队列：{item.Track.Name}（消耗 1 次网易云额度）";
     }
 
     private async Task LoadAsync(int page)
@@ -244,7 +252,7 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
             HasMore = result.Data is { Count: >= 20 };
             StatusText = Results.Count == 0
                 ? "没找到相关结果"
-                : $"找到 {Results.Count} 条（{source.DisplayName}{(IsAlbumMode ? " · 专辑" : "")}），双击试听";
+                : $"找到 {Results.Count} 条";
             OnPropertyChanged(nameof(HasResults));
         }
         catch (OperationCanceledException)

@@ -25,7 +25,7 @@ public sealed partial class DownloadPageViewModel : ObservableObject
 
     public string Title => "下载管理";
 
-    public string Subtitle => "串行队列 · 任务间隔 4 秒 · 失败自动重试 1 次";
+    public string Subtitle => string.Empty;
 
     public ObservableCollection<DownloadRow> Items { get; } = new();
 

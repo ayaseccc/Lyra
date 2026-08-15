@@ -474,8 +474,6 @@
                                         <ui:ToggleSwitch IsChecked="{Binding ThemeTint}" Content="随封面染色" />
                                     </StackPanel>
                                 </Grid>
-                                <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,10,0,0" TextWrapping="Wrap"
-                                           Text="染色开启时，整套界面（含全部页面与控件强调色）按当前曲目封面主色统一染色，切歌 300ms 过渡；过暗/过灰封面自动回退中性配色。底色与染色可自由组合：浅色+染色（默认）、浅色、深色+染色、深色。" />
                             </StackPanel>
                         </Border>
 
@@ -544,9 +542,9 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="ASIO" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding AsioBuffers}"
-                                              SelectedItem="{Binding SelectedAsioBuffer}" ToolTip="缓冲区。爆音或断续时先往大了调" />
+                                              SelectedItem="{Binding SelectedAsioBuffer}" />
                                     <ComboBox Grid.Column="2" Margin="8,0,0,0" ItemsSource="{Binding AsioChannels}"
-                                              SelectedItem="{Binding SelectedAsioChannel}" ToolTip="输出到设备的哪一对通道" />
+                                              SelectedItem="{Binding SelectedAsioChannel}" />
                                 </Grid>
 
                                 <Grid Margin="0,0,0,10" Visibility="{Binding IsWasapi, Converter={StaticResource BoolToVis}}">
@@ -672,9 +670,6 @@
                                     </Grid>
                                 </Border>
 
-                                <TextBlock Margin="0,8,0,0" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
-                                           Text="Key 只保存在本地 data/config.json（不会出现在日志里）。歌词自动匹配、在线搜索、歌单同步都依赖它；今日免费额度以服务端响应头为准，见上方今日额度。" />
-
                                 <Grid Margin="0,16,0,8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="110" />
@@ -687,9 +682,6 @@
                                     <ui:Button Grid.Column="2" Content="浏览…" Margin="8,0,0,0"
                                                Command="{Binding BrowseDownloadDirCommand}" />
                                 </Grid>
-                                <TextBlock Text="{Binding DownloadDirHint}" Margin="110,0,0,8"
-                                           Style="{StaticResource SubTextStyle}" TextWrapping="Wrap" />
-
                                 <Grid Margin="0,0,0,8">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="110" />
@@ -697,8 +689,7 @@
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="音质档" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding BrOptions}"
-                                              SelectedItem="{Binding PreviewBr}"
-                                              ToolTip="在线搜索 / 试听 / 下载的默认音质档（结果页可临时切换）" />
+                                              SelectedItem="{Binding PreviewBr}" />
                                 </Grid>
 
                                 <Grid Margin="0,0,0,8">
@@ -721,8 +712,6 @@
                                                 Text="{Binding ChkszApiUrl, UpdateSourceTrigger=PropertyChanged}" />
                                 </Grid>
 
-                                <TextBlock Margin="110,0,0,0" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
-                                           Text="地址与 Key 一样只存本地 data/config.json，改动即时生效，无需重启；留空或非法地址自动回落官方默认。" />
                             </StackPanel>
                         </Border>
 
@@ -787,8 +776,6 @@
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding TextColors}"
                                               SelectedItem="{Binding SelectedDesktopLyricsTextColor}" />
                                 </Grid>
-                                <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,10,0,0" TextWrapping="Wrap"
-                                           Text="字体/字重作用于右栏歌词、大歌词页与桌面歌词（桌面歌词字号独立）。桌面歌词开关在播放条（第二个预留按钮），锁定=鼠标穿透（点击右上小柄解锁后可拖动/调宽），解锁后悬停左上角迷你工具条可再锁定；右键菜单可快速调整。无时间轴歌词显示曲名。" />
                             </StackPanel>
                         </Border>
 
@@ -817,8 +804,6 @@
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
                                 </ItemsControl>
-                                <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,12,0,0" TextWrapping="Wrap"
-                                           Text="点右侧按键直接按新组合（字母键需带 Ctrl/Shift/Alt；Esc 取消）。任何输入框（搜索/Key 输入等）聚焦时快捷键一律不响应；按钮聚焦时 Space 归按钮；滑条聚焦时方向键归滑条。" />
                                 <Grid Margin="0,16,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="110" />
@@ -848,8 +833,6 @@
                                         </ItemsControl>
                                         <TextBlock Text="{Binding RebindStatus}" Style="{StaticResource SubTextStyle}" Margin="0,8,0,0"
                                                    TextWrapping="Wrap" FontWeight="SemiBold" />
-                                        <TextBlock Style="{StaticResource SubTextStyle}" Margin="0,6,0,0" TextWrapping="Wrap"
-                                                   Text="任何窗口下都生效；组合键被其他程序占用时，启用/改绑会逐条提示并跳过被占用的组合。全局热键必须带修饰键。" />
                                     </StackPanel>
                                 </Grid>
                             </StackPanel>
@@ -870,8 +853,6 @@
                                         <ui:ToggleSwitch IsChecked="{Binding CloseToTray}" Content="关闭时最小化到托盘" />
                                     </StackPanel>
                                 </Grid>
-                                <TextBlock Style="{StaticResource SubTextStyle}" Margin="2,10,0,0" TextWrapping="Wrap"
-                                           Text="开启后点窗口 × 不退出程序，而是隐藏到系统托盘（播放控制、桌面歌词开关、显示主窗、退出都在托盘菜单里，双击托盘图标还原窗口）；退出请走托盘菜单「退出」。默认关闭 = 关窗即退出。" />
                                 <Grid Margin="0,16,0,0">
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="110" />
@@ -899,24 +880,6 @@
                                     <TextBlock Text="版本" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <TextBlock Grid.Column="1" Text="{Binding AppVersion}" VerticalAlignment="Center"
                                                Style="{StaticResource TitleTextStyle}" />
-                                </Grid>
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="BASS 授权" VerticalAlignment="Top" Style="{StaticResource TitleTextStyle}" />
-                                    <TextBlock Grid.Column="1" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
-                                               Text="音频引擎 BASS（un4seen）对个人 / 非商业使用免费；若未来上架收费需向 un4seen 购买授权。" />
-                                </Grid>
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="开源组件" VerticalAlignment="Top" Style="{StaticResource TitleTextStyle}" />
-                                    <TextBlock Grid.Column="1" Style="{StaticResource SubTextStyle}" TextWrapping="Wrap"
-                                               Text="WPF-UI（MIT）、CommunityToolkit.Mvvm（MIT）、Serilog（Apache-2.0）、TagLibSharp（LGPL-2.1）、ManagedBass（MIT）、Microsoft.Data.Sqlite（MIT）。" />
                                 </Grid>
                             </StackPanel>
                         </Border>
@@ -1131,8 +1094,9 @@
                                         <TextBlock Grid.Column="1" Text="{Binding StatusText}"
                                                    Style="{StaticResource SubTextStyle}" VerticalAlignment="Center" />
                                     </Grid>
+                                    <!-- Progress 是只读属性，Value 默认 TwoWay 会抛 XamlParseException（2026-08-15 实机崩溃根因），必须 OneWay -->
                                     <ProgressBar Grid.Row="1" Height="3" Margin="0,6,0,0" Minimum="0" Maximum="100"
-                                                 Value="{Binding Progress}"
+                                                 Value="{Binding Progress, Mode=OneWay}"
                                                  Visibility="{Binding IsDownloading, Converter={StaticResource BoolToVis}}" />
                                     <StackPanel Grid.Row="1" Orientation="Horizontal" Margin="0,6,0,0"
                                                 Visibility="{Binding IsDuplicate, Converter={StaticResource BoolToVis}}">

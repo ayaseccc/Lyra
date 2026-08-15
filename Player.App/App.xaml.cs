@@ -137,9 +137,35 @@ public partial class App : Application
         _ = _shell?.ScanAsync(fullRescan: false);
     }
 
+    /// <summary>异常弹窗节流：同一条异常在 10 秒内反复出现时不重复弹窗（只记日志），
+    /// 连续 5 次直接退出——防止布局循环异常导致弹窗风暴耗尽资源（2026-08-15 实机崩溃教训）。</summary>
+    private string? _lastExceptionMessage;
+    private DateTime _lastExceptionAt;
+    private int _exceptionRepeatCount;
+
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         Log.Error(e.Exception, "UI 线程未处理异常");
+
+        var now = DateTime.UtcNow;
+        var message = e.Exception.Message ?? string.Empty;
+        if (string.Equals(message, _lastExceptionMessage, StringComparison.Ordinal)
+            && (now - _lastExceptionAt) < TimeSpan.FromSeconds(10))
+        {
+            _exceptionRepeatCount++;
+            if (_exceptionRepeatCount >= 5)
+            {
+                Log.Fatal("同一异常连续出现 {Count} 次，为避免弹窗风暴直接退出", _exceptionRepeatCount);
+                Environment.Exit(1);
+            }
+            e.Handled = true;
+            return;
+        }
+
+        _lastExceptionMessage = message;
+        _lastExceptionAt = now;
+        _exceptionRepeatCount = 1;
+
         MessageBox.Show("发生了一个错误：\n" + e.Exception.Message + "\n\n详细信息已写入 data/logs。",
             "Player", MessageBoxButton.OK, MessageBoxImage.Warning);
         e.Handled = true;

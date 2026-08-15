@@ -156,7 +156,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
     public string Title => "设置";
 
-    public string Subtitle => "输出与媒体库";
+    public string Subtitle => string.Empty;
 
     // ================= 关于（L2 设置页补全） =================
 
@@ -769,7 +769,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             var quota = _client.Quota;
 
             if (quota.FreeRemaining is null)
-                return "尚未收到额度信息（点「测试连接」后显示，数字以服务端响应头为准）";
+                return "尚未收到额度信息";
 
             var text = $"今日免费剩余 {quota.FreeRemaining}";
             if (quota.PaidRemaining is > 0) text += $" · 付费 {quota.PaidRemaining}";
@@ -793,8 +793,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     private void RefreshKeyStatus()
     {
         KeyStatus = string.IsNullOrWhiteSpace(ConfigService.Current.ApiKey)
-            ? "还没有填写 API Key。在线搜索 / 歌词 / 歌单同步都依赖它（只保存在本地 data/config.json）。"
-            : $"已配置（{KeyMasked}）。额度与限流以服务端响应头为准，见下方今日额度。";
+            ? "未填写 API Key"
+            : $"已配置（{KeyMasked}）";
         OnPropertyChanged(nameof(KeyMasked));
         OnPropertyChanged(nameof(QuotaDisplay));
     }
@@ -892,9 +892,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         OnPropertyChanged(nameof(DownloadDirHint));
     }
 
-    public string DownloadDirHint => string.IsNullOrWhiteSpace(DownloadDir)
-        ? "未设置：点击「下载」时提示先填目录"
-        : "已设置：下载文件按命名模板落在这里";
+    public string DownloadDirHint => string.Empty;
 
     /// <summary>在线搜索默认音质档。改即生效（下次打开搜索页起用）。</summary>
     [ObservableProperty]
