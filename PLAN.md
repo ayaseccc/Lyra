@@ -479,6 +479,8 @@ ChkszClient（四端点封装、令牌桶 18 次/分、额度响应头解析、�
 4. **全局热键**：RegisterHotKey 实现，默认全关；注册失败（被占用）逐条明确提示，不静默。
 5. **设置页**：新增「快捷键」（只读清单）「行为」（关闭行为/启动恢复策略）「关于」（版本、BASS 非商业授权提示、开源组件、GD/ChKSz 接口署名）；在线组 Key 输入框改密文（尾 4 位回显+眼睛按钮）——L2 内完成，不再顺延。
 
+**L2 关闭（2026-08-15，规划方审计通过）**：step1–7 + 三轮目验修复全部交付，快捷键自定义改绑提前交付（原 backlog 项）；TFM 升 `net8.0-windows10.0.17763.0`（SMTC）+ UseWindowsForms（托盘），规划方独立交叉编译 0 警告，发布链未破坏；tools/ 12 个调试脚本杂物已由规划方清理。**审计尾巴（随 P4 首个提交处理）**：① harness lyrics 规划方环境实跑 99 项 vs 报告 113 项——若为字体等环境条件跳过属合理，但必须显式输出"跳过 N 项（原因）"使计数可对账；若非跳过则查明缺失断言。② grouping「组排序稳定（同一艺术家按专辑名）」在 Linux 环境失败——排序比较器疑似文化敏感，全仓排序/比较一律固定（Ordinal 或显式指定文化），保证跨环境确定性，此断言在任何环境都必须过。
+
 **L2 实施记录（2026-08-15，实测回写）**：
 - step1 SMTC 预研 ✔（TFM 升级 + GetForWindow 选型，见上）。
 - step2 应用内快捷键 ✔：Player.Core/Hotkeys/ShortcutPolicy 统一裁决（文本输入聚焦一律不响应；按钮聚焦 Space 归按钮；滑条聚焦方向键归滑条；列表 Enter/Delete 放行），Window_OnPreviewKeyDown 单入口 + 大歌词页规则合并；harness 新增 shortcuts 模式 13 项全过；设置「快捷键」页只读清单。
@@ -489,6 +491,14 @@ ChkszClient（四端点封装、令牌桶 18 次/分、额度响应头解析、�
 - 子代理审查（L2 全量代码）✔ 并已修复：①会话结束（关机/重启/注销）时放行关闭——"关闭到托盘"的 OnClosing 拦截不再阻塞系统关机（SessionEnding 置位）；②SMTC 初始化失败改有界重试（3 次/8s 定时器 + 重显窗口重置计数），不再只依赖 Loaded；③SMTC Play/Pause 语义区分（Play 只在暂停时起播、Pause 只在播放中暂停）；④停止播放清空 SMTC 陈旧元数据；⑤托盘图标回落 SystemIcons.Application 时不 Dispose（共享句柄）；⑥Key 长度 <4 时掩码只显圆点；⑦harness 脱敏夹具去掉 chksz_ 字样（改 sk-test-redact-fake）。修复后全 harness 187 项全过 + 发布冒烟「SMTC 已就绪」。
 - step7 快捷键自定义改绑 ✔（2026-08-15 用户目验反馈提前交付）：ShortcutMap（Player.Core/Hotkeys，纯函数可 harness：默认表 + 配置覆盖 UiConfig.ShortcutBindings，非法组合/组合冲突/字母键无修饰一律回退默认；组合串规范 Ctrl+Shift+Alt+K）；快捷键页**左=功能说明、右=按键芯片（可点）**——点芯片直接按新组合换绑，捕获中芯片显示"按新组合…"，Esc 取消，占用/重复明确提示，改绑即落盘立即生效；全局热键组合同样可改（UiConfig.GlobalHotkeyCombos，须带修饰键、防三键互相重复，改绑后强制重注册，占用提示沿用逐条弹窗；注册失败日志带 Win32 错误码）。harness shortcuts 扩至 32 项全过；UIA 驱动端到端验证：点 F5 芯片 → 芯片变"按新组合…" → 按 F6 → 落盘并即时反映、F6 触发重扫、Esc 取消不落盘。注：注册成功/触发/失败均留日志，用户侧"全局热键不生效"可用日志区分 未启用/注册失败/未触发。
 - 用户目验修复（2026-08-15，三轮）：①桌面歌词锁定态解锁柄初始隐藏（Opacity 未归零 → 锁定/重新锁定时清动画 + Opacity=0 + _handleHot 复位）；②第二轮发现悬停不显示锁柄——根因 Mouse.GetPosition(null) 与窗口坐标在 DPI/多屏下失配，改为 GetCursorPos（物理像素）+ CompositionTarget.TransformFromDevice（与 WndProc 命中测试同一坐标系），实测：光标在窗外 0 像素、窗内 216 像素（锁柄淡入），点击锁柄解锁成功；③第三轮（用户报告屏幕边缘锁定后锁柄在屏外无法解锁）——**桌面歌词重新打开必定解锁**：创建时与隐藏后再显示都 ForceUnlocked（锁定态只在窗口连续打开期间有效），实测锁定配置启动后自动翻转为解锁；另附：全局热键注册成功日志（排查不生效用）。
+
+**P4 实施记录（2026-08-15）**：
+- step1 GD 四端点打样 ✔（docs/api-samples/gd/：search/url/pic/lyric + album；实测结论：错误是 200+JSON 形态（detail/空数组/br=-1）非 HTTP 错误码；子源状态动态（netease 搜索空、kuwo 取流恒空、joox 全链路可用）；直链带 vkey 有时效；模型按真实结构 JsonPropertyName 标注 + case-insensitive 解析）。
+- step2 源抽象 ✔：IOnlineSource（搜索/专辑/取流/歌词/封面，OnlineResult 语义：失败带原因、NotFound 区分）；GdSource 默认源（零 Key 零额度、10 次/分令牌桶、网络失败指数退避 3 次、逐子源可用性探测、音质降级链 999→740→320→128、跨子源取流自动重试——kuwo 条目取流失败自动重搜 joox/netease 成功）；ChkszSource 收编网易云兜底（Key/额度/脱敏纪律不变，无 Key 灰显）；OnlineSources 注册表 + ProbeAllAsync。
+- step3+4 搜索与试听 ✔：侧栏「在线搜索」入口；搜索页（关键词+音源下拉默认网易云+专辑模式+音质档+翻页+音质标注）；Enter/双击/右键试听 = URL 流临时播放（不写歌单队列、切本地即结束、ASIO 输出）。实测：搜索 20 条全字段、试听网易云 jdymusic 192kHz/24bit ASIO 出声。修复：BASS URL 流必须 5 参重载（4 参把 URL 当文件路径 FileOpen）；WPF Key.Enter.ToString() 是 Return 需 Canonical 规范化（Enter 快捷键此前从未生效）；TimeSpan 逐字串格式异常改手工拼。
+- step5 下载 ✔：DownloadService 串行队列（间隔 4s、失败重试 1 次、库内重复检测标题+歌手+时长差<2s 标记等待确认、完成后 BatchCompleted 触发增量入库）；TagLibSharp 写 标题/歌手/专辑/封面；有词写同名 .lrc；命名模板落下载目录（空 TrackNo 自动清理 " - " 段）；下载管理页（侧栏入口，进度/状态/重复确认按钮）；ChKSz 操作额度预估提示。dlprobe 实测：33MB FLAC 无损下载、标签/封面/lrc 齐全、未入库曲目不误拦重复。修复：右键菜单是独立弹出树 RelativeSource 跨树必哑（P1.1 老坑复发），改 PlacementTarget+命中测试 Click。
+- step6 歌词链插 GD ✔：`.lrc > 内嵌 > 缓存 > GD(netease 复用已匹配 id，零额度) > ChKSz`，GD 无词/失败落回不打断。断网模拟：harness netfail 4 项（搜索/取流/歌词网络失败全部 OnlineResult.Fail 不抛异常；搜索子源全失败报原因而非假空）。
+- 遗留待用户实机验收：断网实机复测（本地播放零影响已在代码层保证）；右键菜单真实鼠标点击（UIA 自动化无法驱动 ContextMenu 交互）。
 
 **UI-R4 目验结论（2026-08-14）：通过（用户「没发现问题」）**。交付：①大封面高清解码（CoverImageCache.GetLarge 760px，修复 160px 放大模糊）；②艺术家|专辑行；③制作信息区块——CreditReader 从标签读作词/作曲/编曲（Vorbis LYRICIST/ARRANGER + ID3v2 TXXX + Composers，实测曲库 150 首中 25 首有标签），LRC 头部元数据捕获补位（[词:]/[曲:]/[编曲:] 等），有才显示；④侧栏折叠状态持久化（UiConfig.SidePaneOpen）；harness lyrics 扩至 101 项全过。
 
