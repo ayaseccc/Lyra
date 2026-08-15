@@ -76,6 +76,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject
 
     /// <summary>折叠的分组键（会话内记住；初始按配置默认展开/折叠）。</summary>
     private readonly HashSet<string> _collapsedGroups = new(StringComparer.Ordinal);
+    private bool _collapsedDefaultApplied;
 
     // ================= L3.1 列自定义 =================
 
@@ -261,9 +262,11 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         {
             var grouped = TrackGrouper.Group(View.Cast<TrackRecord>()).ToList();
 
-            // 初始默认：配置要求默认折叠时，把所有组标记折叠（只一次）
-            if (!ConfigService.Current.Ui.GroupsExpandedByDefault && _collapsedGroups.Count == 0)
+            // 初始默认：配置要求默认折叠时，把所有组标记折叠（只一次；审查：不能用 Count==0 判据，
+            // 用户手动展开所有组后会重复折叠）
+            if (!ConfigService.Current.Ui.GroupsExpandedByDefault && !_collapsedDefaultApplied)
             {
+                _collapsedDefaultApplied = true;
                 foreach (var g in grouped) _collapsedGroups.Add(GroupKeyOf(g));
             }
 

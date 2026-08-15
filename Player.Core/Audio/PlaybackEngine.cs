@@ -1021,7 +1021,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
         const int fftSize = 256;
         var re = new double[fftSize];
         var im = new double[fftSize];
-        var start = (write - fftSize + ring.Length * 2) % ring.Length;
+        var start = (write - fftSize + ring.Length) % ring.Length;
         for (var i = 0; i < fftSize; i++)
         {
             var idx = (start + i) % ring.Length;
@@ -1046,19 +1046,17 @@ public sealed class PlaybackEngine : IPlaybackEngine
         return result;
     }
 
-    /// <summary>原位 Radix-2 FFT（长度须为 2 的幂）。</summary>
+    /// <summary>原位 Radix-2 FFT（长度须为 2 的幂）。位反转为标准推演算法（审查修正：原累加式错误）。</summary>
     private static void Fft(double[] re, double[] im)
     {
         var n = re.Length;
+        var j = 0;
         for (var i = 1; i < n; i++)
         {
-            var j = 0;
-            for (var bit = n >> 1; bit > 0; bit >>= 1)
-            {
-                if ((i & bit) == 0) break;
-                j |= bit;
-            }
-            if (j > i)
+            var bit = n >> 1;
+            for (; (j & bit) != 0; bit >>= 1) j ^= bit;
+            j ^= bit;
+            if (i < j)
             {
                 (re[i], re[j]) = (re[j], re[i]);
                 (im[i], im[j]) = (im[j], im[i]);

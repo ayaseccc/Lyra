@@ -82,35 +82,35 @@
                                 <ColumnDefinition Width="{Binding ColWidthBitDepth, Converter={StaticResource DoubleToGridLength}}" />
                                 <ColumnDefinition Width="{Binding ColWidthBitrate, Converter={StaticResource DoubleToGridLength}}" />
                             </Grid.ColumnDefinitions>
-                            <Border Grid.Column="{Binding ColIndexTitle}" Background="Transparent" Tag="DisplayTitle" Cursor="Hand"
+                            <Border Grid.Column="{Binding ColIndexTitle}" Visibility="{Binding ColIndexTitle, Converter={StaticResource ColumnIndexToVis}}" Background="Transparent" Tag="DisplayTitle" Cursor="Hand"
                                     MouseLeftButtonUp="OnTrackHeaderClick">
                                 <TextBlock Text="标题" Style="{StaticResource TrackHeaderLabelStyle}" />
                             </Border>
-                            <Border Grid.Column="{Binding ColIndexArtist}" Background="Transparent" Tag="DisplayArtist" Cursor="Hand"
+                            <Border Grid.Column="{Binding ColIndexArtist}" Visibility="{Binding ColIndexArtist, Converter={StaticResource ColumnIndexToVis}}" Background="Transparent" Tag="DisplayArtist" Cursor="Hand"
                                     MouseLeftButtonUp="OnTrackHeaderClick">
                                 <TextBlock Text="歌手" Style="{StaticResource TrackHeaderLabelStyle}" />
                             </Border>
-                            <Border Grid.Column="{Binding ColIndexAlbum}" Background="Transparent" Tag="DisplayAlbum" Cursor="Hand"
+                            <Border Grid.Column="{Binding ColIndexAlbum}" Visibility="{Binding ColIndexAlbum, Converter={StaticResource ColumnIndexToVis}}" Background="Transparent" Tag="DisplayAlbum" Cursor="Hand"
                                     MouseLeftButtonUp="OnTrackHeaderClick">
                                 <TextBlock Text="专辑" Style="{StaticResource TrackHeaderLabelStyle}" />
                             </Border>
-                            <Border Grid.Column="{Binding ColIndexDuration}" Background="Transparent" Tag="DurationMs" Cursor="Hand"
+                            <Border Grid.Column="{Binding ColIndexDuration}" Visibility="{Binding ColIndexDuration, Converter={StaticResource ColumnIndexToVis}}" Background="Transparent" Tag="DurationMs" Cursor="Hand"
                                     MouseLeftButtonUp="OnTrackHeaderClick">
                                 <TextBlock Text="时长" Style="{StaticResource TrackHeaderLabelStyle}" TextAlignment="Right" />
                             </Border>
-                            <Border Grid.Column="{Binding ColIndexFormat}" Background="Transparent" Tag="Format" Cursor="Hand"
+                            <Border Grid.Column="{Binding ColIndexFormat}" Visibility="{Binding ColIndexFormat, Converter={StaticResource ColumnIndexToVis}}" Background="Transparent" Tag="Format" Cursor="Hand"
                                     MouseLeftButtonUp="OnTrackHeaderClick">
                                 <TextBlock Text="格式" Style="{StaticResource TrackHeaderLabelStyle}" />
                             </Border>
-                            <Border Grid.Column="{Binding ColIndexSampleRate}" Background="Transparent" Tag="SampleRate" Cursor="Hand"
+                            <Border Grid.Column="{Binding ColIndexSampleRate}" Visibility="{Binding ColIndexSampleRate, Converter={StaticResource ColumnIndexToVis}}" Background="Transparent" Tag="SampleRate" Cursor="Hand"
                                     MouseLeftButtonUp="OnTrackHeaderClick">
                                 <TextBlock Text="采样率" Style="{StaticResource TrackHeaderLabelStyle}" />
                             </Border>
-                            <Border Grid.Column="{Binding ColIndexBitDepth}" Background="Transparent" Tag="BitDepth" Cursor="Hand"
+                            <Border Grid.Column="{Binding ColIndexBitDepth}" Visibility="{Binding ColIndexBitDepth, Converter={StaticResource ColumnIndexToVis}}" Background="Transparent" Tag="BitDepth" Cursor="Hand"
                                     MouseLeftButtonUp="OnTrackHeaderClick">
                                 <TextBlock Text="位深" Style="{StaticResource TrackHeaderLabelStyle}" />
                             </Border>
-                            <Border Grid.Column="{Binding ColIndexBitrate}" Background="Transparent" Tag="Bitrate" Cursor="Hand"
+                            <Border Grid.Column="{Binding ColIndexBitrate}" Visibility="{Binding ColIndexBitrate, Converter={StaticResource ColumnIndexToVis}}" Background="Transparent" Tag="Bitrate" Cursor="Hand"
                                     MouseLeftButtonUp="OnTrackHeaderClick">
                                 <TextBlock Text="码率" Style="{StaticResource TrackHeaderLabelStyle}" />
                             </Border>
@@ -247,7 +247,7 @@
                                         </Grid>
                                     </Border>
                         
-                                    <StackPanel Grid.Column="{Binding DataContext.ColIndexTitle, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    <StackPanel Grid.Column="{Binding DataContext.ColIndexTitle, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexTitle, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
                                                 Orientation="Horizontal" VerticalAlignment="Center">
                                         <ui:SymbolIcon Symbol="Play24" FontSize="11" Foreground="{DynamicResource AccentBrush}"
                                                        VerticalAlignment="Center" Margin="0,0,8,0">
@@ -277,31 +277,31 @@
                                                        Margin="0,2,0,0" />
                                         </StackPanel>
                                     </StackPanel>
-                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexArtist, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexArtist, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexArtist, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
                                                Text="{Binding Track.DisplayArtist}" FontSize="10.5"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexAlbum, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexAlbum, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexAlbum, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
                                                Text="{Binding Track.DisplayAlbum}" FontSize="10.5"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexDuration, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexDuration, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexDuration, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
                                                Text="{Binding Track.DurationText}" FontSize="10.5"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextAlignment="Right"
                                                VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexFormat, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexFormat, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexFormat, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
                                                Text="{Binding Track.Format}" FontSize="10.5"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexSampleRate, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexSampleRate, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexSampleRate, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
                                                Text="{Binding Track.SampleRateText}" FontSize="10.5"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexBitDepth, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexBitDepth, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexBitDepth, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
                                                Text="{Binding Track.BitDepthText}" FontSize="10.5"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
-                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexBitrate, RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                    <TextBlock Grid.Column="{Binding DataContext.ColIndexBitrate, RelativeSource={RelativeSource AncestorType=ListBox}}" Visibility="{Binding DataContext.ColIndexBitrate, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource ColumnIndexToVis}}"
                                                Text="{Binding Track.BitrateText}" FontSize="10.5"
                                                Foreground="{DynamicResource TextSecondaryBrush}" TextTrimming="CharacterEllipsis"
                                                VerticalAlignment="Center" />
@@ -727,6 +727,17 @@
                                     <TextBlock Text="缓冲区" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <ComboBox Grid.Column="1" ItemsSource="{Binding WasapiBuffers}"
                                               SelectedItem="{Binding SelectedWasapiBuffer}" />
+                                </Grid>
+
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="迷你窗" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <StackPanel Grid.Column="1">
+                                        <ui:ToggleSwitch IsChecked="{Binding MiniSpectrum}" Content="迷你窗频谱（mixer DSP tap，不影响 ASIO 输出）" />
+                                    </StackPanel>
                                 </Grid>
 
                                 <Border Background="{DynamicResource HoverBrush}" CornerRadius="6" Padding="10,8" Margin="0,4,0,0">

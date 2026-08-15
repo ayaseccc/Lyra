@@ -116,6 +116,16 @@ public sealed class DoubleToGridLengthConverter : IValueConverter
         => throw new NotSupportedException();
 }
 
+/// <summary>列索引 → 可见性（L3.1 列隐藏：-1 → Collapsed，其余 Visible）。</summary>
+public sealed class ColumnIndexToVisibilityConverter : IValueConverter
+{
+    public object? Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => value is int i && i < 0 ? Visibility.Collapsed : Visibility.Visible;
+
+    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
+        => throw new NotSupportedException();
+}
+
 /// <summary>bool → 分组折叠箭头（L3.1：true=折叠 ▸ / false=展开 ▾）。</summary>
 public sealed class BoolToCollapseArrowConverter : IValueConverter
 {

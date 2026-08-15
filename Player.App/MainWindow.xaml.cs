@@ -485,8 +485,12 @@ public partial class MainWindow : FluentWindow
         _globalHotkeys = null;
         _smtcService?.Dispose();
         _smtcService = null;
-        _miniWindow?.Close();
-        _miniWindow = null;
+        if (_miniWindow is not null)
+        {
+            _miniWindow.AllowRealClose = true;
+            _miniWindow.Close();
+            _miniWindow = null;
+        }
         var bounds = RestoreBounds;
         var ui = ConfigService.Current.Ui;
         if (bounds.Width > 0 && bounds.Height > 0)

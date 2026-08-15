@@ -27,6 +27,9 @@ public partial class MiniPlayerWindow : Wpf.Ui.Controls.FluentWindow
     /// <summary>回主窗请求（双击/按钮/Esc）。</summary>
     public event Action? RestoreRequested;
 
+    /// <summary>主窗退出路径：置位后 OnClosing 放行真实关闭（不再拦截+回主窗）。</summary>
+    public bool AllowRealClose { get; set; }
+
     public MiniPlayerWindow(PlayerViewModel player)
     {
         InitializeComponent();
@@ -143,18 +146,17 @@ public partial class MiniPlayerWindow : Wpf.Ui.Controls.FluentWindow
 
     private void OnDragStart(object sender, MouseButtonEventArgs e)
     {
+        if (e.ClickCount >= 2)
+        {
+            // 双击 = 回主窗（Border 无 MouseDoubleClick 事件，在按下事件里判 ClickCount）
+            OnRestoreClick(sender, e);
+            return;
+        }
         if (e.ClickCount == 1) DragMove();
         SavePosition();
     }
 
     private void OnRestoreClick(object sender, RoutedEventArgs e)
-    {
-        SavePosition();
-        Hide();
-        RestoreRequested?.Invoke();
-    }
-
-    private void OnDoubleClick(object sender, MouseButtonEventArgs e)
     {
         SavePosition();
         Hide();
@@ -173,6 +175,16 @@ public partial class MiniPlayerWindow : Wpf.Ui.Controls.FluentWindow
 
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        // 频谱清理（无论隐藏还是真关闭都执行；Closed 事件在拦截路径不触发）
+        _player.EnableSpectrum(false);
+        _spectrumTimer.Stop();
+
+        if (AllowRealClose)
+        {
+            base.OnClosing(e);
+            return;
+        }
+
         // 不真正关闭（隐藏即可，与主窗同生命周期）；真正退出走托盘
         SavePosition();
         e.Cancel = true;

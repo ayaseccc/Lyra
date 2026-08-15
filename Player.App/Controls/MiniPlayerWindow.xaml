@@ -9,7 +9,8 @@
         KeyDown="OnWindowKeyDown">
     <Border x:Name="BorderRoot" CornerRadius="12" Padding="1"
             Background="{DynamicResource SurfaceStrongBrush}"
-            BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
+            BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1"
+            MouseLeftButtonDown="OnDragStart">
         <Grid Margin="10,8">
             <Grid.RowDefinitions>
                 <RowDefinition Height="*" />
