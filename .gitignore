@@ -30,3 +30,8 @@ nuget.config
 /tools/SmtcProbe/obj/
 /tools/SmtcProbe/pub/
 *.zip
+
+# ---- 防呆（2026-08-16 泄漏事故后加）：任何 config 备份绝不入仓 ----
+config.json
+*-bak.json
+*.bak
