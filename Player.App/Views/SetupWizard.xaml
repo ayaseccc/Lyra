@@ -1,0 +1,38 @@
+<Window x:Class="Player.App.Views.SetupWizard"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
+        Title="欢迎使用 Player" Width="480" SizeToContent="Height"
+        WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False">
+    <StackPanel Margin="22,18">
+        <TextBlock Text="欢迎使用 Player" FontSize="18" FontWeight="SemiBold"
+                   Foreground="{DynamicResource TextPrimaryBrush}" />
+        <TextBlock Text="本地音乐播放器 · 首次运行引导（之后可在设置页随时更改）" Margin="0,4,0,14"
+                   Foreground="{DynamicResource TextSecondaryBrush}" FontSize="12" />
+
+        <TextBlock Text="1. 选择曲库目录" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold" />
+        <Grid Margin="0,6,0,14">
+            <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*" />
+                <ColumnDefinition Width="Auto" />
+            </Grid.ColumnDefinitions>
+            <ui:TextBox x:Name="FolderBox" Height="30" VerticalContentAlignment="Center"
+                        PlaceholderText="例如 D:\Music（可之后添加多个）" />
+            <ui:Button Grid.Column="1" Content="浏览…" Margin="8,0,0,0" Click="OnBrowseClick" />
+        </Grid>
+
+        <TextBlock Text="2. 输出设备" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold" />
+        <ComboBox x:Name="DeviceCombo" Margin="0,6,0,14" Height="32" />
+        <TextBlock Text="常用 DirectSound；有 ASIO 声卡/驱动可选 ASIO（位完美，独占设备）" Margin="0,-8,0,14"
+                   Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" />
+
+        <TextBlock Text="3. API Key（可跳过）" Foreground="{DynamicResource TextPrimaryBrush}" FontSize="13" FontWeight="SemiBold" />
+        <ui:TextBox x:Name="KeyBox" Margin="0,6,0,2" Height="30" VerticalContentAlignment="Center"
+                    PlaceholderText="在线搜索/下载/歌词用的 API Key，不填也能用本地播放" />
+        <TextBlock Text="Key 仅保存在本机配置文件中" Margin="0,0,0,14"
+                   Foreground="{DynamicResource TextSecondaryBrush}" FontSize="11" />
+
+        <ui:Button Content="完成" Appearance="Primary" HorizontalAlignment="Right" Width="96"
+                   Click="OnFinishClick" />
+    </StackPanel>
+</Window>

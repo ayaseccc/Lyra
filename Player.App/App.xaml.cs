@@ -1,3 +1,4 @@
+using System.IO;
 using System.Windows;
 using System.Windows.Threading;
 using Player.App.ViewModels;
@@ -21,14 +22,27 @@ public partial class App : Application
     private LyricsService? _lyrics;
     private Player.Core.Online.OnlineSources? _onlineSources;
     private Player.Core.Downloads.DownloadService? _downloads;
+    private Mutex? _instanceMutex;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
         base.OnStartup(e);
 
-        // 先挂异常处理器，再做任何可能抛异常的初始化
+        // 先挂异常处理器，再做任何可能抛异常的初始化（P6 三层兜底）
         DispatcherUnhandledException += OnDispatcherUnhandledException;
         AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
+        TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
+
+        // P6 单实例：第二实例把文件（双击/多选/拖到 exe）转交运行实例后退出
+        if (!SingleInstance.TryAcquire(out _instanceMutex))
+        {
+            var files = e.Args.Where(a => File.Exists(a)).ToList();
+            SingleInstance.ForwardFiles(files);
+            Shutdown(0);
+            return;
+        }
+        SingleInstance.StartServer(HandleIncomingFiles);
+        FileAssociation.Register();   // P6 文件关联：幂等注册，便携移动后路径自动刷新
 
         try
         {
@@ -184,5 +198,38 @@ public partial class App : Application
             Log.Fatal(ex, "非 UI 线程未处理异常");
         else
             Log.Fatal("非 UI 线程未处理异常：{Object}", e.ExceptionObject);
+    }
+
+    /// <summary>P6：外部打开文件（双击/多选/拖到 exe）→ 导入曲库并播放；主窗从任意表面恢复。</summary>
+    private async Task HandleIncomingFilesAsync(IReadOnlyList<string> files)
+    {
+        try
+        {
+            if (_library is null) return;
+            var tracks = await _library.ImportFilesAsync(files);
+            if (tracks.Count == 0) return;
+
+            if (Application.Current.MainWindow is MainWindow main && main.Shell is { } shell)
+            {
+                shell.Player.PlayTracks(tracks, 0, "文件打开");
+                main.ShowFromExternalOpen();
+            }
+        }
+        catch (Exception ex)
+        {
+            Log.Error(ex, "处理外部打开文件失败");
+        }
+    }
+
+    private void HandleIncomingFiles(IReadOnlyList<string> files)
+    {
+        _ = HandleIncomingFilesAsync(files);
+    }
+
+    /// <summary>P6：Task 未观察异常兜底（async void 之外的 fire-and-forget 任务）——记录并标记已处理。</summary>
+    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    {
+        Log.Error(e.Exception, "Task 未观察异常");
+        e.SetObserved();
     }
 }

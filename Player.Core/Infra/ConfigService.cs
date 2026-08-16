@@ -215,6 +215,9 @@ public sealed class UiConfig
     /// <summary>曲目列表可见列顺序（Key 列表：Title/Artist/Album/Duration/Format/SampleRate/BitDepth/Bitrate）。</summary>
     public List<string> Columns { get; set; } = new() { "Title", "Artist", "Album", "Duration", "Format", "SampleRate", "BitDepth", "Bitrate" };
 
+    /// <summary>P6：首次引导最后选择的曲库目录（引导/浏览框默认值）。</summary>
+    public string LastSelectedLibraryFolder { get; set; } = string.Empty;
+
     /// <summary>L3.2 迷你窗位置记忆（显示器设备名 + 工作区内 DIP 偏移；兼容旧 "x,y"）。</summary>
     public string MiniPos { get; set; } = string.Empty;
 
@@ -310,7 +313,20 @@ public static class ConfigService
         }
         catch (Exception ex)
         {
-            Log.Error(ex, "读取配置失败，改用默认配置");
+            // P6：损坏配置备份重建，不崩（保留现场供排查，下次启动用默认配置）
+            try
+            {
+                if (File.Exists(AppPaths.ConfigFile))
+                {
+                    var backup = AppPaths.ConfigFile + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
+                    File.Copy(AppPaths.ConfigFile, backup, overwrite: true);
+                    Log.Error(ex, "读取配置失败，已备份到 {Backup}，改用默认配置", backup);
+                }
+            }
+            catch (Exception backupEx)
+            {
+                Log.Warning(backupEx, "备份损坏配置失败");
+            }
             return new AppConfig();
         }
     }

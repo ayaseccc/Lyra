@@ -16,6 +16,52 @@
                  PreviewKeyDown="Window_OnPreviewKeyDown"
                  FontFamily="Microsoft YaHei UI, Segoe UI"
                  TextOptions.TextFormattingMode="Display">
+    <!-- P6：任务栏缩略图按钮（上一曲/播放暂停/下一曲）+ 可选进度条 -->
+    <ui:FluentWindow.TaskbarItemInfo>
+        <TaskbarItemInfo x:Name="TaskbarInfo">
+            <TaskbarItemInfo.ThumbButtonInfos>
+                <ThumbButtonInfo x:Name="TbPrev" Description="上一首" Command="{Binding Player.PreviousCommand}" IsEnabled="True" DismissWhenClicked="False">
+                    <ThumbButtonInfo.ImageSource>
+                        <DrawingImage>
+                            <DrawingImage.Drawing>
+                                <GeometryDrawing Brush="#FFFFFFFF">
+                                    <GeometryDrawing.Geometry>
+                                        <PathGeometry Figures="M0,0 L0,16 L7,8 Z M8,0 L8,16 L15,8 Z" />
+                                    </GeometryDrawing.Geometry>
+                                </GeometryDrawing>
+                            </DrawingImage.Drawing>
+                        </DrawingImage>
+                    </ThumbButtonInfo.ImageSource>
+                </ThumbButtonInfo>
+                <ThumbButtonInfo x:Name="TbPlayPause" Description="播放 / 暂停" Command="{Binding Player.PlayPauseCommand}" IsEnabled="True" DismissWhenClicked="False">
+                    <ThumbButtonInfo.ImageSource>
+                        <DrawingImage>
+                            <DrawingImage.Drawing>
+                                <GeometryDrawing Brush="#FFFFFFFF">
+                                    <GeometryDrawing.Geometry>
+                                        <PathGeometry Figures="M0,0 L0,16 L11,8 Z" />
+                                    </GeometryDrawing.Geometry>
+                                </GeometryDrawing>
+                            </DrawingImage.Drawing>
+                        </DrawingImage>
+                    </ThumbButtonInfo.ImageSource>
+                </ThumbButtonInfo>
+                <ThumbButtonInfo x:Name="TbNext" Description="下一首" Command="{Binding Player.NextCommand}" IsEnabled="True" DismissWhenClicked="False">
+                    <ThumbButtonInfo.ImageSource>
+                        <DrawingImage>
+                            <DrawingImage.Drawing>
+                                <GeometryDrawing Brush="#FFFFFFFF">
+                                    <GeometryDrawing.Geometry>
+                                        <PathGeometry Figures="M1,0 L1,16 L8,8 Z M9,0 L9,16 L16,8 Z" />
+                                    </GeometryDrawing.Geometry>
+                                </GeometryDrawing>
+                            </DrawingImage.Drawing>
+                        </DrawingImage>
+                    </ThumbButtonInfo.ImageSource>
+                </ThumbButtonInfo>
+            </TaskbarItemInfo.ThumbButtonInfos>
+        </TaskbarItemInfo>
+    </ui:FluentWindow.TaskbarItemInfo>
 
     <ui:FluentWindow.Resources>
 

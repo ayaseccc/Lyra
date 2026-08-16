@@ -1,6 +1,7 @@
 using System.IO;
 using System.Windows;
 using System.Windows.Media.Animation;
+using System.Windows.Threading;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -97,6 +98,10 @@ public partial class MainWindow : FluentWindow
                 RebuildShortcutMap();
                 _surfaces.RestoreConfiguredDesktopLyrics();
                 OnSurfaceStateChanged(this, EventArgs.Empty);
+
+                // P6 首次运行引导：无曲库配置时弹出（选曲库→选输出→Key 可跳过）
+                if (ConfigService.Current.Library.Folders.Count == 0)
+                    Dispatcher.BeginInvoke(DispatcherPriority.Loaded, ShowSetupWizardIfNeeded);
             }
         };
 
@@ -524,7 +529,19 @@ public partial class MainWindow : FluentWindow
 
 
 
-    private ShellViewModel? Shell => DataContext as ShellViewModel;
+    internal ShellViewModel? Shell => DataContext as ShellViewModel;
+
+    /// <summary>P6：外部打开文件后把主窗从任意表面（迷你/后台）恢复到前台。</summary>
+    public void ShowFromExternalOpen() => _surfaces?.ShowMain();
+
+    /// <summary>P6 首次运行引导（无曲库配置时，主窗就绪后弹出）。</summary>
+    private void ShowSetupWizardIfNeeded()
+    {
+        if (ConfigService.Current.Library.Folders.Count != 0) return;
+        var wizard = new Views.SetupWizard { Owner = this };
+        if (wizard.ShowDialog() == true && wizard.ShouldScan)
+            Shell?.ScanAsync(fullRescan: false);
+    }
 
     private PlayerViewModel? Player => Shell?.Player;
 
@@ -927,6 +944,10 @@ public partial class MainWindow : FluentWindow
         {
             if (e.PropertyName is nameof(PlayerViewModel.Title) or nameof(PlayerViewModel.CoverImage))
                 UpdateDesktopLyrics();
+            if (e.PropertyName is nameof(PlayerViewModel.IsPlaying) or nameof(PlayerViewModel.HasTrack))
+                UpdateTaskbarThumb();
+            if (e.PropertyName == nameof(PlayerViewModel.ProgressPercent))
+                UpdateTaskbarProgress();
         };
         Player.Lyrics.PropertyChanged += (_, e) =>
         {
@@ -934,6 +955,34 @@ public partial class MainWindow : FluentWindow
                 or nameof(LyricsViewModel.HasLyrics) or nameof(LyricsViewModel.IsStatic))
                 UpdateDesktopLyrics();
         };
+    }
+
+    /// <summary>P6：任务栏缩略图按钮图标随播放状态切换（播放 ⇄ 暂停）。</summary>
+    private void UpdateTaskbarThumb()
+    {
+        if (TbPlayPause is null || Player is null) return;
+        var playing = Player.IsPlaying;
+        var figures = playing ? "M0,0 L0,16 L6,16 L6,0 Z M9,0 L9,16 L15,16 L15,0 Z" : "M0,0 L0,16 L11,8 Z";
+        TbPlayPause.ImageSource = new DrawingImage(
+            new GeometryDrawing(
+                new SolidColorBrush(System.Windows.Media.Colors.White),
+                null,
+                Geometry.Parse(figures)));
+    }
+
+    /// <summary>P6：任务栏进度条（可选展示，播放中显示、暂停/停止归零）。</summary>
+    private void UpdateTaskbarProgress()
+    {
+        if (TaskbarInfo is null || Player is null) return;
+        if (!Player.HasTrack)
+        {
+            TaskbarInfo.ProgressState = System.Windows.Shell.TaskbarItemProgressState.None;
+            return;
+        }
+        TaskbarInfo.ProgressState = Player.IsPlaying
+            ? System.Windows.Shell.TaskbarItemProgressState.Normal
+            : System.Windows.Shell.TaskbarItemProgressState.Paused;
+        TaskbarInfo.ProgressValue = Math.Clamp(Player.ProgressPercent / 100.0, 0, 1);
     }
 
     // ================= 大歌词页（L1 第二步 + L1.1-④ 收尾） =================
