@@ -215,8 +215,13 @@ public sealed class UiConfig
     /// <summary>曲目列表可见列顺序（Key 列表：Title/Artist/Album/Duration/Format/SampleRate/BitDepth/Bitrate）。</summary>
     public List<string> Columns { get; set; } = new() { "Title", "Artist", "Album", "Duration", "Format", "SampleRate", "BitDepth", "Bitrate" };
 
-    /// <summary>L3.2 迷你窗位置记忆（"x,y"）。</summary>
+    /// <summary>L3.2 迷你窗位置记忆（显示器设备名 + 工作区内 DIP 偏移；兼容旧 "x,y"）。</summary>
     public string MiniPos { get; set; } = string.Empty;
+
+    /// <summary>L3.2 迷你窗尺寸记忆（DIP；0 表示使用默认尺寸）。</summary>
+    public double MiniWidth { get; set; }
+
+    public double MiniHeight { get; set; }
 
     /// <summary>L3.2 迷你窗频谱（mixer DSP tap，设置可关）。</summary>
     public bool MiniSpectrum { get; set; }

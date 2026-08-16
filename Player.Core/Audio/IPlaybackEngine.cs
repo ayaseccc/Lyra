@@ -60,10 +60,23 @@ public interface IPlaybackEngine : IDisposable
 
     // ---------- 频谱（L3.2） ----------
 
+    /// <summary>固定输出柱数。当前分析器发布 16 柱快照。</summary>
+    int SpectrumBinCount { get; }
+
+    /// <summary>
+    /// 获取一个频谱使用租约。第一个租约挂载 mixer DSP 并启动后台 FFT；最后一个租约释放时真实卸载 DSP。
+    /// </summary>
+    IDisposable AcquireSpectrum();
+
+    /// <summary>把最新频谱快照复制到调用方缓冲区。缓冲区至少需要 <see cref="SpectrumBinCount"/> 个元素。</summary>
+    bool TryCopySpectrum(Span<float> destination);
+
     /// <summary>开启/关闭频谱取样（mixer 挂 DSP tap 复制样本，不消费播放数据）。</summary>
+    /// <remarks>兼容旧调用；新代码应持有 <see cref="AcquireSpectrum"/> 返回的租约。</remarks>
     void EnableSpectrum(bool enabled);
 
     /// <summary>取归一化频谱柱（0~1，bins 个；无信号返回全 0）。30fps 由 UI 侧定时拉取。</summary>
+    /// <remarks>兼容旧调用，会分配数组；逐帧渲染请改用 <see cref="TryCopySpectrum"/>。</remarks>
     float[] GetSpectrumLevels(int bins = 16);
 
     void ClearPreload();

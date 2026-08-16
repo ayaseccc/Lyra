@@ -36,17 +36,16 @@ public partial class MainWindow : FluentWindow
     /// <summary>L2 托盘（菜单播放控制/桌面歌词开关/显示主窗/退出，双击还原）。</summary>
     private Player.App.SystemTray.TrayService? _tray;
 
-    /// <summary>L3.2 迷你悬浮窗（开=主窗隐藏，关=主窗恢复）。</summary>
-    private Controls.MiniPlayerWindow? _miniWindow;
+    /// <summary>主窗/迷你窗/后台、桌面歌词与退出的唯一状态协调器。</summary>
+    private AppSurfaceCoordinator? _surfaces;
 
     /// <summary>L2 全局热键（RegisterHotKey，默认全关；占用逐条提示）。</summary>
     private Player.App.GlobalHotkeys.GlobalHotkeyService? _globalHotkeys;
 
-    /// <summary>托盘菜单「退出」置位：放行后续真实的关闭（配合"关闭到托盘"拦截）。</summary>
-    private bool _exitingFromTray;
-
     /// <summary>系统会话结束（关机/重启/注销）：放行关闭，避免"关闭到托盘"拦截阻塞系统关机（审查修复）。</summary>
     private bool _sessionEnding;
+
+    private bool _closingCleanupDone;
 
     /// <summary>SMTC 初始化失败后的有界重试（审查修复：仅靠 Loaded 重试不可靠）。</summary>
     private int _smtcRetryCount;
@@ -91,16 +90,13 @@ public partial class MainWindow : FluentWindow
                 Shell.DownloadDirPicker = PickDownloadDirectory;   // P4 实机反馈：下载时弹窗选目标
                 HookDesktopLyricsUpdates();
                 HookSettingsLyricsUpdates();
+                _surfaces ??= new AppSurfaceCoordinator(this, Player!, CreateDesktopLyricsWindow, UpdateDesktopLyrics);
+                _surfaces.StateChanged -= OnSurfaceStateChanged;
+                _surfaces.StateChanged += OnSurfaceStateChanged;
                 InitTray();
                 RebuildShortcutMap();
-                // 恢复桌面歌词（L1 第三步：开关持久化）
-                if (ConfigService.Current.Ui.DesktopLyricsEnabled && _desktopLyrics is null)
-                {
-                    _desktopLyrics = CreateDesktopLyricsWindow();
-                    _desktopLyrics.Show();
-                    _dispatcher.BeginInvoke(System.Windows.Threading.DispatcherPriority.Loaded, UpdateDesktopLyrics);
-                }
-                _tray?.RefreshDesktopLyricsCheck();
+                _surfaces.RestoreConfiguredDesktopLyrics();
+                OnSurfaceStateChanged(this, EventArgs.Empty);
             }
         };
 
@@ -123,7 +119,11 @@ public partial class MainWindow : FluentWindow
         };
 
         // L2 托盘兼容：系统关机/重启/注销时放行退出，不能被"关闭到托盘"的拦截卡住（审查修复）
-        System.Windows.Application.Current!.SessionEnding += (_, _) => _sessionEnding = true;
+        System.Windows.Application.Current!.SessionEnding += (_, _) =>
+        {
+            _sessionEnding = true;
+            _surfaces?.PrepareForExit();
+        };
 
         // 恢复上次的窗口尺寸（UI-R1.5 反馈）
         var ui = ConfigService.Current.Ui;
@@ -352,71 +352,36 @@ public partial class MainWindow : FluentWindow
         return dialog.ShowDialog() == true ? dialog.SelectedDir : null;
     }
 
-    /// <summary>L3.2 迷你窗按钮④：开=主窗隐藏+迷你窗显示；关=Escape/回主窗按钮/再按。</summary>
+    /// <summary>L3.2 迷你窗按钮：主界面切换到迷你主界面；桌面歌词状态不受影响。</summary>
     private void OnMiniButtonClick(object sender, RoutedEventArgs e)
-    {
-        if (_miniWindow is null)
-        {
-            _miniWindow = new Controls.MiniPlayerWindow(Player!)
-            {
-                Owner = null   // 独立置顶小窗，不随主窗
-            };
-            _miniWindow.RestoreRequested += ShowMainFromMini;
-            _miniWindow.Show();
-            Hide();
-            return;
-        }
-
-        if (_miniWindow.IsVisible)
-        {
-            _miniWindow.Hide();
-            ShowMainFromMini();
-        }
-        else
-        {
-            _miniWindow.Show();
-            Hide();
-        }
-    }
-
-    /// <summary>迷你窗请求回主窗：主窗恢复显示（迷你窗已自行隐藏）。</summary>
-    private void ShowMainFromMini()
-    {
-        if (!IsVisible)
-        {
-            Show();
-            if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-            Activate();
-        }
-    }
+        => _surfaces?.ShowMini();
 
     /// <summary>L2 托盘：Player 就绪后创建（菜单播放控制需要命令）。</summary>
     private void InitTray()
     {
-        if (_tray is not null || Player is null) return;
+        if (_tray is not null || Player is null || _surfaces is null) return;
         try
         {
-            _tray = new Player.App.SystemTray.TrayService(Player, ToggleDesktopLyrics, ShowMainWindowFromTray, ExitFromTray);
+            _tray = new Player.App.SystemTray.TrayService(
+                Player,
+                _surfaces.ToggleDesktopLyrics,
+                _surfaces.ShowMain,
+                _surfaces.ShowMini,
+                _surfaces.RequestExit,
+                () => _surfaces.IsDesktopLyricsVisible,
+                () => _surfaces.IsMiniVisible);
+            _surfaces.SetTrayReady(_tray.IsReady);
         }
         catch (Exception ex)
         {
+            _surfaces.SetTrayReady(false);
             Serilog.Log.Warning(ex, "托盘初始化失败");
         }
     }
 
-    /// <summary>托盘「显示主窗」/ 双击还原：恢复最小化并抢焦点。</summary>
-    private void ShowMainWindowFromTray()
+    private void OnSurfaceStateChanged(object? sender, EventArgs e)
     {
-        Show();
-        if (WindowState == WindowState.Minimized) WindowState = WindowState.Normal;
-        Activate();
-    }
-
-    /// <summary>托盘「退出」：唯一显式退出路径（"关闭到托盘"开启时关窗只是隐藏）。</summary>
-    private void ExitFromTray()
-    {
-        _exitingFromTray = true;
-        System.Windows.Application.Current.Shutdown();
+        _tray?.RefreshSurfaceChecks();
     }
 
     /// <summary>
@@ -469,15 +434,25 @@ public partial class MainWindow : FluentWindow
     /// <summary>关窗前记下窗口尺寸，退出时随配置落盘。</summary>
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
-        // L2 托盘（B4 ShutdownMode 语义）：开启"关闭到托盘"时关主窗 = 隐藏而非退出，
-        // 进程与托盘继续存活（SMTC 媒体键也不断）；退出只能走托盘菜单。
-        // 会话结束（关机/重启/注销）与托盘「退出」都放行真实关闭（审查修复）。
-        if (ConfigService.Current.Ui.CloseToTray && !_exitingFromTray && !_sessionEnding)
+        // 只有托盘图标确实创建成功才允许把最后一个主界面藏到后台。
+        // 托盘失败时关闭必须真正退出，不能留下无法找回的隐形进程。
+        if (ConfigService.Current.Ui.CloseToTray
+            && !_sessionEnding
+            && _surfaces is { IsExiting: false, TrayReady: true })
         {
             e.Cancel = true;
-            Hide();
+            _surfaces.MovePrimaryToBackground();
             return;
         }
+
+        _surfaces?.PrepareForExit();
+
+        if (_closingCleanupDone)
+        {
+            base.OnClosing(e);
+            return;
+        }
+        _closingCleanupDone = true;
 
         _smtcRetryTimer?.Stop();
         _smtcRetryTimer = null;
@@ -487,12 +462,6 @@ public partial class MainWindow : FluentWindow
         _globalHotkeys = null;
         _smtcService?.Dispose();
         _smtcService = null;
-        if (_miniWindow is not null)
-        {
-            _miniWindow.AllowRealClose = true;
-            _miniWindow.Close();
-            _miniWindow = null;
-        }
         var bounds = RestoreBounds;
         var ui = ConfigService.Current.Ui;
         if (bounds.Width > 0 && bounds.Height > 0)
@@ -504,6 +473,13 @@ public partial class MainWindow : FluentWindow
         {
             ui.WindowWidth = ActualWidth;
             ui.WindowHeight = ActualHeight;
+        }
+
+        if (_surfaces is not null)
+        {
+            _surfaces.StateChanged -= OnSurfaceStateChanged;
+            _surfaces.Dispose();
+            _surfaces = null;
         }
 
         base.OnClosing(e);
@@ -857,8 +833,6 @@ public partial class MainWindow : FluentWindow
 
     // ================= 桌面歌词（L1 第三步） =================
 
-    private DesktopLyricsWindow? _desktopLyrics;
-
     /// <summary>新建桌面歌词窗（统一接上"打开字体设置"请求）。</summary>
     private DesktopLyricsWindow CreateDesktopLyricsWindow()
     {
@@ -870,6 +844,7 @@ public partial class MainWindow : FluentWindow
     /// <summary>桌面歌词右键菜单"字体设置…"：跳设置页外观区（歌词组在此区，L3.0-3 分区重构）。</summary>
     private void OpenLyricSettingsFromDesktopLyrics()
     {
+        _surfaces?.ShowMain();
         if (Shell is not { } shell) return;
         if (shell.OpenSettingsCommand.CanExecute(null)) shell.OpenSettingsCommand.Execute(null);
         if (shell.CurrentPage is SettingsPageViewModel settings)
@@ -878,46 +853,23 @@ public partial class MainWindow : FluentWindow
 
     private void OnDesktopLyricsButtonClick(object sender, RoutedEventArgs e) => ToggleDesktopLyrics();
 
-    private void ToggleDesktopLyrics()
-    {
-        if (_desktopLyrics is null)
-        {
-            _desktopLyrics = CreateDesktopLyricsWindow();
-            _desktopLyrics.ForceUnlocked();   // 重新打开必定解锁（目验修复：锁柄可能在屏幕外）
-            _desktopLyrics.Show();
-            UpdateDesktopLyrics();   // 首次打开立即填充当前歌词（此前缺失：窗口空白、要点多次的次因）
-        }
-        else if (_desktopLyrics.IsVisible)
-        {
-            _desktopLyrics.Hide();
-        }
-        else
-        {
-            _desktopLyrics.ForceUnlocked();   // 隐藏后再显示：必定回到解锁态
-            _desktopLyrics.Show();
-            _desktopLyrics.ApplySettings();
-            UpdateDesktopLyrics();
-        }
-        ConfigService.Current.Ui.DesktopLyricsEnabled = _desktopLyrics.IsVisible;
-        ConfigService.Save();
-        // L2 托盘：菜单勾选与播放条按钮保持同步
-        _tray?.RefreshDesktopLyricsCheck();
-    }
+    private void ToggleDesktopLyrics() => _surfaces?.ToggleDesktopLyrics();
 
     private void UpdateDesktopLyrics()
     {
-        if (_desktopLyrics is null || !_desktopLyrics.IsVisible) return;
+        var desktopLyrics = _surfaces?.DesktopLyricsWindow;
+        if (desktopLyrics is null || !desktopLyrics.IsVisible) return;
         var lyrics = Player?.Lyrics;
         if (lyrics is null) return;
 
         // 无歌词 / 无时间轴 / 未开始播放 → 显示曲名（W1：完全无歌词或未播放时避免空条）
         if (!lyrics.HasLyrics || lyrics.IsStatic || lyrics.CurrentIndex < 0)
         {
-            _desktopLyrics.UpdateLyrics(Player?.Title ?? string.Empty, Player?.Artist ?? string.Empty, hasTimeline: false);
+            desktopLyrics.UpdateLyrics(Player?.Title ?? string.Empty, Player?.Artist ?? string.Empty, hasTimeline: false);
         }
         else
         {
-            _desktopLyrics.UpdateLyrics(lyrics.CurrentPrimary, lyrics.CurrentSecondary, hasTimeline: true);
+            desktopLyrics.UpdateLyrics(lyrics.CurrentPrimary, lyrics.CurrentSecondary, hasTimeline: true);
         }
     }
 
@@ -947,7 +899,7 @@ public partial class MainWindow : FluentWindow
                     case nameof(SettingsPageViewModel.SelectedLyricFontWeight):
                         SideLyricCanvas?.InvalidateVisual();
                         BigLyricCanvas?.InvalidateVisual();
-                        _desktopLyrics?.ApplySettings();
+                        _surfaces?.ApplyDesktopLyricsSettings();
                         break;
 
                     // 桌面歌词个性化（背景/透明度/文字颜色/字号/单双行）
@@ -956,7 +908,7 @@ public partial class MainWindow : FluentWindow
                     case nameof(SettingsPageViewModel.DesktopLyricsShowBackground):
                     case nameof(SettingsPageViewModel.SelectedDesktopLyricsBgOpacity):
                     case nameof(SettingsPageViewModel.SelectedDesktopLyricsTextColor):
-                        _desktopLyrics?.ApplySettings();
+                        _surfaces?.ApplyDesktopLyricsSettings();
                         break;
 
                     // L2 全局热键：开关即时生效（占用冲突逐条提示）

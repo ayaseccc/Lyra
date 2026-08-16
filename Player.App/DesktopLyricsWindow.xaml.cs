@@ -54,6 +54,11 @@ public partial class DesktopLyricsWindow : Window
     /// <summary>右键菜单"字体设置…" → 主窗打开设置页歌词组。</summary>
     public event Action? OpenFontSettingsRequested;
 
+    /// <summary>关闭按钮只请求隐藏；顶层窗口显隐由 AppSurfaceCoordinator 统一决定。</summary>
+    public event Action? DismissRequested;
+
+    public bool IsLocked => _locked;
+
     public DesktopLyricsWindow()
     {
         InitializeComponent();
@@ -68,7 +73,19 @@ public partial class DesktopLyricsWindow : Window
         ApplySettings();
         ApplyTextColor();
         _hoverTimer.Tick += OnHoverTick;
-        _hoverTimer.Start();
+        IsVisibleChanged += (_, _) =>
+        {
+            if (IsVisible)
+                _hoverTimer.Start();
+            else
+            {
+                _hoverTimer.Stop();
+                _handleHot = false;
+                UnlockHandle.BeginAnimation(OpacityProperty, null);
+                UnlockHandle.Opacity = 0;
+            }
+        };
+        Closed += (_, _) => _hoverTimer.Stop();
     }
 
     private void OnHoverTick(object? sender, EventArgs e)
@@ -478,9 +495,14 @@ public partial class DesktopLyricsWindow : Window
 
     private void CloseDesktopLyrics()
     {
-        Hide();
-        ConfigService.Current.Ui.DesktopLyricsEnabled = false;
-        ConfigService.Save();
+        if (DismissRequested is not null)
+            DismissRequested.Invoke();
+        else
+        {
+            Hide();
+            ConfigService.Current.Ui.DesktopLyricsEnabled = false;
+            ConfigService.Save();
+        }
     }
 
     // ================= 内容刷新 =================

@@ -13,4 +13,12 @@
     <ProjectReference Include="..\..\Player.Core\Player.Core.csproj" />
   </ItemGroup>
 
+  <ItemGroup>
+    <None Include="..\..\native\x64\*.dll">
+      <Link>%(Filename)%(Extension)</Link>
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <Visible>false</Visible>
+    </None>
+  </ItemGroup>
+
 </Project>

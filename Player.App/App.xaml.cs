@@ -76,6 +76,10 @@ public partial class App : Application
         _library = new LibraryService();
         _playlists = new PlaylistService(_library);
 
+        // Apply the fixed mini-surface palette before any window is shown. This keeps a
+        // no-track startup from briefly exposing the XAML fallback resources.
+        Theming.ThemeService.Initialize();
+
         // L3.1 个性化：行高/全局字体/字号缩放写入 Application 资源（XAML DynamicResource 引用）
         Theming.ThemeService.ApplyUiPersonalization();
 

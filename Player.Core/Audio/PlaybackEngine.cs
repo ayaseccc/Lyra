@@ -1,5 +1,6 @@
 using ManagedBass;
 using ManagedBass.Mix;
+using Player.Core.Audio.Spectrum;
 using Serilog;
 
 namespace Player.Core.Audio;
@@ -40,6 +41,17 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
     private int _mixer;
     private int _mixerRate;
+    private int _mixerGeneration;
+
+    private readonly SpscFloatRing _spectrumRing;
+    private readonly SpectrumPcmTap _spectrumTap;
+    private readonly SpectrumAnalyzer _spectrumAnalyzer;
+    private readonly DSPProcedure _spectrumDspProcedure;
+    private int _spectrumConsumers;
+    private bool _legacySpectrumEnabled;
+    private int _spectrumDspHandle;
+    private int _spectrumDspMixer;
+    private int _spectrumDspGeneration;
 
     private int _current;
     private int _next;
@@ -56,6 +68,12 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
     public PlaybackEngine()
     {
+        // 262144 floats = 131072 stereo frames: 341 ms even at 384 kHz.
+        _spectrumRing = new SpscFloatRing(262144);
+        _spectrumTap = new SpectrumPcmTap(_spectrumRing);
+        _spectrumAnalyzer = new SpectrumAnalyzer(_spectrumRing);
+        _spectrumDspProcedure = OnSpectrumDsp;
+
         _backend = new DirectSoundBackend();
         AttachBackendEvents(_backend);
 
@@ -302,6 +320,9 @@ public sealed class PlaybackEngine : IPlaybackEngine
             if (TryBuildChain(targetRate, out error)) return;
         }
 
+        // DirectSound is the final fallback. If it also failed, release its mixer and any DSP
+        // registration immediately instead of leaving a half-built chain until the next action.
+        TeardownChain();
         Log.Error("输出链路建立失败：{Error}", error);
         ErrorOccurred?.Invoke(this, "音频输出无法启动：" + error);
     }
@@ -321,6 +342,8 @@ public sealed class PlaybackEngine : IPlaybackEngine
             return false;
         }
 
+        _mixerGeneration = unchecked(_mixerGeneration + 1);
+        if (_mixerGeneration == 0) _mixerGeneration = 1;
         _mixerRate = targetRate;
         Bass.ChannelSetAttribute(_mixer, ChannelAttribute.Volume, _volume);
 
@@ -330,6 +353,13 @@ public sealed class PlaybackEngine : IPlaybackEngine
             // mixer 一换就没了，漏挂会导致这首放完之后再也没有任何回调（既不无缝也不续播）
             AttachSource(_current, paused: true);
             SetEndSync(_current);
+        }
+
+        // Attach before starting a pull backend: ASIO/WASAPI may request the first block inside Start.
+        if (_spectrumConsumers > 0)
+        {
+            _spectrumAnalyzer.Restart(_mixerRate);
+            AttachSpectrumDspLocked();
         }
 
         try
@@ -350,9 +380,6 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
         UpdateResamplingFlag();
 
-        // L3.2：mixer 重建后若频谱开启，重挂 DSP tap
-        if (_spectrumEnabled) EnableSpectrum(true);
-
         return true;
     }
 
@@ -361,6 +388,8 @@ public sealed class PlaybackEngine : IPlaybackEngine
         // 先停设备：停完之后混音线程一定不在跑，后面释放句柄才是安全的
         try { _backend.Stop(); }
         catch (Exception ex) { Log.Debug(ex, "停止后端失败"); }
+
+        DetachSpectrumDspLocked();
 
         if (_mixer == 0) return;
 
@@ -374,7 +403,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
         catch (Exception ex) { Log.Debug(ex, "释放混音器失败"); }
 
         _mixer = 0;
-        lock (_spectrumGate) { _spectrumDsp = null; }   // DSP 随 mixer 句柄失效，重建后重挂
+        ForgetSpectrumDspRegistration();
     }
 
     private void UpdateResamplingFlag()
@@ -941,150 +970,196 @@ public sealed class PlaybackEngine : IPlaybackEngine
             }
 
             lock (_swap) { _syncProcedures.Clear(); }
+
+            _legacySpectrumEnabled = false;
+            _spectrumConsumers = 0;
+            _spectrumTap.Stop();
+            _spectrumAnalyzer.Dispose();
         }
 
         Log.Debug("PlaybackEngine 已释放");
     }
 
-    // ================= L3.2 频谱（mixer 挂 DSP tap 复制样本，红线：绝不直接 ChannelGetData 消费播放数据） =================
+    // ================= L3.2 频谱（mixer DSP 只复制 PCM；FFT 永远在后台线程） =================
 
-    private readonly object _spectrumGate = new();
-    private float[] _spectrumRing = new float[4096];
-    private int _spectrumWrite;
-    private volatile bool _spectrumEnabled;
-    private ManagedBass.DSPProcedure? _spectrumDsp;
+    public int SpectrumBinCount => SpectrumAnalyzer.BarCount;
 
-    /// <summary>开启/关闭频谱取样。DSP 挂在 mixer 上，回调拿到的是混音输出样本指针（只读复制）。</summary>
+    public IDisposable AcquireSpectrum()
+    {
+        lock (_control)
+        {
+            ObjectDisposedException.ThrowIf(_disposed, this);
+            BeginSpectrumConsumerLocked();
+            return new SpectrumLease(this);
+        }
+    }
+
+    public bool TryCopySpectrum(Span<float> destination) => _spectrumAnalyzer.TryCopyLevels(destination);
+
+    /// <summary>旧 UI 的幂等兼容层。true 只占一个 consumer，不会因重复调用叠加 DSP。</summary>
     public void EnableSpectrum(bool enabled)
     {
-        lock (_spectrumGate)
+        lock (_control)
         {
-            _spectrumEnabled = enabled;
-            if (!enabled)
-            {
-                _spectrumDsp = null;   // 关闭后 mixer 重建时可重新挂
-                return;
-            }
-            if (_mixer != 0 && _spectrumDsp is null)
-            {
-                _spectrumDsp = OnSpectrumDsp;
-                if (ManagedBass.Bass.ChannelSetDSP(_mixer, _spectrumDsp, IntPtr.Zero, 0) == 0)
-                {
-                    _spectrumDsp = null;
-                    _spectrumEnabled = false;
-                    Serilog.Log.Warning("挂频谱 DSP 失败：{Error}", ManagedBass.Bass.LastError);
-                }
-            }
+            if (_disposed || _legacySpectrumEnabled == enabled) return;
+            _legacySpectrumEnabled = enabled;
+
+            if (enabled) BeginSpectrumConsumerLocked();
+            else EndSpectrumConsumerLocked();
         }
     }
 
-    /// <summary>DSP 回调（音频线程）：把样本复制进环形缓冲（立体声→单声道平均）。只读不修改。
-    /// 锁外做解码与声道平均，锁内只做批量拷贝（审查优化：缩短音频回调锁持有时间）。</summary>
-    private void OnSpectrumDsp(int handle, int channel, IntPtr buffer, int length, IntPtr user)
+    /// <summary>旧 UI 的分配式兼容层。新渲染路径应复用缓冲并调用 TryCopySpectrum。</summary>
+    public float[] GetSpectrumLevels(int bins = SpectrumAnalyzer.BarCount)
     {
-        var count = length / 4;
-        if (count <= 0) return;
-
-        var src = new float[count];
-        System.Runtime.InteropServices.Marshal.Copy(buffer, src, 0, count);
-
-        // 双声道（mixer 固定 2 声道输出）→ 单声道平均
-        var mono = count % 2 == 0 ? count / 2 : count / 2 + 1;
-        var samples = new float[mono];
-        for (var i = 0; i < count; i += 2)
-            samples[i / 2] = (src[i] + (i + 1 < count ? src[i + 1] : src[i])) * 0.5f;
-
-        lock (_spectrumGate)
-        {
-            if (!_spectrumEnabled) return;
-            var ring = _spectrumRing;
-            var w = _spectrumWrite;
-            // 环形批量拷贝（两段）
-            var first = Math.Min(samples.Length, ring.Length - w);
-            Array.Copy(samples, 0, ring, w, first);
-            if (samples.Length > first)
-                Array.Copy(samples, first, ring, 0, samples.Length - first);
-            _spectrumWrite = (w + samples.Length) % ring.Length;
-        }
-    }
-
-    /// <summary>取归一化频谱柱：环形缓冲末尾 256 样本 → 256 点 FFT → 16 柱对数映射。</summary>
-    public float[] GetSpectrumLevels(int bins = 16)
-    {
+        bins = Math.Max(0, bins);
         var result = new float[bins];
-        float[] ring;
-        int write;
+        if (bins == 0) return result;
 
-        lock (_spectrumGate)
+        Span<float> levels = stackalloc float[SpectrumAnalyzer.BarCount];
+        if (!TryCopySpectrum(levels)) return result;
+
+        if (bins == SpectrumAnalyzer.BarCount)
         {
-            if (!_spectrumEnabled) return result;
-            ring = _spectrumRing;
-            write = _spectrumWrite;
+            levels.CopyTo(result);
+            return result;
         }
 
-        const int fftSize = 256;
-        var re = new double[fftSize];
-        var im = new double[fftSize];
-        var start = (write - fftSize + ring.Length) % ring.Length;
-        for (var i = 0; i < fftSize; i++)
+        for (var i = 0; i < bins; i++)
         {
-            var idx = (start + i) % ring.Length;
-            re[i] = ring[idx] * (0.5 - 0.5 * Math.Cos(2 * Math.PI * i / (fftSize - 1)));   // Hann 窗
-            im[i] = 0;
+            var source = Math.Min(SpectrumAnalyzer.BarCount - 1,
+                (int)((long)i * SpectrumAnalyzer.BarCount / bins));
+            result[i] = levels[source];
         }
-        Fft(re, im);
 
-        // 能量 → 柱（对数频率映射：低频多分柱）
-        var binCount = fftSize / 2;
-        for (var b = 0; b < bins; b++)
-        {
-            var lo = b == 0 ? 1 : (int)Math.Round(Math.Pow(binCount - 1, (double)b / bins));
-            var hi = (int)Math.Round(Math.Pow(binCount - 1, (double)(b + 1) / bins));
-            hi = Math.Max(hi, lo + 1);
-            double energy = 0;
-            for (var k = lo; k < hi && k < binCount; k++)
-                energy += re[k] * re[k] + im[k] * im[k];
-            var mag = Math.Sqrt(energy / (hi - lo));
-            result[b] = (float)Math.Clamp(mag * 4.0, 0, 1);   // 归一化（经验系数）
-        }
         return result;
     }
 
-    /// <summary>原位 Radix-2 FFT（长度须为 2 的幂）。位反转为标准推演算法（审查修正：原累加式错误）。</summary>
-    private static void Fft(double[] re, double[] im)
+    private void BeginSpectrumConsumerLocked()
     {
-        var n = re.Length;
-        var j = 0;
-        for (var i = 1; i < n; i++)
+        _spectrumConsumers++;
+        if (_spectrumConsumers == 1)
+            _spectrumAnalyzer.Restart(_mixerRate);
+
+        AttachSpectrumDspLocked();
+    }
+
+    private void EndSpectrumConsumerLocked()
+    {
+        if (_spectrumConsumers == 0) return;
+        _spectrumConsumers--;
+        if (_spectrumConsumers != 0) return;
+
+        DetachSpectrumDspLocked();
+        _spectrumAnalyzer.Stop();
+    }
+
+    private void AttachSpectrumDspLocked()
+    {
+        if (_spectrumConsumers == 0 || _mixer == 0) return;
+
+        var registeredDsp = Volatile.Read(ref _spectrumDspHandle);
+        if (registeredDsp != 0)
         {
-            var bit = n >> 1;
-            for (; (j & bit) != 0; bit >>= 1) j ^= bit;
-            j ^= bit;
-            if (i < j)
+            if (Volatile.Read(ref _spectrumDspMixer) == _mixer &&
+                Volatile.Read(ref _spectrumDspGeneration) == _mixerGeneration)
             {
-                (re[i], re[j]) = (re[j], re[i]);
-                (im[i], im[j]) = (im[j], im[i]);
+                _spectrumTap.Start();
+                return;
             }
+
+            ForgetSpectrumDspRegistration();
         }
-        for (var size = 2; size <= n; size <<= 1)
+
+        Volatile.Write(ref _spectrumDspMixer, _mixer);
+        Volatile.Write(ref _spectrumDspGeneration, _mixerGeneration);
+        _spectrumTap.Start();
+
+        var dsp = Bass.ChannelSetDSP(
+            _mixer,
+            _spectrumDspProcedure,
+            new IntPtr(_mixerGeneration),
+            0);
+
+        if (dsp == 0)
         {
-            var half = size >> 1;
-            var step = 2 * Math.PI / size;
-            for (var i = 0; i < n; i += size)
-            {
-                for (var k = 0; k < half; k++)
-                {
-                    var a = k * step;
-                    var wr = Math.Cos(a);
-                    var wi = Math.Sin(a);
-                    var tr = wr * re[i + k + half] - wi * im[i + k + half];
-                    var ti = wr * im[i + k + half] + wi * re[i + k + half];
-                    re[i + k + half] = re[i + k] - tr;
-                    im[i + k + half] = im[i + k] - ti;
-                    re[i + k] += tr;
-                    im[i + k] += ti;
-                }
-            }
+            _spectrumTap.Stop();
+            ForgetSpectrumDspRegistration();
+            Log.Warning("挂频谱 DSP 失败：{Error}", Bass.LastError);
+            return;
         }
+
+        Volatile.Write(ref _spectrumDspHandle, dsp);
+    }
+
+    private void DetachSpectrumDspLocked()
+    {
+        _spectrumTap.Stop();
+
+        var dsp = Volatile.Read(ref _spectrumDspHandle);
+        var mixer = Volatile.Read(ref _spectrumDspMixer);
+        if (dsp == 0 || mixer == 0)
+        {
+            ForgetSpectrumDspRegistration();
+            return;
+        }
+
+        if (Bass.ChannelRemoveDSP(mixer, dsp))
+        {
+            ForgetSpectrumDspRegistration();
+            return;
+        }
+
+        // Keep the exact pair so a later teardown can retry. The inactive tap makes a failed
+        // removal inert, and re-enable reuses it instead of stacking a second DSP.
+        Log.Warning("卸载频谱 DSP 失败（mixer={Mixer}, HDSP={Dsp}）：{Error}", mixer, dsp, Bass.LastError);
+    }
+
+    private void ForgetSpectrumDspRegistration()
+    {
+        Volatile.Write(ref _spectrumDspHandle, 0);
+        Volatile.Write(ref _spectrumDspMixer, 0);
+        Volatile.Write(ref _spectrumDspGeneration, 0);
+    }
+
+    /// <summary>音频线程：校验当前注册后，只把交错 float PCM 复制到预分配 SPSC ring。</summary>
+    private void OnSpectrumDsp(int handle, int channel, IntPtr buffer, int length, IntPtr user)
+    {
+        // Capture the tap epoch before registration validation. If teardown/rebuild happens
+        // between validation and copy, the old callback cannot join the new tap session.
+        var tapEpoch = _spectrumTap.SessionEpoch;
+        if (handle != Volatile.Read(ref _spectrumDspHandle) ||
+            channel != Volatile.Read(ref _spectrumDspMixer) ||
+            user.ToInt64() != Volatile.Read(ref _spectrumDspGeneration))
+            return;
+
+        _spectrumTap.CopyInterleaved(buffer, length, tapEpoch);
+    }
+
+    private void ReleaseSpectrumLease()
+    {
+        lock (_control)
+        {
+            if (_disposed) return;
+            EndSpectrumConsumerLocked();
+        }
+    }
+
+    internal int SpectrumConsumerCount
+    {
+        get { lock (_control) return _spectrumConsumers; }
+    }
+
+    internal int SpectrumDspHandle => Volatile.Read(ref _spectrumDspHandle);
+
+    internal int SpectrumMixerGeneration => _mixerGeneration;
+
+    private sealed class SpectrumLease : IDisposable
+    {
+        private PlaybackEngine? _owner;
+
+        public SpectrumLease(PlaybackEngine owner) => _owner = owner;
+
+        public void Dispose() => Interlocked.Exchange(ref _owner, null)?.ReleaseSpectrumLease();
     }
 }

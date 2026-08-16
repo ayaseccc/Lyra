@@ -80,6 +80,8 @@ public static class ThemeService
             WindowBackdropType.Mica,
             updateAccent: false);
 
+        ApplyMiniPlayerResources();
+
         if (!Tint)
         {
             var palette = DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback();
@@ -142,6 +144,8 @@ public static class ThemeService
             WindowBackdropType.Mica,
             updateAccent: false);
 
+        ApplyMiniPlayerResources();
+
         var palette = tint
             ? (_lastCoverHash is null
                 ? (darkBase ? ThemeDeriver.DeriveDark(new RgbColor(0x30, 0x40, 0x60)) : ThemeDeriver.NeutralFallback())
@@ -156,11 +160,13 @@ public static class ThemeService
     {
         if (!_initialized) Initialize();
         _lastCoverHash = coverHash;
-        if (!Tint) return;
 
         var palette = coverHash is null
             ? (DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback())
             : DeriveFromCover(coverHash);
+
+        if (!Tint) return;
+
         Serilog.Log.Information("主题：深色={Dark} 封面 {Hash} → 背景 {Bg} 表面 {Surface} 强调 {Accent} 文字 {Text}",
             DarkBase, coverHash ?? "(无)", palette.Background, palette.Surface, palette.Accent, palette.TextPrimary);
         AnimateTo(palette);
@@ -321,6 +327,50 @@ public static class ThemeService
             foreach (var key in AccentKeys)
                 resources.Remove(key);
         }
+    }
+
+    private static void ApplyMiniPlayerResources()
+    {
+        if (Application.Current is not { } app) return;
+        ApplyMiniPlayerResources(app.Resources);
+    }
+
+    private static void ApplyMiniPlayerResources(ResourceDictionary resources)
+    {
+        // 迷你窗只跟随明暗基底；封面取色与主界面自定义强调色都不会进入这些资源。
+        var surface = DarkBase
+            ? new RgbColor(0x20, 0x25, 0x22)
+            : new RgbColor(0xF7, 0xF8, 0xF5);
+        var coverSurface = DarkBase
+            ? new RgbColor(0x18, 0x22, 0x1D)
+            : new RgbColor(0xE5, 0xEB, 0xE6);
+        var text = DarkBase
+            ? new RgbColor(0xF2, 0xF5, 0xF2)
+            : new RgbColor(0x17, 0x1B, 0x18);
+        var secondary = DarkBase
+            ? new RgbColor(0xB7, 0xC0, 0xBA)
+            : new RgbColor(0x62, 0x6B, 0x65);
+        var hover = DarkBase
+            ? new RgbColor(0x30, 0x3A, 0x34)
+            : new RgbColor(0xE8, 0xEC, 0xE8);
+        var border = DarkBase
+            ? new RgbColor(0x3B, 0x46, 0x3F)
+            : new RgbColor(0xD6, 0xDD, 0xD7);
+        var accent = DarkBase
+            ? new RgbColor(0xF0, 0xB4, 0x29)
+            : new RgbColor(0xA9, 0x76, 0x00);
+        var accentForeground = DarkBase
+            ? new RgbColor(0x17, 0x1B, 0x18)
+            : new RgbColor(0xFF, 0xFF, 0xFF);
+
+        Set(resources, "MiniPlayerSurfaceBrush", surface);
+        Set(resources, "MiniPlayerCoverSurfaceBrush", coverSurface);
+        Set(resources, "MiniPlayerTextBrush", text);
+        Set(resources, "MiniPlayerSecondaryBrush", secondary);
+        Set(resources, "MiniPlayerHoverBrush", hover);
+        Set(resources, "MiniPlayerBorderBrush", border);
+        Set(resources, "MiniPlayerAccentBrush", accent);
+        Set(resources, "MiniPlayerAccentForegroundBrush", accentForeground);
     }
 
     private static void Set(ResourceDictionary resources, string key, RgbColor c)

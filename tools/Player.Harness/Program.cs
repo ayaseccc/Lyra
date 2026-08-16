@@ -1,4 +1,5 @@
 using Player.Core.Audio;
+using Player.Core.Audio.Spectrum;
 using Player.Core.Downloads;
 using Player.Core.Hotkeys;
 using Player.Core.Infra;
@@ -6,6 +7,7 @@ using Player.Core.Library;
 using Player.Core.Lyrics;
 using Player.Core.Online;
 using Player.Core.Theming;
+using System.Runtime.InteropServices;
 
 namespace Player.Harness;
 
@@ -863,6 +865,9 @@ public static class Program
             CustomAccent = ui.CustomAccent,
             SelectedOpacity = ui.SelectedOpacity,
             HoverOpacity = ui.HoverOpacity,
+            MiniPos = ui.MiniPos,
+            MiniWidth = ui.MiniWidth,
+            MiniHeight = ui.MiniHeight,
             Columns = new List<string>(ui.Columns),
             ColumnWidths = new Dictionary<string, double>(ui.ColumnWidths)
         };
@@ -877,6 +882,9 @@ public static class Program
             ui.CustomAccent = "#E91E63";
             ui.SelectedOpacity = 0.22;
             ui.HoverOpacity = 0.05;
+            ui.MiniPos = "v2|VEVTVA==|24.5|18";
+            ui.MiniWidth = 510;
+            ui.MiniHeight = 156;
             ui.Columns = new List<string> { "Title", "Duration", "Format" };
             ui.ColumnWidths["Title"] = 430;
             ConfigService.Save();
@@ -897,6 +905,10 @@ public static class Program
             Check("自定义强调色往返", reloaded?.Ui.CustomAccent == "#E91E63");
             Check("选中透明度往返", reloaded is not null && Math.Abs(reloaded.Ui.SelectedOpacity - 0.22) < 0.001);
             Check("悬停透明度往返", reloaded is not null && Math.Abs(reloaded.Ui.HoverOpacity - 0.05) < 0.001);
+            Check("迷你窗位置往返", reloaded?.Ui.MiniPos == "v2|VEVTVA==|24.5|18");
+            Check("迷你窗等比宽度往返", reloaded is not null && Math.Abs(reloaded.Ui.MiniWidth - 510) < 0.001);
+            Check("迷你窗等比高度往返", reloaded is not null && Math.Abs(reloaded.Ui.MiniHeight - 156) < 0.001);
+            Check("迷你窗染色配置已移除", !json.Contains("\"miniCoverTint\"", StringComparison.OrdinalIgnoreCase));
             Check("列顺序往返", reloaded is not null && string.Join(",", reloaded.Ui.Columns) == "Title,Duration,Format");
             Check("列宽往返", reloaded is not null && reloaded.Ui.ColumnWidths.TryGetValue("Title", out var w) && Math.Abs(w - 430) < 0.001);
         }
@@ -910,6 +922,9 @@ public static class Program
             ui.CustomAccent = backup.CustomAccent;
             ui.SelectedOpacity = backup.SelectedOpacity;
             ui.HoverOpacity = backup.HoverOpacity;
+            ui.MiniPos = backup.MiniPos;
+            ui.MiniWidth = backup.MiniWidth;
+            ui.MiniHeight = backup.MiniHeight;
             ui.Columns = backup.Columns;
             ui.ColumnWidths = backup.ColumnWidths;
             ConfigService.Save();
@@ -1354,67 +1369,457 @@ public static class Program
         Console.WriteLine();
     }
 
-    // ================= L3.2 频谱 DSP 探针（进主工程前验证：mixer 挂 DSP 复制样本不抢播放数据） =================
+    // ================= L3.2 频谱 DSP 探针 =================
 
-    /// <summary>探针：生成正弦波 → mixer → 挂 DSP 回调计数 → 播放 1.5 秒 → 验证 DSP 收到样本且播放未中断。</summary>
     private static void RunDspProbe()
     {
         Console.WriteLine("=== L3.2 频谱 DSP 探针 ===");
+        Console.WriteLine("纯逻辑部分不需要声卡；普通输出探针可因环境缺少设备而显式跳过。");
+        Console.WriteLine();
 
-        Player.Core.Audio.BassRuntime.Initialize();
+        RunSpectrumRingChecks();
+        RunSpectrumTapChecks();
+        RunSpectrumAnalyzerChecks();
+        RunSpectrumLeaseChecks();
+        RunOrdinaryOutputDspBoundary();
+
+        Console.WriteLine();
+        Console.WriteLine("=== 真实 ASIO 验证边界 ===");
+        Console.WriteLine("此离线探针不会初始化或占用真实 ASIO 驱动，也不声称验证了 32/128/256 samples 缓冲。");
+        Console.WriteLine("需要在目标声卡上逐档实听并观察驱动 underrun/xrun；本次只覆盖 ASIO 共用的 mixer DSP 核心逻辑。");
+        Skip("真实 ASIO 32/128/256 samples", "需要目标 ASIO 硬件、驱动控制面板与人工听测");
+    }
+
+    private static void RunSpectrumRingChecks()
+    {
+        Console.WriteLine("=== SPSC ring：顺序、回绕、溢出 ===");
+
+        var ring = new SpscFloatRing(8);
+        Check("首次写入 6 个样本", ring.Write(new float[] { 0, 1, 2, 3, 4, 5 }) == 6);
+
+        Span<float> firstRead = stackalloc float[4];
+        Check("首次读取顺序不变", ring.Read(firstRead) == 4 &&
+            firstRead.SequenceEqual(new float[] { 0, 1, 2, 3 }));
+
+        Check("跨尾部回绕写入", ring.Write(new float[] { 6, 7, 8, 9 }) == 4);
+        Span<float> wrapped = stackalloc float[6];
+        Check("回绕后仍保持 FIFO", ring.Read(wrapped) == 6 &&
+            wrapped.SequenceEqual(new float[] { 4, 5, 6, 7, 8, 9 }));
+
+        ring.Reset();
+        Check("满 ring 丢弃新样本而不覆盖未读数据", ring.Write(new float[10]) == 8 &&
+            ring.Available == 8 && ring.DroppedSamples == 2);
+        Console.WriteLine();
+    }
+
+    private static void RunSpectrumTapChecks()
+    {
+        Console.WriteLine("=== PCM tap：旁路一致性与回调零分配 ===");
+
+        const int frames = 4096;
+        var input = new float[frames * 2];
+        for (var frame = 0; frame < frames; frame++)
+        {
+            input[frame * 2] = (float)(0.4 * Math.Sin(2 * Math.PI * 440 * frame / 48000));
+            input[frame * 2 + 1] = (float)(0.25 * Math.Cos(2 * Math.PI * 880 * frame / 48000));
+        }
+
+        var original = (float[])input.Clone();
+        var ring = new SpscFloatRing(32768);
+        var tap = new SpectrumPcmTap(ring);
+
+        Check("tap off 不写 ring", tap.CopyInterleaved(input) == 0 && ring.Available == 0);
+        Check("tap off 不修改确定性 PCM", input.AsSpan().SequenceEqual(original));
+
+        tap.Start();
+        Check("tap on 完整复制交错 stereo PCM", tap.CopyInterleaved(input) == input.Length);
+        tap.Stop();
+        Check("tap on 不修改确定性 PCM", input.AsSpan().SequenceEqual(original));
+
+        var copied = new float[input.Length];
+        Check("ring 读回与输入逐样本一致", ring.Read(copied) == input.Length && copied.AsSpan().SequenceEqual(original));
+
+        tap.Start();
+        var staleEpoch = tap.SessionEpoch;
+        tap.Stop();
+        ring.Reset();
+        tap.Start();
+        Check("Stop/Reset/Start 后旧 session 回调被确定性拒绝",
+            tap.CopyInterleaved(input, staleEpoch) == 0 && ring.Available == 0);
+        tap.Stop();
+
+        const int callbackFrames = 32;
+        var callbackInput = input.AsSpan(0, callbackFrames * 2).ToArray();
+        var callbackRead = new float[callbackInput.Length];
+        var native = Marshal.AllocHGlobal(callbackInput.Length * sizeof(float));
+        try
+        {
+            Marshal.Copy(callbackInput, 0, native, callbackInput.Length);
+            tap.Start();
+
+            // Warm JIT and all lazy runtime paths before measuring a 32-sample ASIO-shaped block.
+            tap.CopyInterleaved(native, callbackInput.Length * sizeof(float));
+            ring.Read(callbackRead);
+
+            var before = GC.GetAllocatedBytesForCurrentThread();
+            for (var i = 0; i < 1_000_000; i++)
+            {
+                tap.CopyInterleaved(native, callbackInput.Length * sizeof(float));
+                ring.Read(callbackRead);
+            }
+            var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+            tap.Stop();
+
+            Check($"32-sample 指针 tap 100 万次零托管分配（实测 {allocated} B）", allocated == 0);
+        }
+        finally
+        {
+            tap.Stop();
+            Marshal.FreeHGlobal(native);
+        }
+
+        Console.WriteLine();
+    }
+
+    private static void RunSpectrumAnalyzerChecks()
+    {
+        Console.WriteLine("=== 后台 FFT：采样率、双声道功率、暂停衰减 ===");
+
+        Check("44.1/48 kHz 使用 2048 点 FFT", SpectrumAnalyzer.SelectFftSize(44100) == 2048 &&
+            SpectrumAnalyzer.SelectFftSize(48000) == 2048);
+        Check("88.2/96 kHz 使用 4096 点 FFT", SpectrumAnalyzer.SelectFftSize(88200) == 4096 &&
+            SpectrumAnalyzer.SelectFftSize(96000) == 4096);
+        Check("176.4/192 kHz 使用 8192 点 FFT", SpectrumAnalyzer.SelectFftSize(176400) == 8192 &&
+            SpectrumAnalyzer.SelectFftSize(192000) == 8192);
+        Check("48/96/192 kHz 分析窗均约 42.7 ms",
+            Math.Abs(SpectrumAnalyzer.SelectFftSize(48000) * 1000.0 / 48000 - 42.67) < 0.1 &&
+            Math.Abs(SpectrumAnalyzer.SelectFftSize(96000) * 1000.0 / 96000 - 42.67) < 0.1 &&
+            Math.Abs(SpectrumAnalyzer.SelectFftSize(192000) * 1000.0 / 192000 - 42.67) < 0.1);
+
+        var ring = new SpscFloatRing(65536);
+        var tap = new SpectrumPcmTap(ring);
+        using var analyzer = new SpectrumAnalyzer(ring);
+        analyzer.Restart(48000);
+        tap.Start();
+
+        var leftTone = CreateStereoTone(48000, 440, 0.5f, 0f, frames: 8192);
+        tap.CopyInterleaved(leftTone);
+
+        var levels = new float[SpectrumAnalyzer.BarCount];
+        var gotLeft = SpinWait.SpinUntil(
+            () => analyzer.TryCopyLevels(levels) && levels.Max() > 0.2f,
+            TimeSpan.FromSeconds(2));
+        var leftPeak = levels.Max();
+        Check("后台线程发布 16 柱 dB 频谱", gotLeft && levels.Length == 16 && leftPeak <= 1f);
+
+        tap.Stop();
+        analyzer.Restart(48000);
+        tap.Start();
+        var rightTone = CreateStereoTone(48000, 440, 0f, 0.5f, frames: 8192);
+        tap.CopyInterleaved(rightTone);
+        var gotRight = SpinWait.SpinUntil(
+            () => analyzer.TryCopyLevels(levels) && levels.Max() > 0.2f,
+            TimeSpan.FromSeconds(2));
+        var rightPeak = levels.Max();
+        Check("左右声道按功率合并（单边等幅结果一致）", gotRight &&
+            Math.Abs(leftPeak - rightPeak) < 0.08f);
+
+        tap.Stop();
+        analyzer.Restart(192000);
+        tap.Start();
+        var highRateTone = CreateStereoTone(192000, 1000, 0.35f, 0.35f, frames: 16384);
+        var allChunksAccepted = true;
+        for (var offset = 0; offset < highRateTone.Length; offset += 32 * 2)
+            allChunksAccepted &= tap.CopyInterleaved(highRateTone.AsSpan(offset, 32 * 2)) == 32 * 2;
+        var gotHighRate = SpinWait.SpinUntil(
+            () => analyzer.TryCopyLevels(levels) && levels.Max() > 0.2f,
+            TimeSpan.FromSeconds(2));
+        Check("192 kHz / 8192 FFT 可接收 32-sample 回调形态", allChunksAccepted &&
+            gotHighRate && analyzer.FftSize == 8192);
+
+        tap.Stop();
+        var beforeGrace = levels.Max();
+        Thread.Sleep(120);
+        analyzer.TryCopyLevels(levels);
+        Check("普通输出批次间隔 120 ms 内不误判暂停衰减",
+            Math.Abs(levels.Max() - beforeGrace) < 0.0001f);
+
+        var beforeDecay = levels.Max();
+        var beganDecay = SpinWait.SpinUntil(
+            () => analyzer.TryCopyLevels(levels) && levels.Max() < beforeDecay,
+            TimeSpan.FromSeconds(1));
+        Check("暂停/无新 PCM 时保留可读快照并平滑衰减", beganDecay);
+        var reachedExactZero = SpinWait.SpinUntil(
+            () => analyzer.TryCopyLevels(levels) && levels.All(x => x == 0),
+            TimeSpan.FromSeconds(2));
+        Check("衰减结束会发布一次精确全零快照", reachedExactZero);
+
+        analyzer.Stop();
+        Array.Fill(levels, 1f);
+        Check("分析器停止后 TryCopy 返回 false 且清零", !analyzer.TryCopyLevels(levels) && levels.All(x => x == 0));
+        Console.WriteLine();
+    }
+
+    private static float[] CreateStereoTone(int sampleRate, double frequency, float leftAmplitude,
+        float rightAmplitude, int frames)
+    {
+        var samples = new float[frames * 2];
+        for (var frame = 0; frame < frames; frame++)
+        {
+            var value = (float)Math.Sin(2 * Math.PI * frequency * frame / sampleRate);
+            samples[frame * 2] = value * leftAmplitude;
+            samples[frame * 2 + 1] = value * rightAmplitude;
+        }
+        return samples;
+    }
+
+    private static void RunSpectrumLeaseChecks()
+    {
+        Console.WriteLine("=== 使用租约：启停与重复调用幂等 ===");
+
+        using var engine = new PlaybackEngine();
+        Check("初始 consumer 为 0", engine.SpectrumConsumerCount == 0);
+
+        engine.EnableSpectrum(true);
+        engine.EnableSpectrum(true);
+        Check("旧 Enable(true) 重复调用只占一个 consumer", engine.SpectrumConsumerCount == 1);
+
+        var first = engine.AcquireSpectrum();
+        var second = engine.AcquireSpectrum();
+        Check("两个租约独立计数", engine.SpectrumConsumerCount == 3);
+
+        first.Dispose();
+        first.Dispose();
+        Check("同一租约重复 Dispose 幂等", engine.SpectrumConsumerCount == 2);
+
+        engine.EnableSpectrum(false);
+        Check("关闭旧兼容 consumer 不影响显式租约", engine.SpectrumConsumerCount == 1);
+        second.Dispose();
+        Check("最后一个租约释放后分析器停止", engine.SpectrumConsumerCount == 0 &&
+            !engine.TryCopySpectrum(new float[engine.SpectrumBinCount]));
+        Console.WriteLine();
+    }
+
+    private static void RunOrdinaryOutputDspBoundary()
+    {
+        Console.WriteLine("=== 普通输出真实 BASS 边界 ===");
+        Console.WriteLine("此段使用默认 DirectSound 输出，让设备正常拉 mixer；频谱 tap 只旁路复制回调缓冲。 ");
+
+        try
+        {
+            BassRuntime.Initialize();
+        }
+        catch (Exception ex) when (ex is BassInitException or DllNotFoundException or BadImageFormatException)
+        {
+            Skip("普通输出 DSP 挂载/卸载", $"默认输出不可用：{ex.Message}");
+            return;
+        }
+
+        var source = 0;
+        var mixer = 0;
+        var dsp = 0;
         try
         {
             const int rate = 44100;
             var phase = 0.0;
+            var waveBuffer = new float[262144];
 
-            // push 模式流：BASS 需要数据时回调往 buffer 里填（写数据进给定缓冲）
             var wave = new ManagedBass.StreamProcedure((_, buffer, length, _) =>
             {
                 var count = length / 4;
-                var buf = new float[count];
-                for (var i = 0; i < count; i++)
+                if (count > waveBuffer.Length) return 0;
+                count &= ~1;
+                for (var i = 0; i < count; i += 2)
                 {
-                    buf[i] = (float)Math.Sin(2 * Math.PI * 440 * phase / rate) * 0.3f;
+                    var sample = (float)Math.Sin(2 * Math.PI * 440 * phase / rate) * 0.3f;
+                    waveBuffer[i] = sample;
+                    waveBuffer[i + 1] = sample;
                     phase += 1;
                 }
-                System.Runtime.InteropServices.Marshal.Copy(buf, 0, buffer, count);
-                return length;
+                Marshal.Copy(waveBuffer, 0, buffer, count);
+                return count * sizeof(float);
             });
 
-            var source = ManagedBass.Bass.CreateStream(rate, 1, ManagedBass.BassFlags.Decode, wave, IntPtr.Zero);
-            if (source == 0) { Console.WriteLine($"创建源流失败：{ManagedBass.Bass.LastError}"); return; }
-
-            var mixer = ManagedBass.Mix.BassMix.CreateMixerStream(rate, 1, ManagedBass.BassFlags.Default);
-            if (mixer == 0) { Console.WriteLine($"创建 mixer 失败：{ManagedBass.Bass.LastError}"); return; }
-            if (!ManagedBass.Mix.BassMix.MixerAddChannel(mixer, source, 0))
-            { Console.WriteLine($"挂源失败：{ManagedBass.Bass.LastError}"); return; }
-
-            long dspSamples = 0;
-            ManagedBass.DSPProcedure dsp = (_, _, _, len, _) =>
+            source = ManagedBass.Bass.CreateStream(
+                rate, 2, ManagedBass.BassFlags.Decode | ManagedBass.BassFlags.Float, wave, IntPtr.Zero);
+            if (source == 0)
             {
-                // 只复制不修改：DSP 回调直接拿到混音输出样本指针，不用 ChannelGetData，不消费播放数据
-                Interlocked.Add(ref dspSamples, len / 4);
+                Check($"创建确定性 float 源（{ManagedBass.Bass.LastError}）", false);
+                return;
+            }
+
+            mixer = ManagedBass.Mix.BassMix.CreateMixerStream(
+                rate, 2, ManagedBass.BassFlags.Float | ManagedBass.BassFlags.MixerNonStop);
+            if (mixer == 0)
+            {
+                Check($"创建普通输出 mixer（{ManagedBass.Bass.LastError}）", false);
+                return;
+            }
+            if (!ManagedBass.Mix.BassMix.MixerAddChannel(mixer, source, 0))
+            {
+                Check($"把源挂到普通输出 mixer（{ManagedBass.Bass.LastError}）", false);
+                return;
+            }
+
+            var ring = new SpscFloatRing(262144);
+            var tap = new SpectrumPcmTap(ring);
+            long dspSamples = 0;
+            ManagedBass.DSPProcedure procedure = (_, _, buffer, length, _) =>
+            {
+                tap.CopyInterleaved(buffer, length);
+                Interlocked.Add(ref dspSamples, length / sizeof(float));
             };
-            if (ManagedBass.Bass.ChannelSetDSP(mixer, dsp, IntPtr.Zero, 0) == 0)
-            { Console.WriteLine($"挂 DSP 失败：{ManagedBass.Bass.LastError}"); return; }
+            tap.Start();
+            dsp = ManagedBass.Bass.ChannelSetDSP(mixer, procedure, IntPtr.Zero, 0);
+            if (dsp == 0)
+            {
+                tap.Stop();
+                Check($"普通输出挂 DSP（{ManagedBass.Bass.LastError}）", false);
+                return;
+            }
 
             if (!ManagedBass.Bass.ChannelPlay(mixer, false))
-            { Console.WriteLine($"播放失败：{ManagedBass.Bass.LastError}"); return; }
+            {
+                Check($"普通输出开始播放（{ManagedBass.Bass.LastError}）", false);
+                return;
+            }
 
-            Thread.Sleep(1500);
+            Thread.Sleep(450);
 
             var active = ManagedBass.Bass.ChannelIsActive(mixer);
-            Console.WriteLine($"DSP 收到样本：{dspSamples}（期望 >{rate}）");
-            Console.WriteLine($"播放状态：{active}（期望 Playing）");
-            Check("DSP 收到样本", dspSamples > rate / 2);
-            Check("播放未中断", active == ManagedBass.PlaybackState.Playing);
+            Check("普通输出拉流时 DSP 收到旁路 PCM", dspSamples > rate / 4 && ring.Available > 0);
+            Check("挂 tap 后普通输出仍在播放", active == ManagedBass.PlaybackState.Playing);
+
+            tap.Stop();
+            var removed = ManagedBass.Bass.ChannelRemoveDSP(mixer, dsp);
+            if (removed) dsp = 0;
+            Check("ChannelRemoveDSP 真实卸载 HDSP", removed);
+
+            // Give a callback that was already inside the test-only counter a chance to retire;
+            // the production tap itself has the stronger epoch/in-flight barrier tested above.
+            Thread.Sleep(30);
+            var before = Interlocked.Read(ref dspSamples);
+            Thread.Sleep(120);
+            Check("卸载后旧 DSP 不再收到回调", Interlocked.Read(ref dspSamples) == before);
+
+            tap.Start();
+            dsp = ManagedBass.Bass.ChannelSetDSP(mixer, procedure, IntPtr.Zero, 0);
+            Check("卸载后可重新挂载且只有当前 HDSP 生效", dsp != 0);
+            Thread.Sleep(120);
+            tap.Stop();
+            if (dsp != 0 && ManagedBass.Bass.ChannelRemoveDSP(mixer, dsp)) dsp = 0;
+            Check("重复挂载后的 HDSP 也能真实卸载", dsp == 0);
+
+            Check("普通输出探针结束前仍在播放",
+                ManagedBass.Bass.ChannelIsActive(mixer) == ManagedBass.PlaybackState.Playing);
 
             ManagedBass.Bass.StreamFree(mixer);
+            mixer = 0;
             ManagedBass.Bass.StreamFree(source);
+            source = 0;
+
+            RunPlaybackEngineSpectrumLifecycle(rate);
         }
         finally
         {
-            Player.Core.Audio.BassRuntime.Shutdown();
+            if (dsp != 0 && mixer != 0) ManagedBass.Bass.ChannelRemoveDSP(mixer, dsp);
+            if (mixer != 0) ManagedBass.Bass.StreamFree(mixer);
+            if (source != 0) ManagedBass.Bass.StreamFree(source);
+            BassRuntime.Shutdown();
+        }
+
+        Console.WriteLine();
+    }
+
+    private static void RunPlaybackEngineSpectrumLifecycle(int sampleRate)
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== PlaybackEngine DSP 生命周期 ===");
+
+        var wavePath = Path.Combine(Path.GetTempPath(), $"player-spectrum-{Guid.NewGuid():N}.wav");
+        try
+        {
+            WriteStereoPcmWave(wavePath, sampleRate, seconds: 2);
+            using var engine = new PlaybackEngine();
+            var lease = engine.AcquireSpectrum();
+
+            var opened = engine.Open(wavePath);
+            Check("PlaybackEngine 打开确定性 WAV", opened);
+            if (!opened)
+            {
+                lease.Dispose();
+                return;
+            }
+
+            var firstGeneration = engine.SpectrumMixerGeneration;
+            var firstDsp = engine.SpectrumDspHandle;
+            Check("首个 lease 在真实 mixer 上挂出一个 HDSP", firstGeneration > 0 && firstDsp != 0);
+
+            engine.EnableSpectrum(true);
+            engine.EnableSpectrum(true);
+            Check("重复 Enable 不叠加 HDSP", engine.SpectrumConsumerCount == 2 &&
+                engine.SpectrumDspHandle == firstDsp);
+
+            engine.Play();
+            var levels = new float[engine.SpectrumBinCount];
+            Check("PlaybackEngine 的后台分析器收到真实 mixer PCM",
+                SpinWait.SpinUntil(
+                    () => engine.TryCopySpectrum(levels) && levels.Max() > 0.1f,
+                    TimeSpan.FromSeconds(2)));
+
+            var settings = engine.OutputSettings;
+            settings.RateMode = SampleRateMode.Fixed;
+            settings.FixedSampleRate = 48000;
+            var rebuilt = engine.ApplyOutputSettings(settings);
+            Check("运行中切采样率成功重建 mixer", rebuilt &&
+                engine.SpectrumMixerGeneration != firstGeneration && engine.SpectrumDspHandle != 0);
+            Check("重建后 consumer 数不变且只保留当前注册", engine.SpectrumConsumerCount == 2);
+
+            engine.EnableSpectrum(false);
+            Check("释放兼容 consumer 时显式 lease 继续持有 HDSP", engine.SpectrumConsumerCount == 1 &&
+                engine.SpectrumDspHandle != 0);
+
+            lease.Dispose();
+            Check("最后 lease 释放会真实移除 PlaybackEngine HDSP", engine.SpectrumConsumerCount == 0 &&
+                engine.SpectrumDspHandle == 0);
+        }
+        finally
+        {
+            try { File.Delete(wavePath); }
+            catch { /* 临时探针文件清理失败不覆盖测试结论 */ }
+        }
+    }
+
+    private static void WriteStereoPcmWave(string path, int sampleRate, int seconds)
+    {
+        const short channels = 2;
+        const short bitsPerSample = 16;
+        var frames = sampleRate * seconds;
+        var blockAlign = (short)(channels * bitsPerSample / 8);
+        var byteRate = sampleRate * blockAlign;
+        var dataBytes = frames * blockAlign;
+
+        using var stream = File.Create(path);
+        using var writer = new BinaryWriter(stream);
+        writer.Write(new byte[] { (byte)'R', (byte)'I', (byte)'F', (byte)'F' });
+        writer.Write(36 + dataBytes);
+        writer.Write(new byte[] { (byte)'W', (byte)'A', (byte)'V', (byte)'E' });
+        writer.Write(new byte[] { (byte)'f', (byte)'m', (byte)'t', (byte)' ' });
+        writer.Write(16);
+        writer.Write((short)1);
+        writer.Write(channels);
+        writer.Write(sampleRate);
+        writer.Write(byteRate);
+        writer.Write(blockAlign);
+        writer.Write(bitsPerSample);
+        writer.Write(new byte[] { (byte)'d', (byte)'a', (byte)'t', (byte)'a' });
+        writer.Write(dataBytes);
+
+        for (var frame = 0; frame < frames; frame++)
+        {
+            var sample = (short)(Math.Sin(2 * Math.PI * 440 * frame / sampleRate) * short.MaxValue * 0.3);
+            writer.Write(sample);
+            writer.Write(sample);
         }
     }
 }

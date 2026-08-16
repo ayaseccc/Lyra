@@ -16,28 +16,43 @@ public sealed class TrayService : IDisposable
 {
     private readonly PlayerViewModel _player;
     private readonly Action _toggleDesktopLyrics;
-    private readonly Action _showWindow;
+    private readonly Action _showMainWindow;
+    private readonly Action _showMiniWindow;
     private readonly Action _exit;
+    private readonly Func<bool> _isDesktopLyricsVisible;
+    private readonly Func<bool> _isMiniVisible;
     private readonly NotifyIcon _icon;
     private readonly ToolStripMenuItem _playPauseItem;
     private readonly ToolStripMenuItem _desktopLyricsItem;
+    private readonly ToolStripMenuItem _miniPlayerItem;
     private readonly System.Drawing.Icon _iconResource;
 
     /// <summary>图标是否为自建资源：系统共享图标（SystemIcons.Application）不能被 Dispose（审查修复）。</summary>
     private readonly bool _ownsIcon;
     private bool _disposed;
 
-    public TrayService(PlayerViewModel player, Action toggleDesktopLyrics, Action showWindow, Action exit)
+    public TrayService(
+        PlayerViewModel player,
+        Action toggleDesktopLyrics,
+        Action showMainWindow,
+        Action showMiniWindow,
+        Action exit,
+        Func<bool> isDesktopLyricsVisible,
+        Func<bool> isMiniVisible)
     {
         _player = player;
         _toggleDesktopLyrics = toggleDesktopLyrics;
-        _showWindow = showWindow;
+        _showMainWindow = showMainWindow;
+        _showMiniWindow = showMiniWindow;
         _exit = exit;
+        _isDesktopLyricsVisible = isDesktopLyricsVisible;
+        _isMiniVisible = isMiniVisible;
 
         _playPauseItem = new ToolStripMenuItem("播放 / 暂停");
         var previousItem = new ToolStripMenuItem("上一曲");
         var nextItem = new ToolStripMenuItem("下一曲");
         _desktopLyricsItem = new ToolStripMenuItem("桌面歌词") { CheckOnClick = true };
+        _miniPlayerItem = new ToolStripMenuItem("迷你悬浮窗") { CheckOnClick = false };
         var showItem = new ToolStripMenuItem("显示主窗");
         var exitItem = new ToolStripMenuItem("退出");
 
@@ -47,6 +62,7 @@ public sealed class TrayService : IDisposable
             _playPauseItem, previousItem, nextItem,
             new ToolStripSeparator(),
             _desktopLyricsItem,
+            _miniPlayerItem,
             new ToolStripSeparator(),
             showItem, exitItem
         });
@@ -67,16 +83,23 @@ public sealed class TrayService : IDisposable
         _desktopLyricsItem.Click += (_, _) =>
         {
             _toggleDesktopLyrics();
-            RefreshDesktopLyricsCheck();
+            RefreshSurfaceChecks();
         };
-        showItem.Click += (_, _) => _showWindow();
+        _miniPlayerItem.Click += (_, _) =>
+        {
+            _showMiniWindow();
+            RefreshSurfaceChecks();
+        };
+        showItem.Click += (_, _) => _showMainWindow();
         exitItem.Click += (_, _) => _exit();
-        _icon.DoubleClick += (_, _) => _showWindow();
+        _icon.DoubleClick += (_, _) => _showMainWindow();
 
         _player.PropertyChanged += OnPlayerPropertyChanged;
         RefreshPlayerState();
-        RefreshDesktopLyricsCheck();
+        RefreshSurfaceChecks();
     }
+
+    public bool IsReady => !_disposed && _icon.Visible;
 
     private static System.Drawing.Icon LoadIcon(out bool owns)
     {
@@ -100,9 +123,13 @@ public sealed class TrayService : IDisposable
 
     /// <summary>桌面歌词开关被其他入口（播放条按钮等）改过之后，同步托盘菜单勾选。</summary>
     public void RefreshDesktopLyricsCheck()
+        => RefreshSurfaceChecks();
+
+    public void RefreshSurfaceChecks()
     {
         if (_disposed) return;
-        _desktopLyricsItem.Checked = ConfigService.Current.Ui.DesktopLyricsEnabled;
+        _desktopLyricsItem.Checked = _isDesktopLyricsVisible();
+        _miniPlayerItem.Checked = _isMiniVisible();
     }
 
     private void OnPlayerPropertyChanged(object? sender, PropertyChangedEventArgs e)

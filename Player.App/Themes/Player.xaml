@@ -38,6 +38,14 @@
     <SolidColorBrush x:Key="TextSecondaryBrush" Color="#FFB6B6B6" />
     <SolidColorBrush x:Key="TextTertiaryBrush" Color="#FF8B8B8B" />
     <SolidColorBrush x:Key="AccentBrush" Color="#FF60CDFF" />
+    <SolidColorBrush x:Key="MiniPlayerSurfaceBrush" Color="#FF202522" />
+    <SolidColorBrush x:Key="MiniPlayerCoverSurfaceBrush" Color="#FF18221D" />
+    <SolidColorBrush x:Key="MiniPlayerTextBrush" Color="#FFF2F5F2" />
+    <SolidColorBrush x:Key="MiniPlayerSecondaryBrush" Color="#FFB7C0BA" />
+    <SolidColorBrush x:Key="MiniPlayerHoverBrush" Color="#FF303A34" />
+    <SolidColorBrush x:Key="MiniPlayerBorderBrush" Color="#FF3B463F" />
+    <SolidColorBrush x:Key="MiniPlayerAccentBrush" Color="#FFF0B429" />
+    <SolidColorBrush x:Key="MiniPlayerAccentForegroundBrush" Color="#FF171B18" />
     <SolidColorBrush x:Key="SurfaceBrush" Color="#B3202020" />
     <SolidColorBrush x:Key="SurfaceStrongBrush" Color="#E61C1C1C" />
     <SolidColorBrush x:Key="HoverBrush" Color="#1AFFFFFF" />

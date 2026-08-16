@@ -63,6 +63,11 @@ public static class BassRuntime
         {
             if (IsInitialized) return;
 
+            // BASS defaults to 100 ms playback updates. A shorter period keeps the mixer DSP tap
+            // supplied steadily on the ordinary DirectSound backend; decode/ASIO/WASAPI paths
+            // are unaffected and the spectrum still never pulls data with ChannelGetData.
+            Bass.UpdatePeriod = 20;
+
             // device = -1 表示系统默认输出设备
             if (!Bass.Init(-1, 44100, DeviceInitFlags.Default, windowHandle))
             {

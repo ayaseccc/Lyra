@@ -135,6 +135,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PositionText))]
     [NotifyPropertyChangedFor(nameof(DurationText))]
+    [NotifyPropertyChangedFor(nameof(ProgressPercent))]
     private bool _hasTrack;
 
     [ObservableProperty]
@@ -142,10 +143,12 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PositionText))]
+    [NotifyPropertyChangedFor(nameof(ProgressPercent))]
     private double _positionSeconds;
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(DurationText))]
+    [NotifyPropertyChangedFor(nameof(ProgressPercent))]
     private double _durationSeconds = 1;
 
     [ObservableProperty]
@@ -183,10 +186,17 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     {
         get
         {
-            var duration = _engine.Duration.TotalSeconds;
-            return duration > 0 ? Math.Clamp(_engine.Position.TotalSeconds * 100 / duration, 0, 100) : 0;
+            return HasTrack && DurationSeconds > 0
+                ? Math.Clamp(PositionSeconds * 100 / DurationSeconds, 0, 100)
+                : 0;
         }
     }
+
+    /// <summary>Acquire one reference-counted mixer DSP tap lease for the visible mini surface.</summary>
+    public IDisposable AcquireSpectrum() => _engine.AcquireSpectrum();
+
+    /// <summary>Copy the latest fixed 16 spectrum levels without allocating.</summary>
+    public bool TryCopySpectrum(Span<float> destination) => _engine.TryCopySpectrum(destination);
 
     /// <summary>L3.2 频谱（转发引擎；迷你窗 30fps 拉取）。</summary>
     public float[] GetSpectrumLevels(int bins = 16) => _engine.GetSpectrumLevels(bins);
