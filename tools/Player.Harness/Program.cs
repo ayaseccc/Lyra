@@ -868,12 +868,34 @@ public static class Program
             MiniPos = ui.MiniPos,
             MiniWidth = ui.MiniWidth,
             MiniHeight = ui.MiniHeight,
+            MiniContentMode = ui.MiniContentMode,
+            MiniSpectrum = ui.MiniSpectrum,
             Columns = new List<string>(ui.Columns),
             ColumnWidths = new Dictionary<string, double>(ui.ColumnWidths)
         };
 
         try
         {
+            Check("迷你窗旧关闭值迁移为歌词",
+                MiniPlayerContentModePolicy.Resolve(new Player.Core.Infra.UiConfig()) == MiniPlayerContentMode.Lyrics);
+            Check("迷你窗无显式模式时默认歌词",
+                MiniPlayerContentModePolicy.Resolve(new Player.Core.Infra.UiConfig { MiniSpectrum = true }) == MiniPlayerContentMode.Lyrics);
+            Check("迷你窗显式频谱模式有效",
+                MiniPlayerContentModePolicy.Resolve(new Player.Core.Infra.UiConfig
+                {
+                    MiniContentMode = MiniPlayerContentModePolicy.SpectrumValue
+                }) == MiniPlayerContentMode.Spectrum);
+            Check("迷你窗显式歌词优先于旧开关",
+                MiniPlayerContentModePolicy.Resolve(new Player.Core.Infra.UiConfig
+                {
+                    MiniContentMode = MiniPlayerContentModePolicy.LyricsValue,
+                    MiniSpectrum = true
+                }) == MiniPlayerContentMode.Lyrics);
+            var appliedSpectrum = new Player.Core.Infra.UiConfig();
+            MiniPlayerContentModePolicy.Apply(appliedSpectrum, MiniPlayerContentMode.Spectrum);
+            Check("迷你窗模式写入同步兼容字段",
+                appliedSpectrum.MiniContentMode == MiniPlayerContentModePolicy.SpectrumValue && appliedSpectrum.MiniSpectrum);
+
             ui.RowHeight = 110;
             ui.GroupsExpandedByDefault = false;
             ui.GroupCoverVisible = false;
@@ -885,6 +907,7 @@ public static class Program
             ui.MiniPos = "v2|VEVTVA==|24.5|18";
             ui.MiniWidth = 510;
             ui.MiniHeight = 156;
+            MiniPlayerContentModePolicy.Apply(ui, MiniPlayerContentMode.Lyrics);
             ui.Columns = new List<string> { "Title", "Duration", "Format" };
             ui.ColumnWidths["Title"] = 430;
             ConfigService.Save();
@@ -908,6 +931,10 @@ public static class Program
             Check("迷你窗位置往返", reloaded?.Ui.MiniPos == "v2|VEVTVA==|24.5|18");
             Check("迷你窗等比宽度往返", reloaded is not null && Math.Abs(reloaded.Ui.MiniWidth - 510) < 0.001);
             Check("迷你窗等比高度往返", reloaded is not null && Math.Abs(reloaded.Ui.MiniHeight - 156) < 0.001);
+            Check("迷你窗歌词模式往返", reloaded is not null
+                && MiniPlayerContentModePolicy.Resolve(reloaded.Ui) == MiniPlayerContentMode.Lyrics
+                && reloaded.Ui.MiniContentMode == MiniPlayerContentModePolicy.LyricsValue
+                && !reloaded.Ui.MiniSpectrum);
             Check("迷你窗染色配置已移除", !json.Contains("\"miniCoverTint\"", StringComparison.OrdinalIgnoreCase));
             Check("列顺序往返", reloaded is not null && string.Join(",", reloaded.Ui.Columns) == "Title,Duration,Format");
             Check("列宽往返", reloaded is not null && reloaded.Ui.ColumnWidths.TryGetValue("Title", out var w) && Math.Abs(w - 430) < 0.001);
@@ -925,6 +952,8 @@ public static class Program
             ui.MiniPos = backup.MiniPos;
             ui.MiniWidth = backup.MiniWidth;
             ui.MiniHeight = backup.MiniHeight;
+            ui.MiniContentMode = backup.MiniContentMode;
+            ui.MiniSpectrum = backup.MiniSpectrum;
             ui.Columns = backup.Columns;
             ui.ColumnWidths = backup.ColumnWidths;
             ConfigService.Save();

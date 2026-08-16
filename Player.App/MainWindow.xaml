@@ -821,17 +821,6 @@
                                               SelectedItem="{Binding SelectedWasapiBuffer}" />
                                 </Grid>
 
-                                <Grid Margin="0,0,0,10">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="迷你窗" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <StackPanel Grid.Column="1">
-                                        <ui:ToggleSwitch IsChecked="{Binding MiniSpectrum}" Content="迷你窗频谱（mixer DSP tap，不影响 ASIO 输出）" />
-                                    </StackPanel>
-                                </Grid>
-
                                 <Border Background="{DynamicResource HoverBrush}" CornerRadius="6" Padding="10,8" Margin="0,4,0,0">
                                     <Grid>
                                         <Grid.ColumnDefinitions>

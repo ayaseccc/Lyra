@@ -226,7 +226,10 @@ public sealed class UiConfig
 
     public double MiniHeight { get; set; }
 
-    /// <summary>L3.2 迷你窗频谱（mixer DSP tap，设置可关）。</summary>
+    /// <summary>L3.2 迷你窗内容模式：Spectrum / Lyrics。空值默认歌词。</summary>
+    public string MiniContentMode { get; set; } = string.Empty;
+
+    /// <summary>旧版频谱开关，仅保留序列化兼容；新代码同时维护该值。</summary>
     public bool MiniSpectrum { get; set; }
 
     /// <summary>右键菜单风格：true = 复古原生（Win32 质感），false = WPF-UI 现代。</summary>
@@ -313,20 +316,35 @@ public static class ConfigService
         }
         catch (Exception ex)
         {
-            // P6：损坏配置备份重建，不崩（保留现场供排查，下次启动用默认配置）
+            // P6：损坏配置备份重建，不崩（保留现场供排查，并立即写回默认配置供下次读取）
             try
             {
                 if (File.Exists(AppPaths.ConfigFile))
                 {
                     var backup = AppPaths.ConfigFile + ".corrupt-" + DateTime.Now.ToString("yyyyMMdd-HHmmss");
                     File.Copy(AppPaths.ConfigFile, backup, overwrite: true);
-                    Log.Error(ex, "读取配置失败，已备份到 {Backup}，改用默认配置", backup);
+                    Log.Error(ex, "读取配置失败，已备份到 {Backup}", backup);
                 }
             }
             catch (Exception backupEx)
             {
                 Log.Warning(backupEx, "备份损坏配置失败");
             }
+
+            try
+            {
+                AppPaths.EnsureCreated();
+                var json = JsonSerializer.Serialize(new AppConfig(), JsonOptions);
+                var temp = AppPaths.ConfigFile + ".tmp";
+                File.WriteAllText(temp, json);
+                File.Move(temp, AppPaths.ConfigFile, overwrite: true);
+                Log.Warning("配置已重建为默认值");
+            }
+            catch (Exception rebuildEx)
+            {
+                Log.Warning(rebuildEx, "重建默认配置失败");
+            }
+
             return new AppConfig();
         }
     }

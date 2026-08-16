@@ -12,6 +12,9 @@
         Background="{DynamicResource MiniPlayerSurfaceBrush}"
         FontFamily="Segoe UI, Microsoft YaHei UI" UseLayoutRounding="True" SnapsToDevicePixels="True"
         PreviewMouseLeftButtonDown="OnSurfacePointerDown"
+        PreviewMouseMove="OnSurfacePointerMove"
+        PreviewMouseLeftButtonUp="OnSurfacePointerUp"
+        LostMouseCapture="OnSurfaceLostMouseCapture"
         KeyDown="OnWindowKeyDown">
     <shell:WindowChrome.WindowChrome>
         <shell:WindowChrome CaptionHeight="0"
@@ -173,7 +176,8 @@
                         <ColumnDefinition Width="*" />
                     </Grid.ColumnDefinitions>
 
-                    <Border Grid.Column="0"
+                    <Border x:Name="CoverSurface"
+                            Grid.Column="0"
                             Width="64" Height="64"
                             HorizontalAlignment="Left" VerticalAlignment="Top"
                             CornerRadius="6"
@@ -229,13 +233,38 @@
                                        TextTrimming="CharacterEllipsis" TextWrapping="NoWrap" />
                         </StackPanel>
 
-                        <controls:SpectrumBarsControl x:Name="SpectrumView"
-                                                      Width="189"
-                                                      Height="20"
-                                                      HorizontalAlignment="Left"
-                                                      VerticalAlignment="Bottom"
-                                                      BarBrush="{DynamicResource MiniPlayerAccentBrush}"
-                                                      IsHitTestVisible="False" />
+                        <Grid x:Name="ContentVisualHost"
+                              Height="27"
+                              VerticalAlignment="Bottom"
+                              ClipToBounds="True"
+                              IsHitTestVisible="False">
+                            <controls:SpectrumBarsControl x:Name="SpectrumView"
+                                                          Width="189"
+                                                          Height="20"
+                                                          HorizontalAlignment="Left"
+                                                          VerticalAlignment="Bottom"
+                                                          BarBrush="{DynamicResource MiniPlayerAccentBrush}" />
+
+                            <Grid x:Name="LyricsView"
+                                  VerticalAlignment="Bottom"
+                                  Visibility="Collapsed"
+                                  ClipToBounds="True">
+                                <StackPanel VerticalAlignment="Bottom">
+                                    <TextBlock x:Name="MiniLyricPrimaryText"
+                                               Height="14"
+                                               FontSize="11.5"
+                                               FontWeight="SemiBold"
+                                               Foreground="{DynamicResource MiniPlayerTextBrush}"
+                                               TextWrapping="NoWrap" />
+                                    <TextBlock x:Name="MiniLyricSecondaryText"
+                                               Height="12"
+                                               Margin="0,1,0,0"
+                                               FontSize="9.5"
+                                               Foreground="{DynamicResource MiniPlayerSecondaryBrush}"
+                                               TextWrapping="NoWrap" />
+                                </StackPanel>
+                            </Grid>
+                        </Grid>
 
                         <StackPanel x:Name="HoverControls"
                                     Orientation="Horizontal"
@@ -271,12 +300,21 @@
                                     Command="{Binding NextCommand}">
                                 <ui:SymbolIcon Symbol="Next16" FontSize="16" />
                             </Button>
-                            <Button Style="{StaticResource MiniActionButtonStyle}"
+                            <Button x:Name="ContentModeButton"
+                                    Style="{StaticResource MiniActionButtonStyle}"
                                     Margin="3,0,0,0"
-                                    ToolTip="回到主窗口"
-                                    AutomationProperties.Name="回到主窗口"
-                                    Click="OnRestoreClick">
-                                <ui:SymbolIcon Symbol="FullScreenMaximize16" FontSize="16" />
+                                    ToolTip="切换频谱 / 歌词"
+                                    AutomationProperties.Name="切换频谱或歌词"
+                                    Click="OnContentModeClick">
+                                <Grid>
+                                    <ui:SymbolIcon x:Name="LyricsModeIcon"
+                                                   Symbol="ClosedCaption16"
+                                                   FontSize="16" />
+                                    <ui:SymbolIcon x:Name="SpectrumModeIcon"
+                                                   Symbol="DataBarVertical16"
+                                                   FontSize="16"
+                                                   Visibility="Collapsed" />
+                                </Grid>
                             </Button>
                         </StackPanel>
                     </Grid>

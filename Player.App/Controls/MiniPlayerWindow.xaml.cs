@@ -4,6 +4,7 @@ using System.Globalization;
 using System.Runtime.InteropServices;
 using System.Text;
 using System.Windows;
+using System.Windows.Automation;
 using System.Windows.Controls;
 using System.Windows.Controls.Primitives;
 using System.Windows.Input;
@@ -31,13 +32,14 @@ public partial class MiniPlayerWindow : Window
     private const double MaximumWidthDip = DefaultWidthDip * MaximumScale;
     private const double MinimumHeightDip = DefaultHeightDip * MinimumScale;
     private const double MaximumHeightDip = DefaultHeightDip * MaximumScale;
+    private const double PrimaryLyricFontSize = 11.5;
+    private const double SecondaryLyricFontSize = 9.5;
     private const double ResizeBorderDip = 5;
     private const uint MonitorDefaultToNearest = 2;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoZOrder = 0x0004;
     private const uint SwpNoActivate = 0x0010;
     private const int WmNcHitTest = 0x0084;
-    private const int WmNcLeftButtonDown = 0x00A1;
     private const int WmSizing = 0x0214;
     private const int WmEnterSizeMove = 0x0231;
     private const int WmExitSizeMove = 0x0232;
@@ -58,7 +60,9 @@ public partial class MiniPlayerWindow : Window
     private const int HtBottom = 15;
     private const int HtBottomLeft = 16;
     private const int HtBottomRight = 17;
-    private const int HtCaption = 2;
+    private const int DragThresholdPixels = 2;
+    private const int SmCxDoubleClick = 36;
+    private const int SmCyDoubleClick = 37;
     private const double DefaultWorkAreaInsetDip = 24;
     private const string MonitorPositionPrefix = "v2|";
 
@@ -68,6 +72,12 @@ public partial class MiniPlayerWindow : Window
     private readonly float[] _spectrumLevels = new float[SpectrumBarCount];
 
     private IDisposable? _spectrumLease;
+    private MiniPlayerContentMode _contentMode;
+    private bool _lyricsRefreshPending;
+    private bool _lyricFitPending;
+    private bool _awaitingLyricsForTrack;
+    private string _lastLyricPrimary = string.Empty;
+    private string _lastLyricSecondary = string.Empty;
     private DateTime _marqueePauseUntil;
     private double _marqueeOffset;
     private bool _marqueeAtEnd;
@@ -78,13 +88,20 @@ public partial class MiniPlayerWindow : Window
     private bool _closed;
     private HwndSource? _hwndSource;
     private bool _dragActive;
+    private bool _dragMoved;
     private bool _sizeMoveActive;
+    private bool _hitTestingSuspended;
+    private bool _placementSaveQueued;
     private bool _hitTestMetricsValid;
     private IntPtr _hitTestMonitor;
     private NativeRect _hitTestMonitorRect;
     private int _hitTestBorderPixels;
     private NativeRect _sizeMoveStartRect;
     private bool _hasSizeMoveStart;
+    private NativePoint _dragStartCursor;
+    private NativeRect _dragStartRect;
+    private long _lastSurfaceClickTick;
+    private NativePoint _lastSurfaceClickCursor;
 
     /// <summary>Raised for Esc, Alt+F4 and the restore button.</summary>
     public event Action? RestoreRequested;
@@ -97,6 +114,7 @@ public partial class MiniPlayerWindow : Window
         InitializeComponent();
         RestoreSizeFromConfig();
         _player = player;
+        _contentMode = MiniPlayerContentModePolicy.Resolve(ConfigService.Current.Ui);
         DataContext = player;
 
         _marqueeTimer = new DispatcherTimer(DispatcherPriority.Background)
@@ -113,13 +131,15 @@ public partial class MiniPlayerWindow : Window
 
         BorderRoot.MouseEnter += OnSurfaceMouseEnter;
         BorderRoot.MouseLeave += OnSurfaceMouseLeave;
+        LyricsView.SizeChanged += OnLyricsViewSizeChanged;
         IsVisibleChanged += OnWindowVisibilityChanged;
         SourceInitialized += OnSourceInitialized;
         Closed += OnWindowClosed;
         _player.PropertyChanged += OnPlayerPropertyChanged;
+        _player.Lyrics.PropertyChanged += OnLyricsPropertyChanged;
 
         ResetMarquee();
-        UpdateSpectrumVisibility();
+        ApplyConfiguredContentMode();
     }
 
     /// <summary>Called by the surface coordinator immediately before showing this window.</summary>
@@ -133,22 +153,7 @@ public partial class MiniPlayerWindow : Window
         ClampCurrentPositionToWorkingArea();
         ResetMarquee();
         _marqueeTimer.Start();
-
-        if (ConfigService.Current.Ui.MiniSpectrum)
-        {
-            try
-            {
-                _spectrumLease = _player.AcquireSpectrum();
-                _spectrumTimer.Start();
-            }
-            catch (Exception ex)
-            {
-                _spectrumLease = null;
-                Serilog.Log.Warning(ex, "迷你窗频谱启动失败");
-            }
-        }
-
-        UpdateSpectrumVisibility();
+        ApplyConfiguredContentMode();
     }
 
     /// <summary>Called before hiding this window. It is intentionally idempotent.</summary>
@@ -158,12 +163,7 @@ public partial class MiniPlayerWindow : Window
 
         _surfaceActive = false;
         _marqueeTimer.Stop();
-        _spectrumTimer.Stop();
-
-        _spectrumLease?.Dispose();
-        _spectrumLease = null;
-        Array.Clear(_spectrumLevels);
-        SpectrumView.Clear();
+        StopSpectrum();
         ResetMarquee();
         SetHoverVisible(false, animate: false);
     }
@@ -196,6 +196,8 @@ public partial class MiniPlayerWindow : Window
         _closed = true;
         DeactivateSurface();
         _player.PropertyChanged -= OnPlayerPropertyChanged;
+        _player.Lyrics.PropertyChanged -= OnLyricsPropertyChanged;
+        LyricsView.SizeChanged -= OnLyricsViewSizeChanged;
         IsVisibleChanged -= OnWindowVisibilityChanged;
         SourceInitialized -= OnSourceInitialized;
         _hwndSource?.RemoveHook(WindowProc);
@@ -204,10 +206,42 @@ public partial class MiniPlayerWindow : Window
 
     private void OnPlayerPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(PlayerViewModel.Title)) ResetMarquee();
+        if (e.PropertyName == nameof(PlayerViewModel.Title))
+        {
+            ResetMarquee();
+            _awaitingLyricsForTrack = _player.HasTrack;
+            RefreshLyricsContent(animate: false);
+        }
         if (e.PropertyName is nameof(PlayerViewModel.Artist) or nameof(PlayerViewModel.Album))
             ArtistText.GetBindingExpression(System.Windows.Controls.TextBlock.TextProperty)?.UpdateTarget();
-        if (e.PropertyName == nameof(PlayerViewModel.HasTrack)) UpdateSpectrumVisibility();
+        if (e.PropertyName == nameof(PlayerViewModel.HasTrack))
+        {
+            UpdateContentVisibility();
+            RefreshLyricsContent(animate: false);
+        }
+    }
+
+    private void OnLyricsPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is not (nameof(LyricsViewModel.CurrentIndex)
+            or nameof(LyricsViewModel.CurrentPrimary)
+            or nameof(LyricsViewModel.CurrentSecondary)
+            or nameof(LyricsViewModel.RenderLines)
+            or nameof(LyricsViewModel.HasLyrics)
+            or nameof(LyricsViewModel.IsStatic)
+            or nameof(LyricsViewModel.StatusText)))
+            return;
+
+        if (e.PropertyName is nameof(LyricsViewModel.RenderLines) or nameof(LyricsViewModel.HasLyrics))
+            _awaitingLyricsForTrack = false;
+
+        if (_sizeMoveActive)
+        {
+            _lyricsRefreshPending = true;
+            return;
+        }
+
+        RefreshLyricsContent(animate: _surfaceActive);
     }
 
     private void OnSurfaceMouseEnter(object sender, MouseEventArgs e)
@@ -224,22 +258,22 @@ public partial class MiniPlayerWindow : Window
     {
         var currentControlsOpacity = HoverControls.Opacity;
         var currentControlsY = HoverControlsTranslate.Y;
-        var currentSpectrumOpacity = SpectrumView.Opacity;
+        var currentContentOpacity = ContentVisualHost.Opacity;
         var targetControlsOpacity = visible ? 1d : 0d;
         var targetControlsY = visible ? 0d : 3d;
         var targetMetaMargin = visible ? new Thickness(0, 2, 129, 0) : new Thickness(0, 2, 0, 0);
-        var targetSpectrumOpacity = visible ? 0.86d : 1d;
+        var targetContentOpacity = visible ? 0.86d : 1d;
 
         HoverControls.IsHitTestVisible = visible;
         HoverControls.BeginAnimation(OpacityProperty, null);
         HoverControlsTranslate.BeginAnimation(TranslateTransform.YProperty, null);
         MetaPanel.BeginAnimation(MarginProperty, null);
-        SpectrumView.BeginAnimation(OpacityProperty, null);
+        ContentVisualHost.BeginAnimation(OpacityProperty, null);
 
         HoverControls.Opacity = targetControlsOpacity;
         HoverControlsTranslate.Y = targetControlsY;
         MetaPanel.Margin = targetMetaMargin;
-        SpectrumView.Opacity = targetSpectrumOpacity;
+        ContentVisualHost.Opacity = targetContentOpacity;
 
         if (!animate)
             return;
@@ -261,9 +295,9 @@ public partial class MiniPlayerWindow : Window
                 EasingFunction = easing,
                 FillBehavior = FillBehavior.Stop
             });
-        SpectrumView.BeginAnimation(OpacityProperty, new DoubleAnimation(
-            currentSpectrumOpacity,
-            targetSpectrumOpacity,
+        ContentVisualHost.BeginAnimation(OpacityProperty, new DoubleAnimation(
+            currentContentOpacity,
+            targetContentOpacity,
             TimeSpan.FromMilliseconds(150))
             {
                 EasingFunction = easing,
@@ -325,17 +359,213 @@ public partial class MiniPlayerWindow : Window
 
     private void OnSpectrumTick(object? sender, EventArgs e)
     {
+        if (_contentMode != MiniPlayerContentMode.Spectrum) return;
+
         if (_spectrumLease is null || !_player.TryCopySpectrum(_spectrumLevels))
             Array.Clear(_spectrumLevels);
 
         SpectrumView.SetLevels(_spectrumLevels);
     }
 
-    private void UpdateSpectrumVisibility()
+    private void ApplyConfiguredContentMode()
     {
-        var visible = ConfigService.Current.Ui.MiniSpectrum && _player.HasTrack && _spectrumLease is not null;
-        SpectrumView.Visibility = visible ? Visibility.Visible : Visibility.Collapsed;
-        MetaPanel.VerticalAlignment = visible ? VerticalAlignment.Top : VerticalAlignment.Center;
+        _contentMode = MiniPlayerContentModePolicy.Resolve(ConfigService.Current.Ui);
+        if (_contentMode == MiniPlayerContentMode.Spectrum)
+            StartSpectrumIfNeeded();
+        else
+            StopSpectrum();
+
+        UpdateContentModeButton();
+        UpdateContentVisibility();
+        RefreshLyricsContent(animate: false);
+    }
+
+    private void OnContentModeClick(object sender, RoutedEventArgs e)
+    {
+        _contentMode = _contentMode == MiniPlayerContentMode.Lyrics
+            ? MiniPlayerContentMode.Spectrum
+            : MiniPlayerContentMode.Lyrics;
+        MiniPlayerContentModePolicy.Apply(ConfigService.Current.Ui, _contentMode);
+        ConfigService.Save();
+
+        if (_contentMode == MiniPlayerContentMode.Spectrum)
+            StartSpectrumIfNeeded();
+        else
+            StopSpectrum();
+
+        UpdateContentModeButton();
+        UpdateContentVisibility();
+        RefreshLyricsContent(animate: false);
+    }
+
+    private void UpdateContentModeButton()
+    {
+        var lyricsMode = _contentMode == MiniPlayerContentMode.Lyrics;
+        LyricsModeIcon.Visibility = lyricsMode ? Visibility.Visible : Visibility.Collapsed;
+        SpectrumModeIcon.Visibility = lyricsMode ? Visibility.Collapsed : Visibility.Visible;
+        ContentModeButton.ToolTip = lyricsMode
+            ? "歌词模式；点击切换到频谱"
+            : "频谱模式；点击切换到歌词";
+        AutomationProperties.SetName(ContentModeButton, lyricsMode
+            ? "当前为歌词模式，切换到频谱"
+            : "当前为频谱模式，切换到歌词");
+    }
+
+    private void StartSpectrumIfNeeded()
+    {
+        if (!_surfaceActive || _contentMode != MiniPlayerContentMode.Spectrum || _spectrumLease is not null)
+            return;
+
+        try
+        {
+            _spectrumLease = _player.AcquireSpectrum();
+            _spectrumTimer.Start();
+        }
+        catch (Exception ex)
+        {
+            _spectrumLease = null;
+            Serilog.Log.Warning(ex, "迷你窗频谱启动失败");
+        }
+    }
+
+    private void StopSpectrum()
+    {
+        _spectrumTimer.Stop();
+        _spectrumLease?.Dispose();
+        _spectrumLease = null;
+        Array.Clear(_spectrumLevels);
+        SpectrumView.Clear();
+    }
+
+    private void UpdateContentVisibility()
+    {
+        var spectrumVisible = _contentMode == MiniPlayerContentMode.Spectrum
+                              && _player.HasTrack
+                              && _spectrumLease is not null;
+        var lyricsVisible = _contentMode == MiniPlayerContentMode.Lyrics && _player.HasTrack;
+
+        SpectrumView.Visibility = spectrumVisible ? Visibility.Visible : Visibility.Collapsed;
+        LyricsView.Visibility = lyricsVisible ? Visibility.Visible : Visibility.Collapsed;
+        ContentVisualHost.Visibility = spectrumVisible || lyricsVisible ? Visibility.Visible : Visibility.Collapsed;
+        MetaPanel.VerticalAlignment = spectrumVisible || lyricsVisible
+            ? VerticalAlignment.Top
+            : VerticalAlignment.Center;
+    }
+
+    private void RefreshLyricsContent(bool animate)
+    {
+        _lyricsRefreshPending = false;
+        if (_contentMode != MiniPlayerContentMode.Lyrics || !_player.HasTrack)
+        {
+            SetLyricText(string.Empty, string.Empty, animate: false);
+            return;
+        }
+
+        var lyrics = _player.Lyrics;
+        var primary = string.Empty;
+        var secondary = string.Empty;
+
+        if (_awaitingLyricsForTrack)
+        {
+            primary = "加载歌词…";
+        }
+        else if (lyrics.HasLyrics && lyrics.RenderLines.Count > 0)
+        {
+            var index = lyrics.IsStatic || lyrics.CurrentIndex < 0 ? 0 : lyrics.CurrentIndex;
+            index = Math.Clamp(index, 0, lyrics.RenderLines.Count - 1);
+            var line = lyrics.RenderLines[index];
+            primary = line.Primary;
+            secondary = line.Secondary;
+            if (string.IsNullOrWhiteSpace(secondary) && index + 1 < lyrics.RenderLines.Count)
+                secondary = lyrics.RenderLines[index + 1].Primary;
+        }
+        else
+        {
+            primary = string.IsNullOrWhiteSpace(lyrics.StatusText) ? "暂无歌词" : lyrics.StatusText;
+        }
+
+        SetLyricText(primary, secondary, animate && !_sizeMoveActive);
+    }
+
+    private void SetLyricText(string primary, string secondary, bool animate)
+    {
+        primary ??= string.Empty;
+        secondary ??= string.Empty;
+        if (string.Equals(primary, _lastLyricPrimary, StringComparison.Ordinal)
+            && string.Equals(secondary, _lastLyricSecondary, StringComparison.Ordinal))
+            return;
+
+        _lastLyricPrimary = primary;
+        _lastLyricSecondary = secondary;
+        MiniLyricPrimaryText.Text = primary;
+        MiniLyricSecondaryText.Text = secondary;
+        MiniLyricPrimaryText.FontSize = PrimaryLyricFontSize;
+        MiniLyricSecondaryText.FontSize = SecondaryLyricFontSize;
+        QueueLyricFit();
+
+        LyricsView.BeginAnimation(OpacityProperty, null);
+        LyricsView.Opacity = 1;
+        if (!animate || LyricsView.Visibility != Visibility.Visible) return;
+
+        LyricsView.BeginAnimation(OpacityProperty, new DoubleAnimation(
+            0.45,
+            1,
+            TimeSpan.FromMilliseconds(120))
+        {
+            EasingFunction = new QuadraticEase { EasingMode = EasingMode.EaseOut },
+            FillBehavior = FillBehavior.Stop
+        });
+    }
+
+    private void OnLyricsViewSizeChanged(object sender, SizeChangedEventArgs e) => QueueLyricFit();
+
+    private void QueueLyricFit()
+    {
+        if (_lyricFitPending || _closed || _sizeMoveActive) return;
+
+        _lyricFitPending = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, () =>
+        {
+            _lyricFitPending = false;
+            if (!_closed && !_sizeMoveActive) FitLyricText();
+        });
+    }
+
+    private void FitLyricText()
+    {
+        var availableWidth = LyricsView.ActualWidth;
+        if (!double.IsFinite(availableWidth) || availableWidth <= 1) return;
+
+        FitLyricLine(MiniLyricPrimaryText, PrimaryLyricFontSize, availableWidth - 1);
+        FitLyricLine(MiniLyricSecondaryText, SecondaryLyricFontSize, availableWidth - 1);
+    }
+
+    private static void FitLyricLine(TextBlock textBlock, double preferredFontSize, double availableWidth)
+    {
+        var text = textBlock.Text;
+        if (string.IsNullOrEmpty(text) || availableWidth <= 0)
+        {
+            textBlock.FontSize = preferredFontSize;
+            return;
+        }
+
+        var typeface = new Typeface(
+            textBlock.FontFamily,
+            textBlock.FontStyle,
+            textBlock.FontWeight,
+            textBlock.FontStretch);
+        var formatted = new FormattedText(
+            text,
+            CultureInfo.CurrentUICulture,
+            textBlock.FlowDirection,
+            typeface,
+            preferredFontSize,
+            Brushes.Black,
+            VisualTreeHelper.GetDpi(textBlock).PixelsPerDip);
+        var measuredWidth = formatted.WidthIncludingTrailingWhitespace;
+        textBlock.FontSize = measuredWidth <= availableWidth
+            ? preferredFontSize
+            : Math.Max(1, preferredFontSize * availableWidth / measuredWidth * 0.98);
     }
 
     private void RestoreSizeFromConfig()
@@ -368,14 +598,7 @@ public partial class MiniPlayerWindow : Window
             _hitTestMetricsValid = false;
 
         if (message == WmEnterSizeMove)
-        {
-            _sizeMoveActive = true;
-            _hasSizeMoveStart = GetWindowRect(hwnd, out _sizeMoveStartRect);
-            _hitTestMetricsValid = false;
-            _marqueeTimer.Stop();
-            _spectrumTimer.Stop();
-            SetHoverVisible(false, animate: false);
-        }
+            BeginInteractiveChange(hwnd, recordSizingStart: true, suspendHitTesting: true);
 
         if (message == WmSizing && lParam != IntPtr.Zero)
         {
@@ -385,22 +608,53 @@ public partial class MiniPlayerWindow : Window
         }
 
         if (message == WmExitSizeMove)
-        {
-            _sizeMoveActive = false;
-            _hasSizeMoveStart = false;
-            _hitTestMetricsValid = false;
-            if (_surfaceActive)
-            {
-                _marqueeTimer.Start();
-                if (_spectrumLease is not null)
-                    _spectrumTimer.Start();
-            }
-            SetHoverVisible(BorderRoot.IsMouseOver, animate: false);
-            if (!_dragActive)
-                Dispatcher.BeginInvoke(DispatcherPriority.Background, new Action(SavePlacement));
-        }
+            EndInteractiveChange();
 
         return IntPtr.Zero;
+    }
+
+    private void BeginInteractiveChange(IntPtr hwnd, bool recordSizingStart, bool suspendHitTesting)
+    {
+        if (_sizeMoveActive) return;
+
+        _sizeMoveActive = true;
+        _hasSizeMoveStart = recordSizingStart && GetWindowRect(hwnd, out _sizeMoveStartRect);
+        _hitTestMetricsValid = false;
+        _marqueeTimer.Stop();
+        _spectrumTimer.Stop();
+        LyricsView.BeginAnimation(OpacityProperty, null);
+        LyricsView.Opacity = 1;
+        SetHoverVisible(false, animate: false);
+        if (suspendHitTesting)
+        {
+            BorderRoot.IsHitTestVisible = false;
+            _hitTestingSuspended = true;
+        }
+    }
+
+    private void EndInteractiveChange()
+    {
+        if (!_sizeMoveActive) return;
+
+        _sizeMoveActive = false;
+        _hasSizeMoveStart = false;
+        _hitTestMetricsValid = false;
+        if (_hitTestingSuspended)
+        {
+            BorderRoot.IsHitTestVisible = true;
+            _hitTestingSuspended = false;
+        }
+        if (_surfaceActive)
+        {
+            _marqueeTimer.Start();
+            if (_spectrumLease is not null)
+                _spectrumTimer.Start();
+        }
+        if (_lyricsRefreshPending || _contentMode == MiniPlayerContentMode.Lyrics)
+            RefreshLyricsContent(animate: false);
+        QueueLyricFit();
+        SetHoverVisible(BorderRoot.IsMouseOver, animate: false);
+        QueuePlacementSave();
     }
 
     private void ConstrainSizingToAspectRatio(int edge, IntPtr rectPointer)
@@ -641,6 +895,18 @@ public partial class MiniPlayerWindow : Window
         ConfigService.Save();
     }
 
+    private void QueuePlacementSave()
+    {
+        if (_placementSaveQueued || _closed) return;
+
+        _placementSaveQueued = true;
+        Dispatcher.BeginInvoke(DispatcherPriority.Background, () =>
+        {
+            _placementSaveQueued = false;
+            if (!_closed) SavePlacement();
+        });
+    }
+
     private bool TryRestoreMonitorRelativePosition(IntPtr hwnd, string value)
     {
         if (!value.StartsWith(MonitorPositionPrefix, StringComparison.Ordinal)) return false;
@@ -789,30 +1055,117 @@ public partial class MiniPlayerWindow : Window
             || IsInteractiveSource(e.OriginalSource as DependencyObject))
             return;
 
-        if (e.ClickCount >= 2)
+        if (!GetCursorPos(out var cursor)) return;
+
+        if (IsSurfaceDoubleClick(cursor, e.ClickCount))
         {
-            ResetDefaultSize();
+            FinishCustomDrag();
+            if (IsWithinElement(e.OriginalSource as DependencyObject, CoverSurface))
+                RequestRestore();
+            else
+                ResetDefaultSize();
             e.Handled = true;
             return;
         }
 
-        _dragActive = true;
-        try
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero
+            || !GetWindowRect(hwnd, out _dragStartRect))
+            return;
+
+        _dragStartCursor = cursor;
+        _dragActive = Mouse.Capture(this, CaptureMode.Element);
+        _dragMoved = false;
+        e.Handled = _dragActive;
+    }
+
+    private void OnSurfacePointerMove(object sender, MouseEventArgs e)
+    {
+        if (!_dragActive) return;
+
+        if (e.LeftButton != MouseButtonState.Pressed || !GetCursorPos(out var cursor))
         {
-            var hwnd = new WindowInteropHelper(this).Handle;
-            if (hwnd != IntPtr.Zero)
-            {
-                ReleaseCapture();
-                SendMessage(hwnd, WmNcLeftButtonDown, new IntPtr(HtCaption), IntPtr.Zero);
-            }
-        }
-        finally
-        {
-            _dragActive = false;
-            SavePlacement();
+            FinishCustomDrag();
+            return;
         }
 
+        var deltaX = cursor.X - _dragStartCursor.X;
+        var deltaY = cursor.Y - _dragStartCursor.Y;
+        if (!_dragMoved
+            && Math.Abs(deltaX) < DragThresholdPixels
+            && Math.Abs(deltaY) < DragThresholdPixels)
+            return;
+
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero)
+        {
+            FinishCustomDrag();
+            return;
+        }
+
+        if (!_dragMoved)
+        {
+            _dragMoved = true;
+            _lastSurfaceClickTick = 0;
+            BeginInteractiveChange(hwnd, recordSizingStart: false, suspendHitTesting: false);
+        }
+
+        SetWindowPos(
+            hwnd,
+            IntPtr.Zero,
+            _dragStartRect.Left + deltaX,
+            _dragStartRect.Top + deltaY,
+            0,
+            0,
+            SwpNoSize | SwpNoZOrder | SwpNoActivate);
         e.Handled = true;
+    }
+
+    private void OnSurfacePointerUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_dragActive || e.ChangedButton != MouseButton.Left) return;
+
+        FinishCustomDrag();
+        e.Handled = true;
+    }
+
+    private void OnSurfaceLostMouseCapture(object sender, MouseEventArgs e)
+    {
+        if (_dragActive) FinishCustomDrag(releaseCapture: false);
+    }
+
+    private void FinishCustomDrag(bool releaseCapture = true)
+    {
+        if (!_dragActive) return;
+
+        var moved = _dragMoved;
+        _dragActive = false;
+        _dragMoved = false;
+        if (releaseCapture && Mouse.Captured == this)
+            Mouse.Capture(null);
+        if (moved) EndInteractiveChange();
+    }
+
+    private bool IsSurfaceDoubleClick(NativePoint cursor, int reportedClickCount)
+    {
+        var now = Environment.TickCount64;
+        var maxDelay = GetDoubleClickTime();
+        var maxDeltaX = Math.Max(1, GetSystemMetrics(SmCxDoubleClick) / 2);
+        var maxDeltaY = Math.Max(1, GetSystemMetrics(SmCyDoubleClick) / 2);
+        var manualDoubleClick = _lastSurfaceClickTick > 0
+                                && now - _lastSurfaceClickTick <= maxDelay
+                                && Math.Abs(cursor.X - _lastSurfaceClickCursor.X) <= maxDeltaX
+                                && Math.Abs(cursor.Y - _lastSurfaceClickCursor.Y) <= maxDeltaY;
+
+        if (reportedClickCount >= 2 || manualDoubleClick)
+        {
+            _lastSurfaceClickTick = 0;
+            return true;
+        }
+
+        _lastSurfaceClickTick = now;
+        _lastSurfaceClickCursor = cursor;
+        return false;
     }
 
     private void ResetDefaultSize()
@@ -821,8 +1174,19 @@ public partial class MiniPlayerWindow : Window
         Dispatcher.BeginInvoke(DispatcherPriority.Render, () =>
         {
             ClampCurrentPositionToWorkingArea();
-            SavePlacement();
+            QueuePlacementSave();
         });
+    }
+
+    private static bool IsWithinElement(DependencyObject? source, DependencyObject ancestor)
+    {
+        while (source is not null)
+        {
+            if (ReferenceEquals(source, ancestor)) return true;
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return false;
     }
 
     private static bool IsInteractiveSource(DependencyObject? source)
@@ -843,8 +1207,6 @@ public partial class MiniPlayerWindow : Window
         SavePlacement();
         RestoreRequested?.Invoke();
     }
-
-    private void OnRestoreClick(object sender, RoutedEventArgs e) => RequestRestore();
 
     private void OnWindowKeyDown(object sender, KeyEventArgs e)
     {
@@ -905,6 +1267,12 @@ public partial class MiniPlayerWindow : Window
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetCursorPos(out NativePoint point);
 
+    [DllImport("user32.dll")]
+    private static extern uint GetDoubleClickTime();
+
+    [DllImport("user32.dll")]
+    private static extern int GetSystemMetrics(int index);
+
     [DllImport("user32.dll", CharSet = CharSet.Auto)]
     [return: MarshalAs(UnmanagedType.Bool)]
     private static extern bool GetMonitorInfo(IntPtr monitor, ref MonitorInfo info);
@@ -923,13 +1291,6 @@ public partial class MiniPlayerWindow : Window
         int width,
         int height,
         uint flags);
-
-    [DllImport("user32.dll")]
-    [return: MarshalAs(UnmanagedType.Bool)]
-    private static extern bool ReleaseCapture();
-
-    [DllImport("user32.dll", CharSet = CharSet.Auto)]
-    private static extern IntPtr SendMessage(IntPtr hwnd, int message, IntPtr wParam, IntPtr lParam);
 
     [DllImport("shcore.dll")]
     private static extern int GetDpiForMonitor(IntPtr monitor, int dpiType, out uint dpiX, out uint dpiY);

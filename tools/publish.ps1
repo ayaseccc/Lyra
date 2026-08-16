@@ -6,7 +6,7 @@ param(
 $ErrorActionPreference = 'Stop'
 $root = Split-Path -Parent $PSScriptRoot
 $proj = Join-Path $root 'Player.App\Player.App.csproj'
-$staging = Join-Path $root 'publish\staging'
+$staging = Join-Path $root 'publish-staging'
 $zipName = "Player-v$Version-win-x64.zip"
 $zipPath = Join-Path $root $zipName
 
@@ -24,6 +24,9 @@ if (Test-Path $readme) { Copy-Item $readme (Join-Path $staging 'README.md') -For
 # 打 zip（顶层是 Player.exe + 依赖）
 if (Test-Path $zipPath) { Remove-Item $zipPath -Force }
 Compress-Archive -Path (Join-Path $staging '*') -DestinationPath $zipPath -CompressionLevel Optimal
+
+# 清理暂存（zip 已产出）
+Remove-Item $staging -Recurse -Force
 
 Write-Output ('产出：' + $zipPath)
 Write-Output ('大小：' + [math]::Round((Get-Item $zipPath).Length / 1MB, 2) + ' MB')

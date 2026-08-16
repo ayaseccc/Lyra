@@ -157,7 +157,6 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             string.Equals(a.Color, ui.CustomAccent, StringComparison.OrdinalIgnoreCase)) ?? AccentColors[0];
         _selectedOpacity = ui.SelectedOpacity;
         _hoverOpacity = ui.HoverOpacity;
-        _miniSpectrum = ui.MiniSpectrum;
         _classicMenus = ui.ClassicMenus;
         _selectedLyricSource = LyricSourceOptions.FirstOrDefault(o =>
             string.Equals(o.Value, ui.LyricDefaultPreference, StringComparison.OrdinalIgnoreCase))
@@ -851,17 +850,6 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
             return text;
         }
-    }
-
-    /// <summary>L3.2 迷你窗频谱开关（引擎 mixer DSP tap）。</summary>
-    [ObservableProperty]
-    private bool _miniSpectrum;
-
-    partial void OnMiniSpectrumChanged(bool value)
-    {
-        if (_loading) return;
-        ConfigService.Current.Ui.MiniSpectrum = value;
-        ConfigService.Save();
     }
 
     /// <summary>右键菜单风格：true = 复古原生（Win32 质感），false = WPF-UI 现代。</summary>
