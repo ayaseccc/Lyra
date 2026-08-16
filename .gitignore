@@ -29,3 +29,4 @@ nuget.config
 /tools/SmtcProbe/bin/
 /tools/SmtcProbe/obj/
 /tools/SmtcProbe/pub/
+*.zip
