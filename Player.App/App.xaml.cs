@@ -36,13 +36,12 @@ public partial class App : Application
         // P6 单实例：第二实例把文件（双击/多选/拖到 exe）转交运行实例后退出
         if (!SingleInstance.TryAcquire(out _instanceMutex))
         {
-            var files = e.Args.Where(a => File.Exists(a)).ToList();
+            var files = e.Args.Select(a => a.Trim('"')).Where(a => File.Exists(a)).ToList();
             SingleInstance.ForwardFiles(files);
             Shutdown(0);
             return;
         }
         SingleInstance.StartServer(HandleIncomingFiles);
-        FileAssociation.Register();   // P6 文件关联：幂等注册，便携移动后路径自动刷新
 
         try
         {
@@ -57,6 +56,10 @@ public partial class App : Application
             Shutdown(1);
             return;
         }
+
+        // P6 文件关联：幂等注册（放在日志初始化后，失败原因可查）
+        try { FileAssociation.Register(); }
+        catch (Exception ex) { Log.Warning(ex, "文件关联注册失败（不影响运行）"); }
 
         try
         {
@@ -207,12 +210,14 @@ public partial class App : Application
         {
             if (_library is null) return;
             var tracks = await _library.ImportFilesAsync(files);
+            Log.Information("外部文件导入完成 {Count} 首", tracks.Count);
             if (tracks.Count == 0) return;
 
             if (Application.Current.MainWindow is MainWindow main && main.Shell is { } shell)
             {
                 shell.Player.PlayTracks(tracks, 0, "文件打开");
                 main.ShowFromExternalOpen();
+                Log.Information("外部文件已入队播放");
             }
         }
         catch (Exception ex)
@@ -223,6 +228,7 @@ public partial class App : Application
 
     private void HandleIncomingFiles(IReadOnlyList<string> files)
     {
+        Log.Information("收到外部打开文件 {Count} 个：{First}", files.Count, files.FirstOrDefault());
         _ = HandleIncomingFilesAsync(files);
     }
 

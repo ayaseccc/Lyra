@@ -66,6 +66,7 @@ internal static class SingleInstance
                 if (string.IsNullOrWhiteSpace(payload)) continue;
 
                 var files = payload.Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+                    .Select(f => f.Trim('"'))
                     .Where(f => File.Exists(f))
                     .ToList();
                 if (files.Count == 0) continue;

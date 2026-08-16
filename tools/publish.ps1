@@ -17,8 +17,8 @@ if (Test-Path $staging) { Remove-Item $staging -Recurse -Force }
 dotnet publish $proj -c Release -r win-x64 --self-contained true -o $staging -p:Version=$Version
 if ($LASTEXITCODE -ne 0) { throw 'dotnet publish 失败' }
 
-# 用户向 README 放进 zip
-$readme = Join-Path $root 'README.md'
+# 用户向 README（docs/用户指南.md）放进 zip
+$readme = Join-Path $root 'docs\用户指南.md'
 if (Test-Path $readme) { Copy-Item $readme (Join-Path $staging 'README.md') -Force }
 
 # 打 zip（顶层是 Player.exe + 依赖）

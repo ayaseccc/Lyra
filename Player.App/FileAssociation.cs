@@ -21,6 +21,7 @@ internal static class FileAssociation
         try
         {
             var exe = System.Diagnostics.Process.GetCurrentProcess().MainModule?.FileName;
+            Serilog.Log.Information("文件关联注册开始：exe={Exe}", exe);
             if (string.IsNullOrEmpty(exe)) return;
 
             foreach (var ext in Extensions)
@@ -43,6 +44,7 @@ internal static class FileAssociation
                 using (var key = Registry.CurrentUser.CreateSubKey(ClassesRoot + @"" + progId + @"DefaultIcon"))
                     key.SetValue(string.Empty, $"\"{exe}\",0");
             }
+            Serilog.Log.Information("文件关联注册完成（{Count} 个格式）", Extensions.Length);
         }
         catch (Exception ex)
         {
