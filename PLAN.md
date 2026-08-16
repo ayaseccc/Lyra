@@ -608,7 +608,8 @@ ChkszClient（四端点封装、令牌桶 18 次/分、额度响应头解析、�
 - ④**首次运行引导** ✔：无曲库配置时主窗就绪后弹出 SetupWizard（选曲库→选输出→Key 可跳过，写配置并触发扫描）——截图确认弹出。
 - ⑤**发布工程** ✔：tools/publish.ps1 一键 self-contained 便携 zip（实测产出 Player-v1.0.0-win-x64.zip 74.22MB，含 docs/用户指南.md 为 README）；exe 版本 1.0.0/产品元数据（csproj Version/FileVersion/Product/Description/Copyright）；用户向 README（快速上手/ASIO 摘要/数据说明/许可声明：BASS 非商业、GD CC BY-NC、网易云个人学习、开源组件）。
 - ⑥**性能实测（入档）**：启动到主窗出现 3.7s（DSH 沙箱环境；日志内 OnStartup 初始化 ≈1.5s；真实机器待复测，目标 ≤1.5s）；启动内存 215.5MB（<300MB ✓）；**频谱 CPU 实测：迷你窗+16 柱 30fps 频谱开启 0.6% vs 关闭 0%（5s 采样，沙箱环境）**；万曲扫描/2h 内存待实机（库扫描 324 首实测 0.0s，万曲按标签读取估算 1-2s 待实机确认）。
-- **补充（2026-08-16 晚）**：config.json 损坏兜底补"自动重建默认配置"（备份 .corrupt-时间戳 + 写回默认 JSON，实测：损坏启动不崩、备份存在、重建有效）；多文件参数转交验证（多选路径：存在的文件逐个转交，不存在的被过滤）；publish.ps1 改进（staging 移出 publish 目录、打包后自动清理）；**MiniPlayerContentMode（迷你窗内容模式 Spectrum/Lyrics 枚举+配置+harness 断言）为用户 L3.2 实装预留层：Core/配置/harness 已接，App 迷你窗 UI 未接入——保留待后续**。
+- **补充（2026-08-16 晚）**：config.json 损坏兜底补"自动重建默认配置"（备份 .corrupt-时间戳 + 写回默认 JSON，实测：损坏启动不崩、备份存在、重建有效）；多文件参数转交验证（多选路径：存在的文件逐个转交，不存在的被过滤）；publish.ps1 改进（staging 移出 publish 目录、打包后自动清理）。
+- **MiniContentMode 正式实装（2026-08-16，用户 Codex 实装并入 f7499fc）**：迷你窗内容模式（频谱 ⇄ 歌词）完整接入——Core 枚举+配置（MiniContentModePolicy.Resolve/Apply）+ 迷你窗模式切换按钮（OnContentModeClick：切换+持久化+租约管理）+ 歌词模式渲染（当前句主/副歌词）+ 频谱/歌词视图与 MetaPanel 对齐联动；**歌词模式正确释放频谱 DSP 租约**（无消费者即卸 DSP，红线保持）；harness downloads 23→29（+6 项模式配置往返断言）。**全量回归 289 通过 / 0 失败 / 1 跳过（ASIO 硬件听测）**；Release 0 错误 21 既有警告；正式版拖动/双击/模式切换/配置持久化用户实测通过；publish 与便携包已更新（zip 74.22MB）。
 - ⑦**审计尾巴** ✔：dsp 模式 Skip 对账沿用统一 Skip(what, reason)（Windows/硬件专属断言显式打印跳过+结尾汇总），283 基线任何环境可复算（本次复算 283 通过 0 失败 1 跳过）。
 - ⑧**全量回归**：harness 283 项复算通过；P0-P6+UI-R+L1-L3 功能清单回归进行中（后续输出清单）。
 
