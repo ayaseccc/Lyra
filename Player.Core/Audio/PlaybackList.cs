@@ -72,9 +72,31 @@ public sealed class PlaybackList
     public int InsertAfterCurrent(IReadOnlyList<TrackRecord> tracks)
     {
         if (tracks.Count == 0) return -1;
+
+        if (_mode == PlayMode.Shuffle && _shuffleOrder.Count != _items.Count)
+            RebuildShuffleOrder();
+
         var at = CurrentIndex < 0 ? 0 : CurrentIndex + 1;
         _items.InsertRange(at, tracks);
-        RebuildShuffleOrder();
+
+        if (_mode == PlayMode.Shuffle)
+        {
+            // InsertAfterCurrent 的契约在随机模式下也必须成立：插入批次先按
+            // 原顺序播放，再回到插队前尚未播放的随机序列。
+            for (var i = 0; i < _shuffleOrder.Count; i++)
+            {
+                if (_shuffleOrder[i] >= at)
+                    _shuffleOrder[i] += tracks.Count;
+            }
+
+            var orderPosition = Math.Clamp(_shufflePosition + 1, 0, _shuffleOrder.Count);
+            _shuffleOrder.InsertRange(orderPosition, Enumerable.Range(at, tracks.Count));
+        }
+        else
+        {
+            RebuildShuffleOrder();
+        }
+
         return at;
     }
 

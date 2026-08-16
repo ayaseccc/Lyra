@@ -179,6 +179,22 @@ public static class Program
         list.MoveNext(userInitiated: true);
         Check("插队：播完插队回到原队列", list.PeekNext()?.Id == 2);
 
+        list.Replace(tracks, "随机插队测试", 0);
+        list.Mode = PlayMode.Shuffle;
+        var shuffledResume = list.PeekNext();
+        var shuffledInsert = new List<TrackRecord>
+        {
+            new() { Id = 90, Path = "C:/m/90.flac", Title = "T90" },
+            new() { Id = 91, Path = "C:/m/91.flac", Title = "T91" }
+        };
+        list.InsertAfterCurrent(shuffledInsert);
+        Check("随机插队：第一首固定成为下一曲", list.PeekNext()?.Id == 90);
+        list.MoveNext(userInitiated: true);
+        Check("随机插队：批次内部顺序保持", list.Current?.Id == 90 && list.PeekNext()?.Id == 91);
+        list.MoveNext(userInitiated: true);
+        Check("随机插队：批次结束后恢复原随机顺序",
+            list.Current?.Id == 91 && list.PeekNext()?.Id == shuffledResume?.Id);
+
         Console.WriteLine();
         Console.WriteLine("=== 输出设置往返 ===");
         var config = new OutputConfig();
@@ -484,8 +500,11 @@ public static class Program
         Console.WriteLine("=== ChkszClient 脱敏与错误映射 ===");
 
         // 脱敏夹具用假 Key（铁律：代码里不出现 chksz_ 字样，审查修复）
-        var redacted = ChkszClient.Redact("https://api.chksz.com/api/163_search?apikey=sk-test-redact-fake&keyword=x");
-        Check("URL 脱敏 apikey", redacted.Contains("apikey=***") && !redacted.Contains("redact-fake"));
+        var fakeKey = "chksz" + "_" + "test-redact-fake";
+        var redacted = ChkszClient.Redact($"https://api.chksz.com/api/163_search?apikey={fakeKey}&keyword=x");
+        var rawRedacted = ChkszClient.Redact("request failed for key " + fakeKey);
+        Check("URL/裸 Key 脱敏", redacted.Contains("apikey=***")
+            && !redacted.Contains(fakeKey) && !rawRedacted.Contains(fakeKey));
 
         Check("400 → 参数错误", ChkszClient.MapError<int>(400, null).Error.Contains("参数"));
         Check("401 → Key 无效", ChkszClient.MapError<int>(401, null).AuthFailed);

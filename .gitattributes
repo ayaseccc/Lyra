@@ -1,0 +1,2 @@
+# Git hooks use POSIX shebangs even when Git is launched from PowerShell.
+.githooks/* text eol=lf

@@ -1069,29 +1069,21 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         try
         {
             var ui = ConfigService.Current.Ui;
-            _selectedRowHeight = RowHeights.FirstOrDefault(r => r.Value == ui.RowHeight) ?? RowHeights[1];
-            _groupsExpandedByDefault = ui.GroupsExpandedByDefault;
-            _groupCoverVisible = ui.GroupCoverVisible;
-            _selectedUiFont = UiFontOptions.FirstOrDefault(f =>
+            SelectedRowHeight = RowHeights.FirstOrDefault(r => r.Value == ui.RowHeight) ?? RowHeights[1];
+            GroupsExpandedByDefault = ui.GroupsExpandedByDefault;
+            GroupCoverVisible = ui.GroupCoverVisible;
+            SelectedUiFont = UiFontOptions.FirstOrDefault(f =>
                 string.Equals(f.Family, ui.UiFontFamily, StringComparison.OrdinalIgnoreCase)) ?? UiFontOptions[0];
-            _selectedFontScale = FontScales.FirstOrDefault(s => Math.Abs(s.Value - ui.UiFontScale) < 0.001) ?? FontScales[2];
-            _selectedAccent = AccentColors.FirstOrDefault(a =>
+            SelectedFontScale = FontScales.FirstOrDefault(s => Math.Abs(s.Value - ui.UiFontScale) < 0.001) ?? FontScales[2];
+            SelectedAccent = AccentColors.FirstOrDefault(a =>
                 string.Equals(a.Color, ui.CustomAccent, StringComparison.OrdinalIgnoreCase)) ?? AccentColors[0];
-            _selectedOpacity = ui.SelectedOpacity;
-            _hoverOpacity = ui.HoverOpacity;
-            _classicMenus = ui.ClassicMenus;
-            _selectedLyricSource = LyricSourceOptions.FirstOrDefault(o =>
+            SelectedOpacity = ui.SelectedOpacity;
+            HoverOpacity = ui.HoverOpacity;
+            ClassicMenus = ui.ClassicMenus;
+            SelectedLyricSource = LyricSourceOptions.FirstOrDefault(o =>
                 string.Equals(o.Value, ui.LyricDefaultPreference, StringComparison.OrdinalIgnoreCase))
                 ?? LyricSourceOptions[3];
             RefreshColumnRows();
-            OnPropertyChanged(nameof(SelectedRowHeight));
-            OnPropertyChanged(nameof(GroupsExpandedByDefault));
-            OnPropertyChanged(nameof(GroupCoverVisible));
-            OnPropertyChanged(nameof(SelectedUiFont));
-            OnPropertyChanged(nameof(SelectedFontScale));
-            OnPropertyChanged(nameof(SelectedAccent));
-            OnPropertyChanged(nameof(SelectedOpacity));
-            OnPropertyChanged(nameof(HoverOpacity));
         }
         finally
         {

@@ -23,6 +23,11 @@ public partial class App : Application
     private Player.Core.Online.OnlineSources? _onlineSources;
     private Player.Core.Downloads.DownloadService? _downloads;
     private Mutex? _instanceMutex;
+    private readonly object _incomingFilesGate = new();
+    private readonly Queue<IReadOnlyList<string>> _pendingIncomingFiles = new();
+    private readonly SemaphoreSlim _incomingFilesSerial = new(1, 1);
+    private bool _startupReady;
+    private bool _incomingDrainScheduled;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -134,6 +139,10 @@ public partial class App : Application
         {
             Log.Error(ex, "启动初始化失败");
         }
+
+        // 管道从进程一开始就监听，避免第二次双击在初始化窗口期丢失；
+        // 这里才放行并按到达顺序处理积压文件。
+        MarkStartupReady();
     }
 
     protected override void OnExit(ExitEventArgs e)
@@ -166,10 +175,11 @@ public partial class App : Application
     private string? _lastExceptionMessage;
     private DateTime _lastExceptionAt;
     private int _exceptionRepeatCount;
+    private int _backgroundExceptionDialogPending;
 
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
-        Log.Error(e.Exception, "UI 线程未处理异常");
+        Log.Error("UI 线程未处理异常：{Exception}", ChkszClient.Redact(e.Exception.ToString()));
 
         var now = DateTime.UtcNow;
         var message = e.Exception.Message ?? string.Empty;
@@ -190,17 +200,38 @@ public partial class App : Application
         _lastExceptionAt = now;
         _exceptionRepeatCount = 1;
 
-        MessageBox.Show("发生了一个错误：\n" + e.Exception.Message + "\n\n详细信息已写入 data/logs。",
+        MessageBox.Show("发生了一个错误：\n" + ChkszClient.Redact(e.Exception.Message ?? string.Empty)
+                        + "\n\n日志：" + AppPaths.LogsDir,
             "Player", MessageBoxButton.OK, MessageBoxImage.Warning);
         e.Handled = true;
     }
 
-    private static void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
+    private void OnDomainUnhandledException(object sender, UnhandledExceptionEventArgs e)
     {
+        string detail;
         if (e.ExceptionObject is Exception ex)
-            Log.Fatal(ex, "非 UI 线程未处理异常");
+        {
+            Log.Fatal("非 UI 线程未处理异常：{Exception}", ChkszClient.Redact(ex.ToString()));
+            detail = ChkszClient.Redact(ex.Message);
+        }
         else
-            Log.Fatal("非 UI 线程未处理异常：{Object}", e.ExceptionObject);
+        {
+            detail = "未知后台错误";
+            Log.Fatal("非 UI 线程未处理异常：{Object}",
+                ChkszClient.Redact(e.ExceptionObject?.ToString() ?? detail));
+        }
+
+        try
+        {
+            MessageBox.Show(
+                "播放器发生了无法恢复的后台错误，即将退出：\n" + detail
+                + "\n\n日志：" + AppPaths.LogsDir,
+                "Player", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        catch
+        {
+            // 进程已在终止路径上，弹窗失败时仍保留上面的日志。
+        }
     }
 
     /// <summary>P6：外部打开文件（双击/多选/拖到 exe）→ 导入曲库并播放；主窗从任意表面恢复。</summary>
@@ -215,9 +246,18 @@ public partial class App : Application
 
             if (Application.Current.MainWindow is MainWindow main && main.Shell is { } shell)
             {
-                shell.Player.PlayTracks(tracks, 0, "文件打开");
+                if (shell.Player.HasTrack)
+                {
+                    // 已有播放时遵循“入队”语义，不打断当前曲目；没有当前曲目
+                    // （冷启动/停止态）才直接起播这一批文件。
+                    shell.Player.PlayNextTracks(tracks, "文件打开");
+                }
+                else
+                {
+                    shell.Player.PlayTracks(tracks, 0, "文件打开");
+                }
                 main.ShowFromExternalOpen();
-                Log.Information("外部文件已入队播放");
+                Log.Information("外部文件已加入播放队列（{Count} 首）", tracks.Count);
             }
         }
         catch (Exception ex)
@@ -229,13 +269,119 @@ public partial class App : Application
     private void HandleIncomingFiles(IReadOnlyList<string> files)
     {
         Log.Information("收到外部打开文件 {Count} 个：{First}", files.Count, files.FirstOrDefault());
-        _ = HandleIncomingFilesAsync(files);
+
+        var scheduleDrain = false;
+        lock (_incomingFilesGate)
+        {
+            _pendingIncomingFiles.Enqueue(files.ToArray());
+            if (!_startupReady)
+            {
+                Log.Information("播放器仍在启动，已暂存外部打开文件 {Count} 个", files.Count);
+                return;
+            }
+
+            if (!_incomingDrainScheduled)
+            {
+                _incomingDrainScheduled = true;
+                scheduleDrain = true;
+            }
+        }
+
+        if (scheduleDrain)
+            _ = DrainIncomingFilesAsync();
+    }
+
+    private void MarkStartupReady()
+    {
+        var scheduleDrain = false;
+        lock (_incomingFilesGate)
+        {
+            _startupReady = true;
+            if (_pendingIncomingFiles.Count > 0 && !_incomingDrainScheduled)
+            {
+                _incomingDrainScheduled = true;
+                scheduleDrain = true;
+            }
+        }
+
+        if (scheduleDrain)
+            _ = DrainIncomingFilesAsync();
+    }
+
+    private async Task DrainIncomingFilesAsync()
+    {
+        while (true)
+        {
+            IReadOnlyList<string>? batch;
+            lock (_incomingFilesGate)
+            {
+                if (_pendingIncomingFiles.Count == 0)
+                {
+                    _incomingDrainScheduled = false;
+                    return;
+                }
+
+                batch = _pendingIncomingFiles.Dequeue();
+            }
+
+            await ProcessIncomingFilesAsync(batch);
+        }
+    }
+
+    private async Task ProcessIncomingFilesAsync(IReadOnlyList<string> files)
+    {
+        await _incomingFilesSerial.WaitAsync();
+        try
+        {
+            await HandleIncomingFilesAsync(files);
+        }
+        finally
+        {
+            _incomingFilesSerial.Release();
+        }
     }
 
     /// <summary>P6：Task 未观察异常兜底（async void 之外的 fire-and-forget 任务）——记录并标记已处理。</summary>
-    private static void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
+    private void OnUnobservedTaskException(object? sender, UnobservedTaskExceptionEventArgs e)
     {
-        Log.Error(e.Exception, "Task 未观察异常");
+        Log.Error("Task 未观察异常：{Exception}", ChkszClient.Redact(e.Exception.ToString()));
         e.SetObserved();
+        QueueBackgroundExceptionDialog(e.Exception.GetBaseException().Message);
+    }
+
+    private void QueueBackgroundExceptionDialog(string message)
+    {
+        if (Interlocked.Exchange(ref _backgroundExceptionDialogPending, 1) != 0)
+            return;
+
+        void ShowDialog()
+        {
+            try
+            {
+                MessageBox.Show(
+                    "后台任务发生了一个错误，播放器已继续运行：\n"
+                    + ChkszClient.Redact(message) + "\n\n日志：" + AppPaths.LogsDir,
+                    "Player", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            finally
+            {
+                Interlocked.Exchange(ref _backgroundExceptionDialogPending, 0);
+            }
+        }
+
+        try
+        {
+            if (Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished)
+            {
+                Interlocked.Exchange(ref _backgroundExceptionDialogPending, 0);
+                return;
+            }
+
+            Dispatcher.BeginInvoke(ShowDialog, DispatcherPriority.Normal);
+        }
+        catch
+        {
+            Interlocked.Exchange(ref _backgroundExceptionDialogPending, 0);
+        }
     }
 }

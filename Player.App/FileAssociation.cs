@@ -15,6 +15,8 @@ internal static class FileAssociation
 
     private const string ProgIdBase = "PlayerMusicPlayer";
     private const string ClassesRoot = @"Software\Classes";
+    private const string CapabilitiesPath = @"Software\PlayerMusicPlayer\Capabilities";
+    private const string RegisteredApplicationName = "Player";
 
     public static void Register()
     {
@@ -49,7 +51,54 @@ internal static class FileAssociation
                     key.SetValue(progId, string.Empty);
             }
 
-            // 3) 通知资源管理器刷新关联缓存（否则双击仍走旧关联/报错）
+            // 3) 注册为 Windows 的“默认应用”候选。仅写 .ext 默认值在
+            // Windows 10/11 遇到已有 UserChoice 时会被忽略；Capabilities +
+            // RegisteredApplications 才能让 Player 出现在“打开方式/默认应用”列表。
+            var applicationKeyPath = ClassesRoot + @"\Applications\Player.exe";
+            using (var applicationKey = Registry.CurrentUser.CreateSubKey(applicationKeyPath))
+            {
+                applicationKey.SetValue("FriendlyAppName", "Player");
+                applicationKey.SetValue("ApplicationDescription", "本地音乐播放器");
+                applicationKey.SetValue("DefaultIcon", $"\"{exe}\",0");
+            }
+            using (var commandKey = Registry.CurrentUser.CreateSubKey(applicationKeyPath + @"\shell\open\command"))
+                commandKey.SetValue(string.Empty, $"\"{exe}\" \"%1\"");
+            using (var supportedTypes = Registry.CurrentUser.CreateSubKey(applicationKeyPath + @"\SupportedTypes"))
+            {
+                foreach (var ext in Extensions)
+                    supportedTypes.SetValue(ext, string.Empty);
+            }
+
+            using (var capabilities = Registry.CurrentUser.CreateSubKey(CapabilitiesPath))
+            {
+                capabilities.SetValue("ApplicationName", "Player");
+                capabilities.SetValue("ApplicationDescription", "本地音乐播放器");
+            }
+            using (var fileAssociations = Registry.CurrentUser.CreateSubKey(CapabilitiesPath + @"\FileAssociations"))
+            {
+                foreach (var ext in Extensions)
+                {
+                    var progId = ProgIdBase + ext.TrimStart('.').ToUpperInvariant();
+                    fileAssociations.SetValue(ext, progId);
+                }
+            }
+            using (var registeredApplications = Registry.CurrentUser.CreateSubKey(@"Software\RegisteredApplications"))
+                registeredApplications.SetValue(RegisteredApplicationName, CapabilitiesPath);
+
+            // 4) 记录 Windows 当前的用户选择，便于诊断旧处理器/DelegateExecute
+            // 导致的“没有注册类”；不覆盖用户已有的其他默认播放器。
+            using (var userChoice = Registry.CurrentUser.OpenSubKey(
+                       @"Software\Microsoft\Windows\CurrentVersion\Explorer\FileExts\.flac\UserChoice"))
+            {
+                var selected = userChoice?.GetValue("ProgId") as string;
+                if (!string.IsNullOrWhiteSpace(selected)
+                    && !selected.StartsWith(ProgIdBase, StringComparison.OrdinalIgnoreCase))
+                {
+                    Serilog.Log.Information("Windows 当前 .flac 默认处理器为 {ProgId}；Player 已注册到‘打开方式’，需在系统默认应用中选择 Player 才会覆盖该用户选择", selected);
+                }
+            }
+
+            // 5) 通知资源管理器刷新关联缓存（否则双击仍走旧关联/报错）
             NotifyAssocChanged();
 
             Serilog.Log.Information("文件关联注册完成（{Count} 个格式）", Extensions.Length);
@@ -77,7 +126,9 @@ internal static class FileAssociation
 
     private static class NativeMethods
     {
-        [System.Runtime.InteropServices.DllImport("shell32.dll")]
+        [System.Runtime.InteropServices.DllImport(
+            "shell32.dll", EntryPoint = "SHChangeNotify", ExactSpelling = true,
+            CallingConvention = System.Runtime.InteropServices.CallingConvention.Winapi)]
         internal static extern void ShChangeNotify(uint wEventId, uint uFlags, IntPtr dwItem1, IntPtr dwItem2);
     }
 }

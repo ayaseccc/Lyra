@@ -945,7 +945,10 @@ public partial class MainWindow : FluentWindow
             if (e.PropertyName is nameof(PlayerViewModel.Title) or nameof(PlayerViewModel.CoverImage))
                 UpdateDesktopLyrics();
             if (e.PropertyName is nameof(PlayerViewModel.IsPlaying) or nameof(PlayerViewModel.HasTrack))
+            {
                 UpdateTaskbarThumb();
+                UpdateTaskbarProgress();
+            }
             if (e.PropertyName == nameof(PlayerViewModel.ProgressPercent))
                 UpdateTaskbarProgress();
         };
@@ -955,6 +958,10 @@ public partial class MainWindow : FluentWindow
                 or nameof(LyricsViewModel.HasLyrics) or nameof(LyricsViewModel.IsStatic))
                 UpdateDesktopLyrics();
         };
+
+        // The first state notification may have happened before this hook.
+        UpdateTaskbarThumb();
+        UpdateTaskbarProgress();
     }
 
     /// <summary>P6：任务栏缩略图按钮图标随播放状态切换（播放 ⇄ 暂停）。</summary>
@@ -970,7 +977,7 @@ public partial class MainWindow : FluentWindow
                 Geometry.Parse(figures)));
     }
 
-    /// <summary>P6：任务栏进度条（可选展示，播放中显示、暂停/停止归零）。</summary>
+    /// <summary>P6：任务栏进度条（播放 Normal、暂停 Paused、无曲目 None）。</summary>
     private void UpdateTaskbarProgress()
     {
         if (TaskbarInfo is null || Player is null) return;

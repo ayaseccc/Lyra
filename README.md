@@ -2,7 +2,7 @@
 
 Windows 本地音乐播放器（类 foobar2000 的轻量定位 + 现代简洁界面），核心卖点是 ASIO / WASAPI 独占的位完美输出，以及通过 ChKSz API 接入的网易云在线能力。
 
-完整规划见 [PLAN.md](PLAN.md)。**当前进度：P0 + P1 + P2（ASIO / WASAPI 独占 / 无缝播放）已实机验收；P3（ChKSz 在线接入与歌词）已完成，待实机验收。**
+完整规划见 [PLAN.md](PLAN.md)。**当前进度：P0–P6、UI-R、L1–L3 代码侧已完成；P6 的多选/拖放文件关联、任务栏按钮/进度条目验、启动耗时、长时内存、万曲扫描与干净机运行仍需目标环境验收。**
 
 ASIO 实机验收步骤见 [docs/ASIO-验收指引.md](docs/ASIO-验收指引.md)。
 
@@ -36,8 +36,10 @@ dotnet run --project Player.App   # 运行
 发布一个可直接拷走的自包含版本：
 
 ```powershell
-dotnet publish Player.App -c Release -r win-x64 --self-contained -o publish
+pwsh tools/publish.ps1 -Version 1.0.0
 ```
+
+脚本使用 `win-x64` + `--self-contained true` 先发布到独立暂存目录，再生成 `Player-v1.0.0-win-x64.zip`；包内已带 .NET 与 Windows Desktop 运行时，目标机无需预装 .NET。
 
 用 Visual Studio：双击 `Player.sln`，把 `Player.App` 设为启动项目，F5 即可。
 
@@ -76,7 +78,7 @@ data/
 
 ## 四、BASS 原生 DLL
 
-仓库的 `native/x64/` 里已经放好了 7 个 64 位 DLL（来自 [un4seen.com](https://www.un4seen.com/bass.html)，BASS 2.4.18.3）：
+仓库的 `native/x64/` 里已经放好了 10 个 64 位 DLL（来自 [un4seen.com](https://www.un4seen.com/bass.html)，BASS 2.4.18.3）：
 
 | 文件 | 作用 |
 | --- | --- |
@@ -113,7 +115,9 @@ data/
 
 **在线与歌词（P3）**：ChKSz 四端点客户端（全局令牌桶 18 次/分、429 按 Retry-After 重试一次、额度以 `X-Quota-*` 响应头为准、URL 日志脱敏）；播放条右侧常驻额度指示；歌词三级优先级（同目录 `.lrc` > 本地缓存 > 在线），本地曲目按 标题+歌手+时长差<3s 自动匹配网易云 ID（结果持久化，可手动重新匹配）；歌词覆盖层（点击播放条封面展开）：滚动高亮当前行居中、点击行跳转、原文/双语/罗马音切换、偏移微调 ±0.1s 持久化；设置页新增在线组（API Key 填写 / 保存 / 测试连接）。所有在线失败安静降级，不影响本地播放。
 
-**还没有的**（按规划分别属于后续阶段）：在线搜索、歌单同步、下载（P4–P5）；媒体键、托盘、SMTC（P6）。
+**在线搜索与下载（P4–P5）**：多音源搜索、试听、音质回退、歌词/封面下载、标签写入、命名模板、重复检测、下载队列与取消；断网时安静降级，不影响本地播放。
+
+**系统集成与发布（P6）**：SMTC/媒体键、全局快捷键、可选托盘、任务栏缩略图上一曲/播放暂停/下一曲按钮与进度状态；单实例命名管道转交、HKCU 九种音频格式文件关联、启动引导、损坏配置备份重建；`tools/publish.ps1` 生成无需预装 .NET 的 self-contained `win-x64` 便携 zip。
 
 ## 六、离线自测
 
@@ -130,6 +134,15 @@ dotnet run --project tools/Player.Harness -- lyrics
 
 ASIO / WASAPI 的出声效果没法离线验证，按 [docs/ASIO-验收指引.md](docs/ASIO-验收指引.md) 在设备上实听。
 
-## 七、安全约定
+## 七、许可与第三方服务
+
+- **BASS / BASSASIO / BASSmix / BASSwasapi 及格式插件**：由 [un4seen](https://www.un4seen.com/) 提供，个人非商业使用免费；商业使用或上架收费前必须向 un4seen 取得对应授权。
+- **GD Studio API**：上游以 **CC BY-NC** 提供，本项目仅按个人非商业用途接入；使用时应保留署名并遵守上游条款。
+- **ChKSz API**：第三方在线服务，用户需使用自己的 Key 并遵守服务提供方的当前条款；本项目不附带 Key，也不授予在线音频或元数据的转授权。
+- **开源组件**：WPF-UI、CommunityToolkit.Mvvm、ManagedBass、Microsoft.Data.Sqlite / SQLitePCLRaw、TagLibSharp、Serilog / Serilog.Sinks.File。著作权与许可分别归各上游项目，以 NuGet 包与上游仓库随附的许可文本为准。
+
+## 八、安全约定
 
 API Key 只能存在 `data/config.json` 并在设置页填写，**永远不进仓库、不进日志、不进任何报错信息**。提交前请确认 `git status` 里没有 `data/` 目录。
+
+仓库附带 `.githooks/pre-commit` 安全检查。每个新克隆需执行一次 `git config core.hooksPath .githooks`，之后每次提交都会检查完整暂存区，阻止保留前缀意外入仓。

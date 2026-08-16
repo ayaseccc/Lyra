@@ -428,15 +428,22 @@ public sealed class DownloadService : IDisposable
 
             // 封面：在线取图（GD 需要 pic 端点；网易云直链）
             var pic = await source.GetPicUrlAsync(item.Track, 500, ct).ConfigureAwait(false);
-            if (pic.Success)
+            // OnlineResult<T>.Data is nullable even when Success=true (the result
+            // wrapper intentionally does not encode that invariant in its type).
+            // Capture it locally and validate before handing it to APIs that require
+            // a non-null URL.  This also keeps a malformed provider response from
+            // turning an otherwise successful download into a NullReference/argument
+            // failure while preserving the existing best-effort cover behaviour.
+            var picUrl = pic.Data;
+            if (pic.Success && !string.IsNullOrWhiteSpace(picUrl))
             {
                 try
                 {
                     using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-                    var bytes = await client.GetByteArrayAsync(pic.Data, ct).ConfigureAwait(false);
+                    var bytes = await client.GetByteArrayAsync(picUrl, ct).ConfigureAwait(false);
                     if (bytes.Length > 0)
                     {
-                        var ext2 = DownloadTemplater.ExtensionFromUrl(pic.Data);
+                        var ext2 = DownloadTemplater.ExtensionFromUrl(picUrl);
                         var picture = new TagLib.Picture(new TagLib.ByteVector(bytes))
                         {
                             MimeType = ext2 is ".png" ? "image/png" : "image/jpeg"

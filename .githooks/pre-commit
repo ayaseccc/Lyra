@@ -1,0 +1,18 @@
+#!/bin/sh
+# Keep the validation logic in PowerShell so the hook behaves consistently in
+# Git for Windows whether the commit is started from a terminal or an IDE.
+set -eu
+
+repo_root=$(git rev-parse --show-toplevel)
+checker="$repo_root/tools/check-staged-key-prefix.ps1"
+
+if command -v pwsh >/dev/null 2>&1; then
+    exec pwsh -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$checker"
+fi
+
+if command -v powershell.exe >/dev/null 2>&1; then
+    exec powershell.exe -NoLogo -NoProfile -NonInteractive -ExecutionPolicy Bypass -File "$checker"
+fi
+
+echo "pre-commit: PowerShell was not found; refusing to skip the staged secret check." >&2
+exit 1

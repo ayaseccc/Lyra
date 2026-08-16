@@ -57,6 +57,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
     private int _next;
     private string? _nextPath;
     private TrackInfo? _nextInfo;
+    private int _preloadGeneration;
 
     /// <summary>已经判定"无法无缝"的路径，避免每个 tick 重新开一次文件。</summary>
     private string? _rejectedPreloadPath;
@@ -508,6 +509,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
                 if (_current != 0) toFree.Add(_current);
                 if (_next != 0) toFree.Add(_next);
 
+                _preloadGeneration++;
                 _current = handle;
                 CurrentTrack = track;
                 _next = 0;
@@ -706,12 +708,15 @@ public sealed class PlaybackEngine : IPlaybackEngine
     {
         if (_disposed || string.IsNullOrWhiteSpace(path)) return;
 
+        int generation;
         lock (_swap)
         {
             if (_next != 0 && string.Equals(_nextPath, path, StringComparison.OrdinalIgnoreCase)) return;
 
             // 已经判定过"接不上"的同一首，不要每个 tick 都重开一次文件
             if (string.Equals(_rejectedPreloadPath, path, StringComparison.OrdinalIgnoreCase)) return;
+
+            generation = _preloadGeneration;
         }
 
         // 建流可能读盘、MP3 还要 Prescan，放后台线程，绝不能卡住 UI
@@ -724,7 +729,11 @@ public sealed class PlaybackEngine : IPlaybackEngine
             if (handle == 0)
             {
                 Log.Debug("预载失败 {File}：{Error}", Path.GetFileName(path), Bass.LastError);
-                lock (_swap) { _rejectedPreloadPath = path; }
+                lock (_swap)
+                {
+                    if (generation == _preloadGeneration)
+                        _rejectedPreloadPath = path;
+                }
                 return;
             }
 
@@ -737,14 +746,19 @@ public sealed class PlaybackEngine : IPlaybackEngine
                 Log.Information("下一曲采样率 {Next} Hz 与当前输出 {Current} Hz 不同，切歌时会有极短间隙",
                     info.SampleRate, mixerRate);
                 Bass.StreamFree(handle);
-                lock (_swap) { _rejectedPreloadPath = path; }
+                lock (_swap)
+                {
+                    if (generation == _preloadGeneration)
+                        _rejectedPreloadPath = path;
+                }
                 return;
             }
 
             List<int> toFree = new();
+            var installed = false;
             lock (_swap)
             {
-                if (_disposed)
+                if (_disposed || generation != _preloadGeneration || _next != 0)
                 {
                     toFree.Add(handle);
                 }
@@ -755,6 +769,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
                     _nextPath = path;
                     _nextInfo = info;
                     _rejectedPreloadPath = null;
+                    installed = true;
                 }
             }
 
@@ -763,7 +778,8 @@ public sealed class PlaybackEngine : IPlaybackEngine
                 try { Bass.StreamFree(stale); } catch { /* 忽略 */ }
             }
 
-            Log.Debug("已预载下一曲：{File}", Path.GetFileName(path));
+            if (installed)
+                Log.Debug("已预载下一曲：{File}", Path.GetFileName(path));
         });
     }
 
@@ -774,6 +790,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
         int handle;
         lock (_swap)
         {
+            _preloadGeneration++;
             handle = _next;
             _next = 0;
             _nextPath = null;
@@ -815,6 +832,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
                         CurrentTrack = _nextInfo;
                         transitionedTo = _nextPath;
 
+                        _preloadGeneration++;
                         _next = 0;
                         _nextPath = null;
                         _nextInfo = null;

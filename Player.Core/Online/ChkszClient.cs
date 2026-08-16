@@ -44,6 +44,9 @@ public sealed partial class ChkszClient : IDisposable
 {
     /// <summary>官方默认地址；设置页可改（空/非法回落默认）。</summary>
     private const string DefaultBaseAddress = "https://api.chksz.com";
+    private static readonly Regex RawApiKeyPattern = new(
+        Regex.Escape("chksz" + "_") + @"[^\s&""']+",
+        RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
 
     private readonly HttpClient _http;
     private readonly TokenBucket _bucket = new(18, TimeSpan.FromMinutes(1));
@@ -137,7 +140,7 @@ public sealed partial class ChkszClient : IDisposable
         catch (Exception ex)
         {
             // 连异常消息都要脱敏：HttpRequestException 有时会带上请求 URL
-            Log.Error(ex, "请求失败：{Url}", safeUrl);
+            Log.Error("请求失败：{Url}；{Exception}", safeUrl, Redact(ex.ToString()));
             return ChkszResult<T>.Fail("网络请求失败：" + Redact(ex.Message));
         }
     }
@@ -214,7 +217,8 @@ public sealed partial class ChkszClient : IDisposable
     public static string Redact(string text)
     {
         if (string.IsNullOrEmpty(text)) return text;
-        return ApiKeyPattern().Replace(text, "apikey=***");
+        var redacted = ApiKeyPattern().Replace(text, "apikey=***");
+        return RawApiKeyPattern.Replace(redacted, "***");
     }
 
     [GeneratedRegex(@"apikey=[^&\s""']+", RegexOptions.IgnoreCase)]

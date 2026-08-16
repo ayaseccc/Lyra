@@ -566,6 +566,10 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             return;
         }
         _list.InsertAfterCurrent(tracks);
+
+        // 当前曲最后 5 秒内可能已经预载了旧的下一曲。插队后必须撤销，
+        // 让下一次进度 tick 按更新后的队列重新预载，否则自然续播会跳过插队曲。
+        _engine.ClearPreload();
         StatusText = $"已将 {tracks.Count} 首插入「下一首播放」";
     }
 
