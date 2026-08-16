@@ -601,6 +601,16 @@ ChkszClient（四端点封装、令牌桶 18 次/分、额度响应头解析、�
 > 7. **审计尾巴**：dsp 模式计数对账——Windows/真实硬件专属断言组在其它环境按 Skip 显式打印（对齐 lyrics 模式的做法），让 283 项基线在任何环境可复算。
 > 8. **全量回归**：P0–P6 + UI-R + L1–L3 全部验收标准跑一遍回归清单；随后规划方做**全项目终审**（合规/许可/退出语义/性能/文档），通过即定版 v1.0。
 
+**P6 实施记录（2026-08-16，进行中）**：
+- ①**单实例+文件关联** ✔：Mutex 单实例（第二实例把文件参数经命名管道转交运行实例后退出——实测：第二实例退出 ✓、运行实例日志"收到外部打开文件→导入完成→入队播放"全链路 ✓）；HKCU 注册 9 格式（mp3/flac/m4a/ape/wv/ogg/opus/wav/aiff）打开方式+exe 图标（每次启动幂等刷新路径，便携移动自动跟随）；实测注：DSH 沙箱下注册表写入被虚拟化（API 成功但真实注册表不可见），代码逻辑正确，待用户实机验证三路径（双击/多选/拖到 exe）。参数容错：命令行文件路径去引号 Trim('"')。
+- ②**任务栏缩略图** ✔：TaskbarItemInfo 三按钮（上一曲/播放暂停/下一曲，播放暂停图标随状态切换）+ 进度条（播放 Normal/暂停 Paused/无曲目 None）——代码完成待用户目验。
+- ③**异常兜底** ✔：Dispatcher/AppDomain/TaskScheduler.UnobservedTaskException 三层（日志+友好弹窗+弹窗风暴保护）；config.json 损坏→备份 config.json.corrupt-时间戳 重建不崩。
+- ④**首次运行引导** ✔：无曲库配置时主窗就绪后弹出 SetupWizard（选曲库→选输出→Key 可跳过，写配置并触发扫描）——截图确认弹出。
+- ⑤**发布工程** ✔：tools/publish.ps1 一键 self-contained 便携 zip（实测产出 Player-v1.0.0-win-x64.zip 74.22MB，含 docs/用户指南.md 为 README）；exe 版本 1.0.0/产品元数据（csproj Version/FileVersion/Product/Description/Copyright）；用户向 README（快速上手/ASIO 摘要/数据说明/许可声明：BASS 非商业、GD CC BY-NC、网易云个人学习、开源组件）。
+- ⑥**性能实测（入档）**：启动到主窗出现 3.7s（DSH 沙箱环境；日志内 OnStartup 初始化 ≈1.5s；真实机器待复测，目标 ≤1.5s）；启动内存 215.5MB（<300MB ✓）；万曲扫描/2h 内存/频谱 CPU 待实机记录。
+- ⑦**审计尾巴** ✔：dsp 模式 Skip 对账沿用统一 Skip(what, reason)（Windows/硬件专属断言显式打印跳过+结尾汇总），283 基线任何环境可复算（本次复算 283 通过 0 失败 1 跳过）。
+- ⑧**全量回归**：harness 283 项复算通过；P0-P6+UI-R+L1-L3 功能清单回归进行中（后续输出清单）。
+
 SMTC 与媒体键、全局快捷键、可选托盘、任务栏缩略图控制；深/浅主题细节打磨、异常兜底（全局 catch + 日志 + 友好弹窗）；发布脚本（framework-dependent 便携 zip，附带原生 dll 与首次运行引导：填 Key、选曲库目录、选输出设备）。验收：媒体键可控制播放；连续使用 2 小时内存稳定（< 300MB）；zip 拷到干净机器可运行（装有 .NET 8 运行时）。
 
 ```text
