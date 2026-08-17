@@ -66,7 +66,7 @@ public sealed record TrackColumnDef(string Key, string Name, double DefaultWidth
 /// {RelativeSource AncestorType=Window} 去够 ShellViewModel 的命令并不可靠，
 /// 右键菜单更是独立的弹出视觉树、根本够不到主窗口 —— P1.1 的"点击无反应"就是这么来的。
 /// </summary>
-public sealed partial class TrackListPageViewModel : ObservableObject
+public sealed partial class TrackListPageViewModel : ObservableObject, IDisposable
 {
     private readonly Action<IReadOnlyList<TrackRecord>, int, string> _playRequested;
     private readonly DispatcherTimer _filterDebounce;
@@ -75,6 +75,9 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     private string _appliedFilter = string.Empty;
     private string? _sortProperty;
     private ListSortDirection _sortDirection = ListSortDirection.Ascending;
+    private double _viewportWidth = double.PositiveInfinity;
+    private IReadOnlyList<string> _effectiveColumns = Array.Empty<string>();
+    private readonly double[] _slotWidths = new double[TrackColumns.Count];
 
     /// <summary>折叠的分组键（会话内记住；初始按配置默认展开/折叠）。</summary>
     private readonly HashSet<string> _collapsedGroups = new(StringComparer.Ordinal);
@@ -94,13 +97,152 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         new TrackColumnDef("Bitrate", "码率", 80),
     };
 
-    private double ColWidth(string key)
-        => ConfigService.Current.Ui.ColumnWidths.TryGetValue(key, out var w) && w > 0 ? w : DefaultWidthOf(key);
+    private static double ConfiguredWidth(string key)
+        => ConfigService.Current.Ui.ColumnWidths.TryGetValue(key, out var width) && width > 0
+            ? width
+            : DefaultWidthOf(key);
+
+    private void RefreshEffectiveColumns()
+    {
+        var known = TrackColumns.Select(column => column.Key).ToHashSet(StringComparer.Ordinal);
+        var configured = ConfigService.Current.Ui.Columns
+            .Where(known.Contains)
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var effective = new List<string>(configured);
+
+        if (double.IsFinite(_viewportWidth) && _viewportWidth > 0)
+        {
+            // Preserve the user's saved column set. Only the current presentation
+            // becomes denser as the center pane narrows, and expands back without
+            // mutating config when space returns.
+            if (_viewportWidth < 980)
+                effective.RemoveAll(key => key is "Format" or "SampleRate" or "BitDepth" or "Bitrate");
+            if (_viewportWidth < 760)
+                effective.Remove("Album");
+            if (_viewportWidth < 560)
+                effective.Remove("Artist");
+        }
+
+        if (effective.Count == 0 && configured.Count > 0)
+            effective.Add(configured[0]);
+        _effectiveColumns = effective;
+    }
+
+    private void RefreshSlotWidths()
+    {
+        Array.Clear(_slotWidths);
+        if (_effectiveColumns.Count == 0) return;
+
+        // The viewport is the ListBox item content width: scrollbar and the row's
+        // 6px+6px padding were already removed by MainWindow. Preserve configured
+        // proportions while honoring readable minima; a constrained allocation is
+        // required because independently clamping each column can exceed the total.
+        var visibleWidth = _effectiveColumns.Sum(ConfiguredWidth);
+        var coverWidth = IsGrouped ? GroupCoverWidth : 0;
+        Dictionary<string, double>? scaled = null;
+        if (double.IsFinite(_viewportWidth)
+            && _viewportWidth > 0
+            && visibleWidth > 0
+            && _viewportWidth < visibleWidth + coverWidth)
+        {
+            var available = Math.Max(1, _viewportWidth - coverWidth);
+            scaled = AllocateVisibleWidths(available);
+        }
+
+        for (var slot = 0; slot < _effectiveColumns.Count && slot < _slotWidths.Length; slot++)
+        {
+            var key = _effectiveColumns[slot];
+            _slotWidths[slot] = scaled is not null && scaled.TryGetValue(key, out var width)
+                ? width
+                : ConfiguredWidth(key);
+        }
+    }
+
+    private Dictionary<string, double> AllocateVisibleWidths(double available)
+    {
+        var result = new Dictionary<string, double>(StringComparer.Ordinal);
+        if (_effectiveColumns.Count == 0) return result;
+
+        var minimums = _effectiveColumns.ToDictionary(
+            key => key,
+            MinimumColumnWidth,
+            StringComparer.Ordinal);
+        var minimumTotal = minimums.Values.Sum();
+
+        // This path is only reachable below the normal 920px minimum window or
+        // with unusually wide side panes. Keep every column inside the viewport;
+        // responsive hiding above ensures the title retains most of the space.
+        if (available <= minimumTotal)
+        {
+            var scale = available / minimumTotal;
+            foreach (var key in _effectiveColumns)
+                result[key] = minimums[key] * scale;
+            return result;
+        }
+
+        var remainingKeys = new HashSet<string>(_effectiveColumns, StringComparer.Ordinal);
+        var remainingWidth = available;
+        while (remainingKeys.Count > 0)
+        {
+            var weightTotal = remainingKeys.Sum(ConfiguredWidth);
+            var scale = weightTotal > 0 ? remainingWidth / weightTotal : 0;
+            var constrained = remainingKeys
+                .Where(key => ConfiguredWidth(key) * scale < minimums[key])
+                .ToArray();
+
+            if (constrained.Length == 0)
+            {
+                foreach (var key in remainingKeys)
+                    result[key] = ConfiguredWidth(key) * scale;
+                break;
+            }
+
+            foreach (var key in constrained)
+            {
+                result[key] = minimums[key];
+                remainingWidth -= minimums[key];
+                remainingKeys.Remove(key);
+            }
+        }
+
+        return result;
+    }
+
+    private static double MinimumColumnWidth(string key) => key switch
+    {
+        "Title" => 140,
+        "Artist" => 80,
+        "Album" => 90,
+        "Duration" => 44,
+        _ => 40
+    };
+
+    private double SlotWidth(int slot)
+        => slot >= 0 && slot < _slotWidths.Length
+            ? _slotWidths[slot]
+            : 0;
+
+    /// <summary>Update responsive column widths after the center pane is resized.</summary>
+    public void SetViewportWidth(double width)
+    {
+        var next = double.IsFinite(width) ? Math.Max(0, width) : double.PositiveInfinity;
+        if (Math.Abs(next - _viewportWidth) < 1) return;
+        _viewportWidth = next;
+        RefreshColumns();
+    }
 
     private int ColIndex(string key)
     {
-        var cols = ConfigService.Current.Ui.Columns;
-        var idx = cols.IndexOf(key);
+        var idx = -1;
+        for (var i = 0; i < _effectiveColumns.Count; i++)
+        {
+            if (string.Equals(_effectiveColumns[i], key, StringComparison.Ordinal))
+            {
+                idx = i;
+                break;
+            }
+        }
         // 列 0 是封面列，数据列从 1 开始（实测：从 0 开始会堆到封面列，平铺宽 0 全不可见）
         return idx < 0 ? -1 : idx + 1;
     }
@@ -108,100 +250,35 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     private static double DefaultWidthOf(string key)
         => TrackColumns.FirstOrDefault(c => c.Key == key)?.DefaultWidth ?? 100;
 
-    /// <summary>列可见性（顺序列表里出现 = 可见）。</summary>
-    public bool IsColumnVisible(string key) => ConfigService.Current.Ui.Columns.Contains(key);
-
     /// <summary>列配置变化后刷新全部列绑定。</summary>
     public void RefreshColumns()
     {
+        RefreshEffectiveColumns();
+        RefreshSlotWidths();
+        OnPropertyChanged(nameof(GroupCoverWidth));
+        OnPropertyChanged(nameof(GroupCoverVisible));
+        for (var slot = 0; slot < TrackColumns.Count; slot++)
+            OnPropertyChanged($"SlotWidth{slot}");
         foreach (var col in TrackColumns)
-        {
-            OnPropertyChanged($"ColWidth{col.Key}");
             OnPropertyChanged($"ColIndex{col.Key}");
-        }
-    }
-
-    /// <summary>显示/隐藏列。</summary>
-    public void SetColumnVisible(string key, bool visible)
-    {
-        var cols = ConfigService.Current.Ui.Columns;
-        if (visible)
-        {
-            if (!cols.Contains(key))
-            {
-                var defs = TrackColumns.Select(c => c.Key).ToList();
-                var insertAt = cols.Count;
-                for (var i = 0; i < defs.Count; i++)
-                {
-                    if (defs[i] == key) { insertAt = i; break; }
-                    if (cols.Contains(defs[i]) && defs.IndexOf(key) < defs.IndexOf(defs[i]))
-                    {
-                        // 保持在默认顺序中的相对位置
-                    }
-                }
-                cols.Insert(Math.Min(insertAt, cols.Count), key);
-            }
-        }
-        else
-        {
-            cols.Remove(key);
-        }
-        ConfigService.Save();
-        RefreshColumns();
-    }
-
-    /// <summary>列顺序上移/下移（delta = -1/+1）。</summary>
-    public void MoveColumn(string key, int delta)
-    {
-        var cols = ConfigService.Current.Ui.Columns;
-        var idx = cols.IndexOf(key);
-        if (idx < 0) return;
-        var target = idx + delta;
-        if (target < 0 || target >= cols.Count) return;
-        cols.RemoveAt(idx);
-        cols.Insert(target, key);
-        ConfigService.Save();
-        RefreshColumns();
-    }
-
-    /// <summary>列宽（0 清空回默认）。</summary>
-    public void SetColumnWidth(string key, double width)
-    {
-        if (width <= 0) ConfigService.Current.Ui.ColumnWidths.Remove(key);
-        else ConfigService.Current.Ui.ColumnWidths[key] = width;
-        ConfigService.Save();
-        RefreshColumns();
     }
 
     /// <summary>分组标题封面开关（L3.1）。</summary>
     public bool GroupCoverVisible => ConfigService.Current.Ui.GroupCoverVisible;
 
     /// <summary>组头封面列宽（开关关闭 = 0 隐藏）。</summary>
-    public double GroupCoverWidth => ConfigService.Current.Ui.GroupCoverVisible ? 36 : 0;
+    public double GroupCoverWidth => ConfigService.Current.Ui.GroupCoverVisible ? 84 : 0;
 
-    /// <summary>标题 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
-    public double ColWidthTitle => ColWidth("Title");
-
-    /// <summary>歌手 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
-    public double ColWidthArtist => ColWidth("Artist");
-
-    /// <summary>专辑 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
-    public double ColWidthAlbum => ColWidth("Album");
-
-    /// <summary>时长 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
-    public double ColWidthDuration => ColWidth("Duration");
-
-    /// <summary>格式 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
-    public double ColWidthFormat => ColWidth("Format");
-
-    /// <summary>采样率 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
-    public double ColWidthSampleRate => ColWidth("SampleRate");
-
-    /// <summary>位深 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
-    public double ColWidthBitDepth => ColWidth("BitDepth");
-
-    /// <summary>码率 列宽（L3.1 列自定义；绑定源，缺失时列定义宽 0 导致整列不可见）。</summary>
-    public double ColWidthBitrate => ColWidth("Bitrate");
+    // Grid tracks are positional. Binding them to semantic field widths caused
+    // reordered/hidden columns to inherit the wrong width or leave empty gaps.
+    public double SlotWidth0 => SlotWidth(0);
+    public double SlotWidth1 => SlotWidth(1);
+    public double SlotWidth2 => SlotWidth(2);
+    public double SlotWidth3 => SlotWidth(3);
+    public double SlotWidth4 => SlotWidth(4);
+    public double SlotWidth5 => SlotWidth(5);
+    public double SlotWidth6 => SlotWidth(6);
+    public double SlotWidth7 => SlotWidth(7);
 
     /// <summary>标题 列索引（封面列=0，数据列从 1 起；缺失时元素堆到封面列）。</summary>
     public int ColIndexTitle => ColIndex("Title");
@@ -235,14 +312,6 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         RebuildDisplay();
     }
 
-    /// <summary>配置变化后重建显示（L3.1 组头封面开关等）。</summary>
-    public void ReloadConfigDependentDisplay()
-    {
-        OnPropertyChanged(nameof(GroupCoverWidth));
-        OnPropertyChanged(nameof(GroupCoverVisible));
-        RebuildDisplay();
-    }
-
     public TrackListPageViewModel(
         string title,
         IEnumerable<TrackRecord> tracks,
@@ -265,6 +334,8 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         };
         _filterDebounce.Tick += OnFilterDebounceTick;
 
+        RefreshEffectiveColumns();
+        RefreshSlotWidths();
         RebuildDisplay();
     }
 
@@ -277,7 +348,18 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     public ICollectionView View { get; }
 
     /// <summary>列表实际显示的行（UI-R2）：平铺 = 全部 TrackRowItem；分组 = 组头 + 曲目行。保持扁平结构以维持虚拟化。</summary>
-    public ObservableCollection<object> DisplayItems { get; } = new();
+    private IReadOnlyList<object> _displayItems = Array.Empty<object>();
+
+    public IReadOnlyList<object> DisplayItems
+    {
+        get => _displayItems;
+        private set
+        {
+            _displayItems = value;
+            OnPropertyChanged();
+            OnPropertyChanged(nameof(DisplayTracks));
+        }
+    }
 
     /// <summary>显示模式：true = 专辑分组，false = 平铺（UI-R2，选择持久化）。</summary>
     [ObservableProperty]
@@ -297,6 +379,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         IsGrouped = !IsGrouped;
         ConfigService.Current.Ui.ListGrouped = IsGrouped;
         ConfigService.Save();
+        RefreshColumns();
         RebuildDisplay();
     }
 
@@ -308,7 +391,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     /// L3.1：折叠组只留组头；组头带封面与折叠状态。</summary>
     private void RebuildDisplay()
     {
-        DisplayItems.Clear();
+        var display = new List<object>(Items.Count + 16);
         if (IsGrouped)
         {
             var grouped = TrackGrouper.Group(View.Cast<TrackRecord>()).ToList();
@@ -325,7 +408,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject
             {
                 var key = GroupKeyOf(group);
                 var collapsed = _collapsedGroups.Contains(key);
-                DisplayItems.Add(new GroupHeaderItem
+                display.Add(new GroupHeaderItem
                 {
                     AlbumText = group.Album,
                     ArtistText = group.Artist,
@@ -337,7 +420,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject
                 if (collapsed) continue;
                 for (var i = 0; i < group.Tracks.Count; i++)
                 {
-                    DisplayItems.Add(new TrackRowItem
+                    display.Add(new TrackRowItem
                     {
                         Track = group.Tracks[i],
                         ShowCover = i == 0,
@@ -349,8 +432,12 @@ public sealed partial class TrackListPageViewModel : ObservableObject
         else
         {
             foreach (var track in View.Cast<TrackRecord>())
-                DisplayItems.Add(new TrackRowItem { Track = track });
+                display.Add(new TrackRowItem { Track = track });
         }
+
+        // A single binding notification replaces Clear + one notification per row.
+        // On large libraries this avoids thousands of redundant layout passes.
+        DisplayItems = display;
     }
 
     /// <summary>手工歌单 id；非歌单页面为 null。</summary>
@@ -655,16 +742,31 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     /// <summary>定位正在播放的曲目：清掉过滤、按路径找到同一条并选中（UI-R1.5 ⑪）。</summary>
     public void LocateTrack(TrackRecord track)
     {
-        _filterDebounce.Stop();
-        if (_appliedFilter.Length > 0)
-        {
-            _appliedFilter = string.Empty;
+        // FilterText may contain a pending (not yet applied) query. Assigning the
+        // empty value restarts the debounce timer, so stop it after the assignment.
+        if (!string.IsNullOrEmpty(FilterText))
             FilterText = string.Empty;
-            View.Refresh();
-        }
+        _filterDebounce.Stop();
+        _appliedFilter = string.Empty;
+        View.Refresh();
+        RebuildDisplay();
 
         var match = DisplayTracks.FirstOrDefault(t =>
             string.Equals(t.Path, track.Path, StringComparison.OrdinalIgnoreCase));
+        if (match is null && IsGrouped)
+        {
+            // A current track inside a collapsed album is not part of DisplayTracks.
+            // Expand only that group so Locate always has a selectable row.
+            var group = TrackGrouper.Group(View.Cast<TrackRecord>()).FirstOrDefault(g =>
+                g.Tracks.Any(t => string.Equals(t.Path, track.Path, StringComparison.OrdinalIgnoreCase)));
+            if (group is not null && _collapsedGroups.Remove(GroupKeyOf(group)))
+            {
+                RebuildDisplay();
+                match = DisplayTracks.FirstOrDefault(t =>
+                    string.Equals(t.Path, track.Path, StringComparison.OrdinalIgnoreCase));
+            }
+        }
+
         if (match is null) return;
 
         SelectedTrack = match;
@@ -734,11 +836,24 @@ public sealed partial class TrackListPageViewModel : ObservableObject
     public bool IsViewSortedOrFiltered =>
         IsGrouped || View.SortDescriptions.Count > 0 || _appliedFilter.Length > 0;
 
+    public int IndexOfDisplayItem(object item)
+    {
+        for (var i = 0; i < DisplayItems.Count; i++)
+            if (ReferenceEquals(DisplayItems[i], item)) return i;
+        return -1;
+    }
+
     private void NotifyItemsChanged()
     {
         OnPropertyChanged(nameof(Subtitle));
         OnPropertyChanged(nameof(IsEmpty));
         OnPropertyChanged(nameof(ShowLibraryEmptyState));
         OnPropertyChanged(nameof(ShowPlaylistEmptyState));
+    }
+
+    public void Dispose()
+    {
+        _filterDebounce.Stop();
+        _filterDebounce.Tick -= OnFilterDebounceTick;
     }
 }

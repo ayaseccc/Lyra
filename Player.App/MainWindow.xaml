@@ -115,18 +115,18 @@
                     </Grid.RowDefinitions>
 
                     <Border BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="0,0,0,1">
-                        <Grid>
+                        <Grid Margin="6,0,0,0">
                             <!-- L3.1 列自定义：宽度/顺序全绑 VM（隐藏列宽 0，顺序按索引） -->
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="{Binding IsGrouped, Converter={StaticResource BoolToGroupCoverWidth}}" />
-                                <ColumnDefinition Width="{Binding ColWidthTitle, Converter={StaticResource DoubleToGridLength}}" />
-                                <ColumnDefinition Width="{Binding ColWidthArtist, Converter={StaticResource DoubleToGridLength}}" />
-                                <ColumnDefinition Width="{Binding ColWidthAlbum, Converter={StaticResource DoubleToGridLength}}" />
-                                <ColumnDefinition Width="{Binding ColWidthDuration, Converter={StaticResource DoubleToGridLength}}" />
-                                <ColumnDefinition Width="{Binding ColWidthFormat, Converter={StaticResource DoubleToGridLength}}" />
-                                <ColumnDefinition Width="{Binding ColWidthSampleRate, Converter={StaticResource DoubleToGridLength}}" />
-                                <ColumnDefinition Width="{Binding ColWidthBitDepth, Converter={StaticResource DoubleToGridLength}}" />
-                                <ColumnDefinition Width="{Binding ColWidthBitrate, Converter={StaticResource DoubleToGridLength}}" />
+                                <ColumnDefinition Width="{Binding SlotWidth0, Converter={StaticResource DoubleToGridLength}}" />
+                                <ColumnDefinition Width="{Binding SlotWidth1, Converter={StaticResource DoubleToGridLength}}" />
+                                <ColumnDefinition Width="{Binding SlotWidth2, Converter={StaticResource DoubleToGridLength}}" />
+                                <ColumnDefinition Width="{Binding SlotWidth3, Converter={StaticResource DoubleToGridLength}}" />
+                                <ColumnDefinition Width="{Binding SlotWidth4, Converter={StaticResource DoubleToGridLength}}" />
+                                <ColumnDefinition Width="{Binding SlotWidth5, Converter={StaticResource DoubleToGridLength}}" />
+                                <ColumnDefinition Width="{Binding SlotWidth6, Converter={StaticResource DoubleToGridLength}}" />
+                                <ColumnDefinition Width="{Binding SlotWidth7, Converter={StaticResource DoubleToGridLength}}" />
                             </Grid.ColumnDefinitions>
                             <Border Grid.Column="{Binding ColIndexTitle}" Visibility="{Binding ColIndexTitle, Converter={StaticResource ColumnIndexToVis}}" Background="Transparent" Tag="DisplayTitle" Cursor="Hand"
                                     MouseLeftButtonUp="OnTrackHeaderClick">
@@ -236,11 +236,12 @@
                                                                         CanContentScroll="{TemplateBinding CanContentScroll}"
                                                                         Content="{TemplateBinding Content}"
                                                                         ContentTemplate="{TemplateBinding ContentTemplate}"
+                                                                        SizeChanged="OnTrackListViewportSizeChanged"
                                                                         Margin="{TemplateBinding Padding}" />
                                                 <ScrollBar x:Name="PART_VerticalScrollBar" Grid.Row="0" Grid.Column="1"
                                                            Orientation="Vertical"
                                                            VerticalAlignment="Stretch"
-                                                           ViewportSize="NaN"
+                                                           ViewportSize="{TemplateBinding ViewportHeight}"
                                                            Maximum="{TemplateBinding ScrollableHeight}"
                                                            Value="{TemplateBinding VerticalOffset}"
                                                            Visibility="{TemplateBinding ComputedVerticalScrollBarVisibility}"
@@ -293,14 +294,14 @@
                                     <!-- L3.1 列自定义：与列头同构（宽度/顺序绑 VM） -->
                                     <Grid.ColumnDefinitions>
                                         <ColumnDefinition Width="{Binding DataContext.IsGrouped, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource BoolToGroupCoverWidth}}" />
-                                        <ColumnDefinition Width="{Binding DataContext.ColWidthTitle, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
-                                        <ColumnDefinition Width="{Binding DataContext.ColWidthArtist, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
-                                        <ColumnDefinition Width="{Binding DataContext.ColWidthAlbum, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
-                                        <ColumnDefinition Width="{Binding DataContext.ColWidthDuration, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
-                                        <ColumnDefinition Width="{Binding DataContext.ColWidthFormat, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
-                                        <ColumnDefinition Width="{Binding DataContext.ColWidthSampleRate, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
-                                        <ColumnDefinition Width="{Binding DataContext.ColWidthBitDepth, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
-                                        <ColumnDefinition Width="{Binding DataContext.ColWidthBitrate, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
+                                        <ColumnDefinition Width="{Binding DataContext.SlotWidth0, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
+                                        <ColumnDefinition Width="{Binding DataContext.SlotWidth1, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
+                                        <ColumnDefinition Width="{Binding DataContext.SlotWidth2, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
+                                        <ColumnDefinition Width="{Binding DataContext.SlotWidth3, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
+                                        <ColumnDefinition Width="{Binding DataContext.SlotWidth4, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
+                                        <ColumnDefinition Width="{Binding DataContext.SlotWidth5, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
+                                        <ColumnDefinition Width="{Binding DataContext.SlotWidth6, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
+                                        <ColumnDefinition Width="{Binding DataContext.SlotWidth7, RelativeSource={RelativeSource AncestorType=ListBox}, Converter={StaticResource DoubleToGridLength}}" />
                                     </Grid.ColumnDefinitions>
                         
                                     <Border Grid.Column="0" Width="72" Height="72" CornerRadius="2"
@@ -1154,28 +1155,38 @@
                     <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
                 </StackPanel>
 
-                <!-- 搜索栏：关键词 + 音源 + 专辑模式 + 音质 -->
+                <!-- 搜索栏固定两行：最小窗口下也保留可用的关键词输入宽度。 -->
                 <Grid Grid.Row="1" Margin="0,10,0,10">
-                    <Grid.ColumnDefinitions>
-                        <ColumnDefinition Width="*" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                        <ColumnDefinition Width="Auto" />
-                    </Grid.ColumnDefinitions>
-                    <ui:TextBox x:Name="OnlineKeywordBox" PlaceholderText="歌名 / 歌手 / 专辑" Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}"
-                                AutomationProperties.Name="搜索关键词"
-                                KeyDown="OnOnlineSearchKeyDown" />
-                    <ComboBox Grid.Column="1" MinWidth="110" Margin="8,0,0,0"
-                              ItemsSource="{Binding Sources}" SelectedItem="{Binding SelectedSource}"
-                              DisplayMemberPath="Name" />
-                    <ui:ToggleSwitch Grid.Column="2" Margin="12,0,0,0" VerticalAlignment="Center"
-                                     IsChecked="{Binding IsAlbumMode}" Content="专辑" />
-                    <ComboBox Grid.Column="3" MinWidth="110" Margin="12,0,0,0"
-                              ItemsSource="{Binding BrOptions}" SelectedItem="{Binding SelectedBrOption}" />
-                    <ui:Button Grid.Column="4" Margin="8,0,0,0" Appearance="Primary"
-                               Content="搜索" Command="{Binding SearchCommand}"
-                               IsEnabled="{Binding CanSearch}" />
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ui:TextBox x:Name="OnlineKeywordBox" PlaceholderText="歌名 / 歌手 / 专辑" Text="{Binding Keyword, UpdateSourceTrigger=PropertyChanged}"
+                                    AutomationProperties.Name="搜索关键词"
+                                    KeyDown="OnOnlineSearchKeyDown" />
+                        <ui:Button Grid.Column="1" Margin="8,0,0,0" Appearance="Primary"
+                                   Content="搜索" Command="{Binding SearchCommand}"
+                                   IsEnabled="{Binding CanSearch}" />
+                    </Grid>
+                    <Grid Grid.Row="1" Margin="0,8,0,0">
+                        <Grid.ColumnDefinitions>
+                            <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
+                            <ColumnDefinition Width="Auto" />
+                        </Grid.ColumnDefinitions>
+                        <ComboBox MinWidth="100"
+                                  ItemsSource="{Binding Sources}" SelectedItem="{Binding SelectedSource}"
+                                  DisplayMemberPath="Name" />
+                        <ui:ToggleSwitch Grid.Column="1" Margin="12,0,0,0" VerticalAlignment="Center"
+                                         IsChecked="{Binding IsAlbumMode}" Content="专辑" />
+                        <ComboBox Grid.Column="2" MinWidth="100" Margin="12,0,0,0"
+                                  ItemsSource="{Binding BrOptions}" SelectedItem="{Binding SelectedBrOption}" />
+                    </Grid>
                 </Grid>
 
                 <!-- 结果列表 -->
@@ -1184,14 +1195,15 @@
                         <RowDefinition Height="Auto" />
                         <RowDefinition Height="*" />
                         <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
                     </Grid.RowDefinitions>
 
                     <Grid>
                         <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="*" />
-                            <ColumnDefinition Width="200" />
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="80" />
+                            <ColumnDefinition Width="3*" MinWidth="120" />
+                            <ColumnDefinition Width="2*" MaxWidth="200" />
+                            <ColumnDefinition Width="64" />
+                            <ColumnDefinition Width="64" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Text="标题" Style="{StaticResource TrackHeaderLabelStyle}" />
                         <TextBlock Grid.Column="1" Text="歌手 / 专辑" Style="{StaticResource TrackHeaderLabelStyle}" />
@@ -1210,7 +1222,7 @@
                         <ListBox.Template>
                             <ControlTemplate TargetType="ListBox">
                                 <Border Background="{TemplateBinding Background}" BorderThickness="0">
-                                    <ScrollViewer Focusable="False" Padding="0" Margin="0">
+                                        <ScrollViewer Focusable="False" CanContentScroll="True" Padding="0" Margin="0">
                                         <ItemsPresenter />
                                     </ScrollViewer>
                                 </Border>
@@ -1246,10 +1258,10 @@
                             <DataTemplate>
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="*" />
-                                        <ColumnDefinition Width="200" />
-                                        <ColumnDefinition Width="120" />
-                                        <ColumnDefinition Width="80" />
+                                        <ColumnDefinition Width="3*" MinWidth="120" />
+                                        <ColumnDefinition Width="2*" MaxWidth="200" />
+                                        <ColumnDefinition Width="64" />
+                                        <ColumnDefinition Width="64" />
                                     </Grid.ColumnDefinitions>
                                     <TextBlock Text="{Binding Name}" Style="{StaticResource TitleTextStyle}"
                                                TextTrimming="CharacterEllipsis" />
@@ -1303,7 +1315,7 @@
                     <ListBox.Template>
                         <ControlTemplate TargetType="ListBox">
                             <Border Background="{TemplateBinding Background}" BorderThickness="0">
-                                <ScrollViewer Focusable="False" Padding="0" Margin="0">
+                                <ScrollViewer Focusable="False" CanContentScroll="True" Padding="0" Margin="0">
                                     <ItemsPresenter />
                                 </ScrollViewer>
                             </Border>
@@ -1395,6 +1407,7 @@
                         <StackPanel DockPanel.Dock="Top" Margin="10,10,10,4">
                             <ui:TextBox x:Name="FilterBox" PlaceholderText="搜索当前列表" Height="30"
                                        Icon="{ui:SymbolIcon Search24}"
+                                       Visibility="{Binding IsTrackFilterPage, Converter={StaticResource BoolToVis}}"
                                        Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
                     <!-- 底部：只剩扫描进度 + 状态提示（导入移入设置页、设置按钮移入播放条，UI-R1.5 反馈） -->
@@ -1479,7 +1492,7 @@
                           Panel.ZIndex="2" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
                           Background="Transparent" />
 
-            <Border Grid.Column="2" Background="{DynamicResource SurfaceBrush}">
+            <Border x:Name="MainContentHost" Grid.Column="2" Background="{DynamicResource SurfaceBrush}">
                 <ContentControl Content="{Binding CurrentPage}" />
             </Border>
             <Border Grid.Column="3" Width="1" Background="{DynamicResource BorderSoftBrush}" />

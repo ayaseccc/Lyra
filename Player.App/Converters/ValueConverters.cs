@@ -57,25 +57,6 @@ public sealed class EmptyToVisibilityConverter : IValueConverter
 }
 
 
-/// <summary>bool → 强调色/半透明画刷（播放模式按钮、歌词开关的选中高亮，UI-R1）。</summary>
-public sealed class BoolToAccentConverter : IValueConverter
-{
-    public object Convert(object? value, Type targetType, object? parameter, CultureInfo culture)
-    {
-        if (value is true)
-        {
-            var accent = System.Windows.Application.Current?.TryFindResource("AccentBrush") as SolidColorBrush
-                         ?? new SolidColorBrush(System.Windows.Media.Color.FromRgb(0x60, 0xCD, 0xFF));
-            return accent;
-        }
-
-        return new SolidColorBrush(System.Windows.Media.Color.FromArgb(0x1A, 0xFF, 0xFF, 0xFF));
-    }
-
-    public object ConvertBack(object? value, Type targetType, object? parameter, CultureInfo culture)
-        => throw new NotSupportedException();
-}
-
 /// <summary>
 /// 音量方块（L1.1-① 语义色修正）：返回该格的透明度——已到达格=1.0（前景强调色，醒目），
 /// 未到达格=0.22（弱化）。方块背景统一绑定 DynamicResource VolumeReachedBrush：

@@ -21,6 +21,10 @@ public sealed class SmtcService : IDisposable
     private readonly PlayerViewModel _player;
     private readonly SystemMediaTransportControls? _smtc;
     private DateTime _lastPositionPush = DateTime.MinValue;
+    private readonly DispatcherTimer _metadataDebounceTimer;
+    private readonly object _metadataGate = new();
+    private CancellationTokenSource? _metadataCts;
+    private long _metadataGeneration;
     private bool _disposed;
 
     /// <summary>
@@ -32,6 +36,10 @@ public sealed class SmtcService : IDisposable
     {
         _player = player;
 
+        // GetForWindow is the expected failure point while the HWND is still
+        // settling. Resolve and configure it before creating a DispatcherTimer;
+        // otherwise each constructor retry would leave a timer holding the failed
+        // partial instance alive.
         _smtc = SystemMediaTransportControlsInterop.GetForWindow(hwnd);
         _smtc.IsEnabled = true;
         _smtc.IsPlayEnabled = true;
@@ -39,6 +47,14 @@ public sealed class SmtcService : IDisposable
         _smtc.IsNextEnabled = true;
         _smtc.IsPreviousEnabled = true;
         _smtc.ButtonPressed += OnButtonPressed;
+
+        _metadataDebounceTimer = new DispatcherTimer(
+            DispatcherPriority.Background,
+            Application.Current?.Dispatcher ?? Dispatcher.CurrentDispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(40)
+        };
+        _metadataDebounceTimer.Tick += OnMetadataDebounceTick;
 
         player.PropertyChanged += OnPlayerPropertyChanged;
         PushAll();
@@ -52,7 +68,8 @@ public sealed class SmtcService : IDisposable
             case nameof(PlayerViewModel.Artist):
             case nameof(PlayerViewModel.Album):
             case nameof(PlayerViewModel.CurrentTrack):
-                PushMetadata();
+            case nameof(PlayerViewModel.IsOnlinePreview):
+                if (_player.HasTrack) RequestMetadataPush();
                 break;
             case nameof(PlayerViewModel.IsPlaying):
                 PushState();
@@ -71,41 +88,130 @@ public sealed class SmtcService : IDisposable
 
     private void PushAll()
     {
-        PushMetadata();
+        if (!_player.HasTrack)
+        {
+            PushStopped();
+            return;
+        }
+
+        RequestMetadataPush();
         PushState();
         PushPosition();
     }
 
-    private async void PushMetadata()
+    private void RequestMetadataPush()
     {
-        if (_smtc is null) return;
+        if (_smtc is null || _disposed || !_player.HasTrack) return;
+        lock (_metadataGate) _metadataGeneration++;
+        _metadataDebounceTimer.Stop();
+        _metadataDebounceTimer.Start();
+    }
+
+    private void OnMetadataDebounceTick(object? sender, EventArgs e)
+    {
+        _metadataDebounceTimer.Stop();
+        StartMetadataPush();
+    }
+
+    private void StartMetadataPush()
+    {
+        if (_smtc is null || _disposed || !_player.HasTrack) return;
+
+        CancellationTokenSource? previous;
+        CancellationTokenSource current;
+        long generation;
+        lock (_metadataGate)
+        {
+            generation = _metadataGeneration;
+            previous = _metadataCts;
+            current = _metadataCts = new CancellationTokenSource();
+        }
+
+        try { previous?.Cancel(); }
+        catch (ObjectDisposedException) { }
+
+        _ = PushMetadataAsync(generation, current);
+    }
+
+    private async Task PushMetadataAsync(long generation, CancellationTokenSource requestCts)
+    {
+        var cancellationToken = requestCts.Token;
         try
         {
-            var updater = _smtc.DisplayUpdater;
-            updater.Type = MediaPlaybackType.Music;
-            updater.MusicProperties.Title = string.IsNullOrWhiteSpace(_player.Title) || _player.Title == "未在播放"
+            if (_smtc is null || !IsMetadataCurrent(generation)) return;
+
+            // Snapshot all scalar metadata before the asynchronous cover lookup.
+            // The commit below is guarded by the same generation, so a slow old
+            // cover can never update SMTC after a newer track has arrived.
+            var title = string.IsNullOrWhiteSpace(_player.Title) || _player.Title == "未在播放"
                 ? "Player"
                 : _player.Title;
-            updater.MusicProperties.Artist = _player.Artist ?? string.Empty;
-            updater.MusicProperties.AlbumTitle = _player.Album ?? string.Empty;
+            var artist = _player.Artist ?? string.Empty;
+            var album = _player.Album ?? string.Empty;
+            RandomAccessStreamReference? thumbnail = null;
 
-            var hash = _player.CurrentTrack?.CoverHash;
+            // Online preview metadata does not belong to PlaybackList.Current;
+            // reusing that local row's hash would show the previous song's cover.
+            var hash = _player.IsOnlinePreview ? null : _player.CurrentTrack?.CoverHash;
             if (!string.IsNullOrEmpty(hash))
             {
                 var path = Path.Combine(AppPaths.CoversDir, hash + ".jpg");
                 if (File.Exists(path))
                 {
                     var file = await StorageFile.GetFileFromPathAsync(path);
-                    updater.Thumbnail = RandomAccessStreamReference.CreateFromFile(file);
+                    cancellationToken.ThrowIfCancellationRequested();
+                    thumbnail = RandomAccessStreamReference.CreateFromFile(file);
                 }
             }
 
+            if (!IsMetadataCurrent(generation)) return;
+
+            var updater = _smtc.DisplayUpdater;
+            updater.Type = MediaPlaybackType.Music;
+            updater.MusicProperties.Title = title;
+            updater.MusicProperties.Artist = artist;
+            updater.MusicProperties.AlbumTitle = album;
+            updater.Thumbnail = thumbnail;
             updater.Update();
+        }
+        catch (OperationCanceledException)
+        {
+            // A newer metadata request superseded this one.
         }
         catch (Exception ex)
         {
             Serilog.Log.Debug(ex, "SMTC 元数据推送失败");
         }
+        finally
+        {
+            lock (_metadataGate)
+            {
+                if (ReferenceEquals(_metadataCts, requestCts))
+                    _metadataCts = null;
+            }
+            requestCts.Dispose();
+        }
+    }
+
+    private bool IsMetadataCurrent(long generation)
+    {
+        lock (_metadataGate)
+            return !_disposed && _player.HasTrack && generation == _metadataGeneration;
+    }
+
+    private void CancelMetadataPush()
+    {
+        CancellationTokenSource? pending;
+        lock (_metadataGate)
+        {
+            _metadataGeneration++;
+            pending = _metadataCts;
+            _metadataCts = null;
+        }
+
+        try { pending?.Cancel(); }
+        catch (ObjectDisposedException) { }
+        // PushMetadataAsync owns disposal after the pending WinRT call unwinds.
     }
 
     private void PushState()
@@ -145,6 +251,8 @@ public sealed class SmtcService : IDisposable
     private void PushStopped()
     {
         if (_smtc is null) return;
+        _metadataDebounceTimer.Stop();
+        CancelMetadataPush();
         try
         {
             // 停止时清掉陈旧元数据，避免浮窗残留上一首（审查修复）
@@ -153,6 +261,7 @@ public sealed class SmtcService : IDisposable
             updater.MusicProperties.Title = string.Empty;
             updater.MusicProperties.Artist = string.Empty;
             updater.MusicProperties.AlbumTitle = string.Empty;
+            updater.Thumbnail = null;
             updater.Update();
             _smtc.PlaybackStatus = MediaPlaybackStatus.Stopped;
         }
@@ -192,6 +301,9 @@ public sealed class SmtcService : IDisposable
     {
         if (_disposed) return;
         _disposed = true;
+        _metadataDebounceTimer.Stop();
+        _metadataDebounceTimer.Tick -= OnMetadataDebounceTick;
+        CancelMetadataPush();
         if (_smtc is not null)
         {
             _smtc.ButtonPressed -= OnButtonPressed;

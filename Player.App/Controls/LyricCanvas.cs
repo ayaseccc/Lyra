@@ -32,7 +32,7 @@ public sealed class LyricRenderLine
 public sealed class LyricCanvas : FrameworkElement
 {
     private static readonly Stopwatch FrameClock = Stopwatch.StartNew();
-    private static double _lastFrameMs = FrameClock.Elapsed.TotalMilliseconds;
+    private double _lastFrameMs = FrameClock.Elapsed.TotalMilliseconds;
 
     private double _offset;
     private bool _animating;
@@ -71,6 +71,12 @@ public sealed class LyricCanvas : FrameworkElement
 
     /// <summary>布局缓存对应的字号缩放。</summary>
     private double _layoutScale = 1.0;
+
+    // 几何缓存：布局重建时一次生成，渲染帧和鼠标交互只读，避免每帧
+    // ComputeHeights/ComputeUnitTops 产生数组并重复 O(n) 扫描。
+    private double[] _layoutHeights = Array.Empty<double>();
+    private double[] _layoutTops = Array.Empty<double>();
+    private double _layoutTotalHeight;
 
     /// <summary>缓存失效标志：Lines 或宽度变化时置 true，下一帧重建。</summary>
     private bool _cacheDirty = true;
@@ -120,7 +126,20 @@ public sealed class LyricCanvas : FrameworkElement
         ClipToBounds = true;
         // 目验五修复：不再自设 Focusable（Tab 焦点框问题），需要键盘时由宿主统一管理
         Cursor = Cursors.Hand;
+        Loaded += OnLoaded;
+        IsVisibleChanged += OnIsVisibleChanged;
+        Unloaded += OnUnloaded;
     }
+
+    private void OnLoaded(object sender, RoutedEventArgs e) => StartAnimation();
+
+    private void OnIsVisibleChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (IsVisible) StartAnimation();
+        else StopAnimation();
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e) => StopAnimation();
 
     /// <summary>目验六修复：自定义元素全区域可命中（无 Background 的 FrameworkElement 默认只在渲染内容上命中，
     /// 导致点击空白/双击/滚轮在空白区域全部落空）。</summary>
@@ -195,7 +214,11 @@ public sealed class LyricCanvas : FrameworkElement
         if (d is not LyricCanvas canvas) return;
 
         // 行数据或宽度变化 → 布局缓存整体失效
-        if (e.Property == LinesProperty) canvas._cacheDirty = true;
+        if (e.Property == LinesProperty)
+        {
+            canvas._cacheDirty = true;
+            canvas.ClearGeometryCache();
+        }
 
         canvas.InvalidateVisual();
         canvas.StartAnimation();
@@ -205,7 +228,7 @@ public sealed class LyricCanvas : FrameworkElement
 
     private void StartAnimation()
     {
-        if (_animating) return;
+        if (_animating || !IsVisible || ActualWidth <= 0 || ActualHeight <= 0 || IsStatic) return;
         _animating = true;
         _lastFrameMs = FrameClock.Elapsed.TotalMilliseconds;
         CompositionTarget.Rendering += OnRenderingFrame;
@@ -219,6 +242,19 @@ public sealed class LyricCanvas : FrameworkElement
 
     private void OnRenderingFrame(object? sender, EventArgs e)
     {
+        if (!IsVisible || ActualWidth <= 0 || ActualHeight <= 0)
+        {
+            StopAnimation();
+            return;
+        }
+
+        if (_cacheDirty)
+        {
+            // OnRender 将在本帧重建布局；不要用尚未完成的旧几何推进偏移。
+            InvalidateVisual();
+            return;
+        }
+
         var nowMs = FrameClock.Elapsed.TotalMilliseconds;
         var dt = Math.Min(0.05, Math.Max(0.001, (nowMs - _lastFrameMs) / 1000.0));
         _lastFrameMs = nowMs;
@@ -242,7 +278,7 @@ public sealed class LyricCanvas : FrameworkElement
             return;
         }
 
-        var target = LyricLayout.TargetOffsetForUnit(CurrentIndex, heights, ActualHeight);
+        var target = TargetOffsetForCurrent(ActualHeight);
         var (next, settled) = LyricLayout.EaseTowards(_offset, target, dt);
         _offset = next;
         InvalidateVisual();
@@ -253,14 +289,116 @@ public sealed class LyricCanvas : FrameworkElement
 
     /// <summary>所有单元的当前高度（无布局时为 -1 表示需要重排）。</summary>
     private double[] ComputeHeights()
+        => _layoutHeights;
+
+    private void ClearGeometryCache()
     {
-        var lines = Lines;
-        if (lines is null || lines.Count == 0) return Array.Empty<double>();
+        _layoutHeights = Array.Empty<double>();
+        _layoutTops = Array.Empty<double>();
+        _layoutTotalHeight = 0;
+    }
+
+    private void RebuildGeometryCache(IReadOnlyList<LyricRenderLine> lines)
+    {
+        if (lines.Count == 0)
+        {
+            ClearGeometryCache();
+            return;
+        }
 
         var heights = new double[lines.Count];
+        var tops = new double[lines.Count];
+        var total = 0.0;
         for (var i = 0; i < lines.Count; i++)
-            heights[i] = _unitCache.TryGetValue(i, out var data) ? data.Height : double.NaN;
-        return heights;
+        {
+            tops[i] = total;
+            heights[i] = _unitCache.TryGetValue(i, out var data) ? data.Height : 0;
+            total += heights[i];
+            if (i + 1 < lines.Count) total += LyricLayout.UnitGap;
+        }
+
+        _layoutHeights = heights;
+        _layoutTops = tops;
+        _layoutTotalHeight = total;
+    }
+
+    private double TargetOffsetForCurrent(double viewportHeight)
+    {
+        if (CurrentIndex < 0 || _layoutHeights.Length == 0 || viewportHeight <= 0)
+            return 0;
+
+        var index = Math.Clamp(CurrentIndex, 0, _layoutHeights.Length - 1);
+        var target = _layoutTops[index] + _layoutHeights[index] / 2 - viewportHeight / 2;
+        return Math.Clamp(target, 0, Math.Max(0, _layoutTotalHeight - viewportHeight));
+    }
+
+    private (int First, int Last) VisibleUnitRange(double offset, double viewportHeight)
+    {
+        if (_layoutHeights.Length == 0 || viewportHeight <= 0) return (-1, -1);
+
+        var lo = 0;
+        var hi = _layoutHeights.Length - 1;
+        var first = _layoutHeights.Length;
+        while (lo <= hi)
+        {
+            var mid = lo + ((hi - lo) / 2);
+            if (_layoutTops[mid] + _layoutHeights[mid] >= offset)
+            {
+                first = mid;
+                hi = mid - 1;
+            }
+            else
+            {
+                lo = mid + 1;
+            }
+        }
+
+        if (first == _layoutHeights.Length) return (-1, -1);
+
+        lo = first;
+        hi = _layoutHeights.Length - 1;
+        var last = first;
+        var bottom = offset + viewportHeight;
+        while (lo <= hi)
+        {
+            var mid = lo + ((hi - lo) / 2);
+            if (_layoutTops[mid] <= bottom)
+            {
+                last = mid;
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
+        }
+
+        return (first, last);
+    }
+
+    private int HitTestUnit(double y, double offset)
+    {
+        var contentY = y + offset;
+        var lo = 0;
+        var hi = _layoutHeights.Length - 1;
+        var candidate = -1;
+        while (lo <= hi)
+        {
+            var mid = lo + ((hi - lo) / 2);
+            if (_layoutTops[mid] <= contentY)
+            {
+                candidate = mid;
+                lo = mid + 1;
+            }
+            else
+            {
+                hi = mid - 1;
+            }
+        }
+
+        return candidate >= 0 && contentY < _layoutTops[candidate] + _layoutHeights[candidate]
+            ? candidate
+            : -1;
     }
 
     // ---------------- 交互 ----------------
@@ -277,7 +415,7 @@ public sealed class LyricCanvas : FrameworkElement
         var heights = ComputeHeights();
         if (heights.Length == 0) return;
 
-        var maxOffset = Math.Max(0, LyricLayout.TotalHeight(heights) - ActualHeight);
+        var maxOffset = Math.Max(0, _layoutTotalHeight - ActualHeight);
         var step = WheelBrowsing && !IsStatic ? LyricLayout.PrimaryLineHeight * 4 : LyricLayout.WheelStep(e.Delta);
         if (WheelBrowsing && !IsStatic)
         {
@@ -321,7 +459,7 @@ public sealed class LyricCanvas : FrameworkElement
 
         var heights = ComputeHeights();
         if (heights.Length == 0) return;
-        var maxOffset = Math.Max(0, LyricLayout.TotalHeight(heights) - ActualHeight);
+        var maxOffset = Math.Max(0, _layoutTotalHeight - ActualHeight);
         // 手指上滑 = 内容上移 = 偏移增大
         _offset = Math.Clamp(_dragStartOffset + (_dragStartY - pos.Y), 0, maxOffset);
         _freeBrowse = true;
@@ -361,7 +499,7 @@ public sealed class LyricCanvas : FrameworkElement
             return;
         }
 
-        var index = LyricLayout.HitTestUnit(pos.Y, _offset, heights);
+        var index = HitTestUnit(pos.Y, _offset);
         // 目验七修复：命中收窄到文字横向范围——行 Y 上但 x 远离文字的点击算空白（左/右半区导航）
         if (index >= 0 && IsOverUnitText(index, pos.X))
         {
@@ -388,6 +526,7 @@ public sealed class LyricCanvas : FrameworkElement
     {
         base.OnRenderSizeChanged(sizeInfo);
         _cacheDirty = true;   // 栏宽变化即时重排（R5 ⑥）
+        ClearGeometryCache();
         StartAnimation();
     }
 
@@ -396,7 +535,16 @@ public sealed class LyricCanvas : FrameworkElement
     protected override void OnRender(DrawingContext dc)
     {
         var lines = Lines;
-        if (lines is null || lines.Count == 0) return;
+        if (lines is null || lines.Count == 0)
+        {
+            _unitCache.Clear();
+            _currentCache.Clear();
+            ClearGeometryCache();
+            _cacheDirty = false;
+            _offset = 0;
+            StopAnimation();
+            return;
+        }
 
         var dpi = VisualTreeHelper.GetDpi(this);
         var pixelsPerDip = dpi.PixelsPerDip;
@@ -448,6 +596,8 @@ public sealed class LyricCanvas : FrameworkElement
                                  : 0);
                 _unitCache[i] = new UnitRenderData { Primary = primaryFt, Secondary = secondaryFt, Height = height };
             }
+
+            RebuildGeometryCache(lines);
         }
 
         var heights = ComputeHeights();
@@ -458,11 +608,11 @@ public sealed class LyricCanvas : FrameworkElement
         var subText = SubTextBrush ?? Brushes.White;
         EnsureBrushes(baseText, subText, accent);
 
-        var (first, last) = LyricLayout.VisibleUnits(_offset, ActualHeight, heights);
+        var (first, last) = VisibleUnitRange(_offset, ActualHeight);
         if (first < 0) return;
         last = Math.Min(last, lines.Count - 1);   // 防御（曾偶发越界）
 
-        var tops = LyricLayout.ComputeUnitTops(heights);
+        var tops = _layoutTops;
 
         for (var i = first; i <= last; i++)
         {

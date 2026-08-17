@@ -1,5 +1,41 @@
 namespace Player.Core.Audio;
 
+/// <summary>Identity carried by asynchronous natural-end and seamless-transition events.</summary>
+public sealed class PlaybackTrackEventArgs : EventArgs
+{
+    internal PlaybackTrackEventArgs(
+        int identityRevision,
+        int controlRevision,
+        int channel,
+        TrackInfo track,
+        string path,
+        bool requiresControlMatch)
+    {
+        Revision = identityRevision;
+        ControlRevision = controlRevision;
+        Channel = channel;
+        Track = track;
+        Path = path;
+        RequiresControlMatch = requiresControlMatch;
+    }
+
+    /// <summary>Current-track identity generation. Pause/seek/output rebuilds do not change it.</summary>
+    public int Revision { get; }
+
+    public TrackInfo Track { get; }
+
+    public string Path { get; }
+
+    /// <summary>Whether UI state created for another track generation belongs to this event.</summary>
+    public bool HasTrackIdentity(int revision) => Revision != 0 && Revision == revision;
+
+    internal int ControlRevision { get; }
+
+    internal int Channel { get; }
+
+    internal bool RequiresControlMatch { get; }
+}
+
 /// <summary>
 /// 播放引擎接口。P2 起播放链路固定为「解码流 → bassmix → IOutputBackend」，
 /// 输出后端可在运行时切换（ASIO / WASAPI 独占共享 / 系统输出）。
@@ -9,6 +45,15 @@ public interface IPlaybackEngine : IDisposable
     TrackInfo? CurrentTrack { get; }
 
     PlayerState State { get; }
+
+    /// <summary>Changes only when the current track identity changes.</summary>
+    int PlaybackRevision { get; }
+
+    /// <summary>
+    /// Atomically validates an asynchronous natural-end or seamless-transition event.
+    /// Call this immediately before applying the event after switching to another thread.
+    /// </summary>
+    bool IsPlaybackEventCurrent(PlaybackTrackEventArgs playbackEvent);
 
     /// <summary>0.0 ~ 1.0 的软件音量。衰减发生在 mixer 上，1.0 时不做任何处理（位完美）。</summary>
     double Volume { get; set; }
@@ -92,11 +137,11 @@ public interface IPlaybackEngine : IDisposable
     /// <summary>成功打开新曲目。</summary>
     event EventHandler<TrackInfo>? TrackOpened;
 
-    /// <summary>播放自然结束且没有可无缝衔接的下一曲。<b>在 BASS 回调线程触发。</b></summary>
-    event EventHandler? TrackEnded;
+    /// <summary>播放自然结束且没有可无缝衔接的下一曲。由 END worker 发布，非 BASS 回调线程。</summary>
+    event EventHandler<PlaybackTrackEventArgs>? TrackEnded;
 
-    /// <summary>已无缝切到预载的下一曲（参数是它的路径）。<b>在 BASS 混音线程触发。</b></summary>
-    event EventHandler<string>? TrackTransitioned;
+    /// <summary>已无缝切到预载的下一曲。由 END worker 发布，参数携带曲目身份。</summary>
+    event EventHandler<PlaybackTrackEventArgs>? TrackTransitioned;
 
     /// <summary>输出链路变了（切后端、设备回退、采样率跟随切换）。</summary>
     event EventHandler? OutputChanged;

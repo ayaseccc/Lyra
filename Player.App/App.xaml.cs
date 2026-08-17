@@ -108,9 +108,9 @@ public partial class App : Application
         // P3：ChKSz 客户端与歌词服务。Key 只在 ConfigService 里读，任何在线失败都不影响本地播放
         _client = new ChkszClient();
 
-        // P4：在线源注册表（GD 默认零 Key + 网易云兜底），后台探测可用性（下拉灰显用）
+        // P4：在线源注册表（GD 默认零 Key + 网易云兜底）。可用性探测延迟到
+        // 首次进入在线搜索页，避免每次启动都产生与本地播放无关的网络请求。
         _onlineSources = new Player.Core.Online.OnlineSources(_client);
-        _ = _onlineSources.ProbeAllAsync(CancellationToken.None);
 
         // P4-6：歌词链插入 GD（零额度优先；未注入时保持原链）
         _lyrics = new LyricsService(_client, _onlineSources.Default as Player.Core.Online.GdSource);

@@ -30,13 +30,22 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
     private readonly Timer _watchdog;
 
-    /// <summary>BASS 只保存函数指针，委托必须按句柄持有，否则被 GC 回收会在回调时崩。</summary>
-    private readonly Dictionary<int, SyncProcedure> _syncProcedures = new();
+    private static readonly WaitCallback EndNotificationCallback = static state =>
+        ((PlaybackEngine)state!).ProcessEndNotifications();
+
+    private readonly PlaybackEndQueue _endNotifications = new();
+
+    /// <summary>所有后台预载都在这里单飞并跟踪；BASS 退出前必须先排空。</summary>
+    private readonly PreloadWorkTracker _preloadWork = new();
+
+    /// <summary>共享委托由引擎终身持有；每次注册用 user generation 区分。</summary>
+    private readonly SyncProcedure _endSyncProcedure;
 
     /// <summary>等着被释放的旧解码流：混音回调里不能释放，攒起来由看门狗回收。</summary>
-    private readonly List<int> _pendingFree = new();
+    private readonly List<int> _pendingFree = new(4);
 
     private IOutputBackend _backend;
+    private readonly BackendRecoveryQueue _backendRecovery = new();
     private OutputSettings _settings = new();
 
     private int _mixer;
@@ -54,6 +63,16 @@ public sealed class PlaybackEngine : IPlaybackEngine
     private int _spectrumDspGeneration;
 
     private int _current;
+    // Track identity and control intent are deliberately separate. A seamless
+    // transition must still reach the UI when Pause/Seek/Stop or an output
+    // rebuild happens while its notification is queued; a natural-end
+    // notification, on the other hand, must be cancelled by those controls.
+    private int _trackIdentityGeneration;
+    private int _currentTrackIdentityGeneration;
+    private int _controlRevision;
+    private int _currentControlRevision;
+    private int _endSyncGeneration;
+    private int _currentEndSyncGeneration;
     private int _next;
     private string? _nextPath;
     private TrackInfo? _nextInfo;
@@ -74,8 +93,10 @@ public sealed class PlaybackEngine : IPlaybackEngine
         _spectrumTap = new SpectrumPcmTap(_spectrumRing);
         _spectrumAnalyzer = new SpectrumAnalyzer(_spectrumRing);
         _spectrumDspProcedure = OnSpectrumDsp;
+        _endSyncProcedure = OnSourceEnded;
 
         _backend = new DirectSoundBackend();
+        _backendRecovery.Activate(_backend);
         AttachBackendEvents(_backend);
 
         // 看门狗：ASIO 有驱动通知，WASAPI / DirectSound 只能靠轮询发现设备掉线；
@@ -84,11 +105,18 @@ public sealed class PlaybackEngine : IPlaybackEngine
         {
             if (_disposed) return;
 
-            try { _backend.Poll(); }
-            catch (Exception ex) { Log.Debug(ex, "输出自检失败"); }
+            lock (_control)
+            {
+                if (_disposed) return;
 
-            try { FreePendingHandles(); }
-            catch (Exception ex) { Log.Debug(ex, "回收旧解码流失败"); }
+                // Native Poll must not cross Start/Stop/Dispose on the same backend.
+                // Its events only enqueue recovery work, so this lock cannot re-enter.
+                try { _backend.Poll(); }
+                catch (Exception ex) { Log.Debug(ex, "输出自检失败"); }
+
+                try { FreePendingHandles(); }
+                catch (Exception ex) { Log.Debug(ex, "回收旧解码流失败"); }
+            }
         }, null, TimeSpan.FromSeconds(2), TimeSpan.FromSeconds(1));
     }
 
@@ -100,10 +128,31 @@ public sealed class PlaybackEngine : IPlaybackEngine
         private set => _state = value;
     }
 
+    public int PlaybackRevision => Volatile.Read(ref _currentTrackIdentityGeneration);
+
+    public bool IsPlaybackEventCurrent(PlaybackTrackEventArgs playbackEvent)
+    {
+        ArgumentNullException.ThrowIfNull(playbackEvent);
+
+        lock (_swap)
+        {
+            return !_disposed && ShouldPublishEnd(
+                playbackEvent.RequiresControlMatch ? PlaybackEndKind.Ended : PlaybackEndKind.Transitioned,
+                playbackEvent.Revision,
+                playbackEvent.ControlRevision,
+                playbackEvent.Channel,
+                playbackEvent.Track,
+                PlaybackRevision,
+                Volatile.Read(ref _currentControlRevision),
+                _current,
+                CurrentTrack);
+        }
+    }
+
     public event EventHandler<PlayerState>? StateChanged;
     public event EventHandler<TrackInfo>? TrackOpened;
-    public event EventHandler? TrackEnded;
-    public event EventHandler<string>? TrackTransitioned;
+    public event EventHandler<PlaybackTrackEventArgs>? TrackEnded;
+    public event EventHandler<PlaybackTrackEventArgs>? TrackTransitioned;
     public event EventHandler? OutputChanged;
     public event EventHandler<string>? ErrorOccurred;
 
@@ -206,95 +255,105 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
     private void SwapBackend(IOutputBackend backend)
     {
+        var previous = _backend;
+        // 先切换活动身份，让旧后端在 Dispose 期间发出的迟到通知立即失效。
+        _backend = backend;
+        _backendRecovery.Activate(backend);
+
         try
         {
-            _backend.DeviceLost -= OnDeviceLost;
-            _backend.FormatChanged -= OnBackendFormatChanged;
-            _backend.Dispose();
+            previous.DeviceLost -= OnDeviceLost;
+            previous.FormatChanged -= OnBackendFormatChanged;
+            previous.Dispose();
         }
         catch (Exception ex)
         {
             Log.Debug(ex, "释放旧后端失败");
         }
 
-        _backend = backend;
         AttachBackendEvents(_backend);
     }
 
-    /// <summary>设备掉了（拔线 / 被别的程序抢走）。可能来自驱动回调线程。</summary>
+    /// <summary>设备掉了（拔线 / 被别的程序抢走）。只排队，恢复由单一控制工作项执行。</summary>
     private void OnDeviceLost(object? sender, string reason)
     {
-        if (_disposed) return;
-
-        Log.Warning("输出设备异常：{Reason}，回退到系统输出", reason);
-
-        // 驱动回调线程里不做重建，扔给线程池，避免卡住驱动
-        Task.Run(() =>
-        {
-            if (_disposed) return;
-
-            try
-            {
-                var wasPlaying = State == PlayerState.Playing;
-                var position = Position;
-
-                lock (_control)
-                {
-                    if (_disposed) return;
-
-                    SwapBackend(new DirectSoundBackend());
-                    _settings.Backend = OutputBackendKind.DirectSound;
-                    BuildChain(ResolveTargetRate(CurrentTrack?.SampleRate ?? 44100));
-                }
-
-                if (CurrentTrack is not null)
-                {
-                    Seek(position);
-                    if (wasPlaying) Play();
-                }
-
-                ErrorOccurred?.Invoke(this, reason + "，已自动切回系统输出");
-                OutputChanged?.Invoke(this, EventArgs.Empty);
-            }
-            catch (Exception ex)
-            {
-                Log.Error(ex, "设备回退失败");
-            }
-        });
+        QueueBackendRecovery(sender, BackendRecoveryKind.DeviceLost, reason);
     }
 
-    /// <summary>设备侧的采样率被改了（比如在 ASIO 面板上手动改）。用同一个后端重建链路把它掰回来。</summary>
+    /// <summary>设备侧格式变化。只排队，恢复由单一控制工作项执行。</summary>
     private void OnBackendFormatChanged(object? sender, string reason)
     {
-        if (_disposed) return;
+        QueueBackendRecovery(sender, BackendRecoveryKind.FormatChanged, reason);
+    }
 
-        Log.Information("输出格式变化：{Reason}，重建链路", reason);
+    private void QueueBackendRecovery(object? sender, BackendRecoveryKind kind, string reason)
+    {
+        if (_disposed || sender is null) return;
 
-        Task.Run(() =>
+        if (!_backendRecovery.TryEnqueue(sender, kind, reason, out var shouldSchedule) ||
+            !shouldSchedule)
+            return;
+
+        // 后端通知线程只会触发一个合并后的控制工作项；重复通知不会叠加 Task.Run。
+        _ = Task.Run(ProcessBackendRecovery);
+    }
+
+    private void ProcessBackendRecovery()
+    {
+        while (!_disposed && _backendRecovery.TryTake(out var request))
         {
-            if (_disposed) return;
-
             try
             {
-                var wasPlaying = State == PlayerState.Playing;
-                var position = Position;
-
-                lock (_control)
-                {
-                    if (_disposed || CurrentTrack is null) return;
-                    BuildChain(ResolveTargetRate(CurrentTrack.SampleRate));
-                }
-
-                Seek(position);
-                if (wasPlaying) Play();
-
-                OutputChanged?.Invoke(this, EventArgs.Empty);
+                RecoverBackend(request);
             }
             catch (Exception ex)
             {
-                Log.Error(ex, "按新格式重建链路失败");
+                Log.Error(ex, "输出后端恢复失败");
             }
-        });
+        }
+    }
+
+    private void RecoverBackend(in BackendRecoveryRequest request)
+    {
+        bool wasPlaying;
+        TimeSpan position;
+        string? errorMessage = null;
+
+        lock (_control)
+        {
+            if (_disposed || !_backendRecovery.IsCurrent(request) ||
+                !ReferenceEquals(request.Backend, _backend))
+                return;
+
+            wasPlaying = State == PlayerState.Playing;
+            position = Position;
+
+            if ((request.Kind & BackendRecoveryKind.DeviceLost) != 0)
+            {
+                Log.Warning("输出设备异常：{Reason}，回退到系统输出", request.Reason);
+                SwapBackend(new DirectSoundBackend());
+                _settings.Backend = OutputBackendKind.DirectSound;
+                BuildChain(ResolveTargetRate(CurrentTrack?.SampleRate ?? 44100));
+                errorMessage = request.Reason + "，已自动切回系统输出";
+            }
+            else
+            {
+                Log.Information("输出格式变化：{Reason}，重建链路", request.Reason);
+                if (CurrentTrack is null) return;
+                BuildChain(ResolveTargetRate(CurrentTrack.SampleRate));
+            }
+
+            // 与重建保持在同一控制临界区，避免用户切歌夹在重建和恢复位置之间。
+            if (CurrentTrack is not null)
+            {
+                Seek(position);
+                if (wasPlaying) Play();
+            }
+        }
+
+        if (errorMessage is not null)
+            ErrorOccurred?.Invoke(this, errorMessage);
+        OutputChanged?.Invoke(this, EventArgs.Empty);
     }
 
     private int ResolveTargetRate(int trackRate) => SeamlessPolicy.ResolveOutputRate(trackRate, _settings);
@@ -365,6 +424,8 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
         try
         {
+            // 同一后端重启也算新会话，丢弃旧 Poll/驱动通知，避免旧回调重建新链路。
+            _backendRecovery.AdvanceSession(_backend);
             _backend.Start(_mixer, _mixerRate, 2, _settings);
         }
         catch (OutputBackendException ex)
@@ -393,6 +454,12 @@ public sealed class PlaybackEngine : IPlaybackEngine
         DetachSpectrumDspLocked();
 
         if (_mixer == 0) return;
+
+        lock (_swap)
+        {
+            _currentEndSyncGeneration = 0;
+            AdvanceControlRevisionLocked();
+        }
 
         if (_current != 0)
         {
@@ -512,6 +579,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
                 _preloadGeneration++;
                 _current = handle;
                 CurrentTrack = track;
+                AdvanceTrackIdentityLocked();
                 _next = 0;
                 _nextPath = null;
                 _nextInfo = null;
@@ -592,13 +660,72 @@ public sealed class PlaybackEngine : IPlaybackEngine
     {
         if (handle == 0 || _mixer == 0) return;
 
-        // 按句柄持有委托：老流可能还躺在待回收列表里，共用一个字段会让它的委托失去强引用
-        SyncProcedure procedure = OnSourceEnded;
-        lock (_swap) { _syncProcedures[handle] = procedure; }
+        int generation;
+        lock (_swap)
+        {
+            if (_disposed || handle != _current || _mixer == 0) return;
+            generation = NextEndSyncGenerationLocked();
+            _currentEndSyncGeneration = generation;
+        }
 
         // Mixtime：回调发生在混音线程、样本边界上，是做无缝衔接的唯一正确时机
-        if (BassMix.ChannelSetSync(handle, SyncFlags.End | SyncFlags.Mixtime, 0, procedure, IntPtr.Zero) == 0)
+        if (BassMix.ChannelSetSync(handle, SyncFlags.End | SyncFlags.Mixtime | SyncFlags.Onetime, 0,
+                _endSyncProcedure, new IntPtr(generation)) == 0)
+        {
+            lock (_swap)
+            {
+                if (_current == handle && _currentEndSyncGeneration == generation)
+                    _currentEndSyncGeneration = 0;
+            }
+
             Log.Warning("设置混音时结束回调失败：{Error}", Bass.LastError);
+        }
+    }
+
+    private int NextEndSyncGenerationLocked()
+    {
+        var generation = unchecked(++_endSyncGeneration);
+        return generation == 0 ? unchecked(++_endSyncGeneration) : generation;
+    }
+
+    private int AdvanceTrackIdentityLocked()
+    {
+        var identity = NextNonZero(ref _trackIdentityGeneration);
+        Volatile.Write(ref _currentTrackIdentityGeneration, identity);
+
+        // A new current track also invalidates every control-sensitive END
+        // completion belonging to the previous identity.
+        AdvanceControlRevisionLocked();
+        return identity;
+    }
+
+    private int AdvanceControlRevisionLocked()
+    {
+        var revision = NextNonZero(ref _controlRevision);
+        Volatile.Write(ref _currentControlRevision, revision);
+        return revision;
+    }
+
+    private static int NextNonZero(ref int counter)
+    {
+        var value = unchecked(++counter);
+        return value == 0 ? unchecked(++counter) : value;
+    }
+
+    private void AdvanceControlRevisionForControlIntent()
+    {
+        lock (_swap)
+        {
+            if (_current != 0) AdvanceControlRevisionLocked();
+        }
+    }
+
+    internal static bool IsCurrentEndSync(int currentChannel, int currentGeneration,
+        int callbackChannel, IntPtr user)
+    {
+        return currentChannel != 0 && currentGeneration != 0 &&
+               callbackChannel == currentChannel &&
+               unchecked((int)user.ToInt64()) == currentGeneration;
     }
 
     public bool Play()
@@ -625,6 +752,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
             BassMix.ChannelFlags(_current, 0, BassFlags.MixerChanPause);
             _backend.Resume();
+            AdvanceControlRevisionForControlIntent();
         }
 
         SetState(PlayerState.Playing);
@@ -639,6 +767,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
             BassMix.ChannelFlags(_current, BassFlags.MixerChanPause, BassFlags.MixerChanPause);
             _backend.Pause();
+            AdvanceControlRevisionForControlIntent();
         }
 
         SetState(PlayerState.Paused);
@@ -656,11 +785,12 @@ public sealed class PlaybackEngine : IPlaybackEngine
         {
             if (_current == 0) return;
 
-            EnsureAttached();
+            EnsureAttached(paused: true);
 
             BassMix.ChannelFlags(_current, BassFlags.MixerChanPause, BassFlags.MixerChanPause);
             BassMix.ChannelSetPosition(_current, 0, PositionFlags.Bytes);
             _backend.Pause();
+            AdvanceControlRevisionForControlIntent();
         }
 
         SetState(PlayerState.Stopped);
@@ -672,7 +802,11 @@ public sealed class PlaybackEngine : IPlaybackEngine
         {
             if (_current == 0) return;
 
-            EnsureAttached();
+            // If a natural END completion is still queued, the source has already
+            // been detached while the logical state is still Playing. Reattach it
+            // unpaused so this seek both cancels the stale completion and keeps
+            // playback moving.
+            EnsureAttached(paused: ShouldPauseReattachedSource(State));
 
             var total = CurrentTrack?.Duration.TotalSeconds ?? 0;
             var seconds = total > 0
@@ -684,16 +818,21 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
             if (!BassMix.ChannelSetPosition(_current, bytes, PositionFlags.Bytes))
                 Log.Debug("Seek 到 {Seconds}s 失败：{Error}", seconds, Bass.LastError);
+            else
+                AdvanceControlRevisionForControlIntent();
         }
     }
 
     /// <summary>曲目自然播完后会被 BASSmix 摘出 mixer，Stop / Seek 之前要先确认它还挂着。</summary>
-    private void EnsureAttached()
+    internal static bool ShouldPauseReattachedSource(PlayerState state) =>
+        state != PlayerState.Playing;
+
+    private void EnsureAttached(bool paused)
     {
         if (_current == 0 || _mixer == 0) return;
         if (BassMix.ChannelGetMixer(_current) != 0) return;
 
-        AttachSource(_current, paused: true);
+        AttachSource(_current, paused);
         SetEndSync(_current);
     }
 
@@ -719,21 +858,33 @@ public sealed class PlaybackEngine : IPlaybackEngine
             generation = _preloadGeneration;
         }
 
-        // 建流可能读盘、MP3 还要 Prescan，放后台线程，绝不能卡住 UI
-        Task.Run(() =>
-        {
-            if (_disposed || !File.Exists(path)) return;
+        // 建流可能读盘、MP3 还要 Prescan，放后台线程，绝不能卡住 UI。
+        // 相同代际与路径只允许一个任务；Dispose 会在 BASS Shutdown 前等它们全部退出。
+        _preloadWork.TryStart(generation, path, () => RunPreload(path, generation));
+    }
 
-            var mixerRate = _mixerRate;
-            var handle = CreateDecodeStream(path);
+    private void RunPreload(string path, int generation)
+    {
+        var handle = 0;
+        try
+        {
+            // PreloadNext 的指针检查与 tracker 接纳之间允许上一项恰好完成；
+            // 后台真正读盘前再核验一次，避免这个窄窗口多做一次 MP3 Prescan。
+            lock (_swap)
+            {
+                if (_disposed || generation != _preloadGeneration || _next != 0 ||
+                    string.Equals(_rejectedPreloadPath, path, StringComparison.OrdinalIgnoreCase))
+                    return;
+            }
+
+            if (!File.Exists(path)) return;
+
+            var mixerRate = Volatile.Read(ref _mixerRate);
+            handle = CreateDecodeStream(path);
             if (handle == 0)
             {
                 Log.Debug("预载失败 {File}：{Error}", Path.GetFileName(path), Bass.LastError);
-                lock (_swap)
-                {
-                    if (generation == _preloadGeneration)
-                        _rejectedPreloadPath = path;
-                }
+                MarkPreloadRejected(path, generation);
                 return;
             }
 
@@ -745,42 +896,48 @@ public sealed class PlaybackEngine : IPlaybackEngine
                 // 采样率不一致就得重建链路，注定有间隙，不预载；记下来别再试
                 Log.Information("下一曲采样率 {Next} Hz 与当前输出 {Current} Hz 不同，切歌时会有极短间隙",
                     info.SampleRate, mixerRate);
-                Bass.StreamFree(handle);
-                lock (_swap)
-                {
-                    if (generation == _preloadGeneration)
-                        _rejectedPreloadPath = path;
-                }
+                MarkPreloadRejected(path, generation);
                 return;
             }
 
-            List<int> toFree = new();
             var installed = false;
             lock (_swap)
             {
-                if (_disposed || generation != _preloadGeneration || _next != 0)
+                if (!_disposed && generation == _preloadGeneration && _next == 0)
                 {
-                    toFree.Add(handle);
-                }
-                else
-                {
-                    if (_next != 0) toFree.Add(_next);
                     _next = handle;
                     _nextPath = path;
                     _nextInfo = info;
                     _rejectedPreloadPath = null;
+                    handle = 0; // 所有权已交给 _next；finally 不再释放
                     installed = true;
                 }
             }
 
-            foreach (var stale in toFree)
-            {
-                try { Bass.StreamFree(stale); } catch { /* 忽略 */ }
-            }
-
             if (installed)
                 Log.Debug("已预载下一曲：{File}", Path.GetFileName(path));
-        });
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "预载下一曲失败：{File}", Path.GetFileName(path));
+        }
+        finally
+        {
+            if (handle != 0)
+            {
+                try { Bass.StreamFree(handle); }
+                catch (Exception ex) { Log.Debug(ex, "释放未采用的预载流失败"); }
+            }
+        }
+    }
+
+    private void MarkPreloadRejected(string path, int generation)
+    {
+        lock (_swap)
+        {
+            if (!_disposed && generation == _preloadGeneration)
+                _rejectedPreloadPath = path;
+        }
     }
 
     public void ClearPreload() => DropPreload();
@@ -804,60 +961,236 @@ public sealed class PlaybackEngine : IPlaybackEngine
         catch (Exception ex) { Log.Debug(ex, "释放预载流失败"); }
     }
 
-    /// <summary>
-    /// 当前曲目播完了。<b>这是混音线程（mixtime）</b>：
-    /// 只允许做指针搬运与 MixerAddChannel，**绝不能拿 _control**（控制路径可能正持着它
-    /// 调用会等待本线程退出的 BASS 拆链函数，抢它必死锁）。
-    /// </summary>
+    /// <summary>混音线程只提交指针交接，END 通知由单 worker 按控制锁序列化。</summary>
     private void OnSourceEnded(int handle, int channel, int data, IntPtr user)
     {
         try
         {
-            string? transitionedTo = null;
+            PlaybackEndCompletion completion = default;
+            var transitionedChannel = 0;
+            TrackInfo? transitionedTrack = null;
+            string? transitionedPath = null;
 
             lock (_swap)
             {
-                if (!_disposed && _next != 0 && _mixer != 0)
+                if (_disposed || !IsCurrentEndSync(_current, _currentEndSyncGeneration, channel, user))
+                    return;
+
+                if (_next != 0 && _mixer != 0)
                 {
                     // 样本边界上把下一曲接进来，NoRampin 保证没有淡入
                     if (BassMix.MixerAddChannel(_mixer, _next, BassFlags.MixerChanNoRampin))
                     {
                         if (_current != 0)
-                        {
                             _pendingFree.Add(_current);
-                            _syncProcedures.Remove(_current);
-                        }
 
                         _current = _next;
                         CurrentTrack = _nextInfo;
-                        transitionedTo = _nextPath;
+                        transitionedChannel = _current;
+                        transitionedTrack = CurrentTrack;
+                        transitionedPath = _nextPath;
+                        _currentEndSyncGeneration = 0;
+                        AdvanceTrackIdentityLocked();
 
                         _preloadGeneration++;
                         _next = 0;
                         _nextPath = null;
                         _nextInfo = null;
-
-                        // 新的当前曲也要挂 sync，否则它播完就没人接手了
-                        SyncProcedure procedure = OnSourceEnded;
-                        _syncProcedures[_current] = procedure;
-                        BassMix.ChannelSetSync(_current, SyncFlags.End | SyncFlags.Mixtime, 0, procedure, IntPtr.Zero);
                     }
+                }
+
+                if (transitionedChannel != 0)
+                {
+                    // Native sync registration and ThreadPool scheduling stay out
+                    // of the pointer lock. The identity is revalidated below.
+                }
+                else
+                {
+                    // 无下一曲或挂载失败后，当前 token 失效，迟到的重复 END 不得再次通知 UI。
+                    _currentEndSyncGeneration = 0;
+                    var controlRevision = AdvanceControlRevisionLocked();
+                    if (CurrentTrack is null) return;
+                    completion = new PlaybackEndCompletion(
+                        PlaybackRevision,
+                        controlRevision,
+                        _current,
+                        CurrentTrack,
+                        PlaybackEndKind.Ended,
+                        CurrentTrack.Path);
                 }
             }
 
-            if (transitionedTo is not null)
+            if (transitionedChannel != 0)
             {
-                TrackTransitioned?.Invoke(this, transitionedTo);
-                return;
+                // 新的当前曲也要挂 sync，否则它播完就没人接手了。
+                SetEndSync(transitionedChannel);
+                lock (_swap)
+                {
+                    if (_disposed || transitionedTrack is null ||
+                        _current != transitionedChannel ||
+                        !ReferenceEquals(CurrentTrack, transitionedTrack))
+                        return;
+
+                    completion = new PlaybackEndCompletion(
+                        PlaybackRevision,
+                        Volatile.Read(ref _currentControlRevision),
+                        transitionedChannel,
+                        transitionedTrack,
+                        PlaybackEndKind.Transitioned,
+                        transitionedPath ?? transitionedTrack.Path);
+                }
             }
 
-            SetState(PlayerState.Stopped);
-            TrackEnded?.Invoke(this, EventArgs.Empty);
+            QueueEndCompletion(completion);
         }
         catch (Exception ex)
         {
             Log.Error(ex, "处理播放结束事件时异常");
         }
+    }
+
+    private void QueueEndCompletion(in PlaybackEndCompletion completion)
+    {
+        _endNotifications.Enqueue(completion, out var shouldSchedule);
+        if (shouldSchedule)
+            ThreadPool.UnsafeQueueUserWorkItem(EndNotificationCallback, this);
+    }
+
+    private void ProcessEndNotifications()
+    {
+        while (!_disposed)
+        {
+            while (!_disposed && _endNotifications.TryTake(out var completion))
+            {
+                try
+                {
+                    PublishEndCompletion(completion);
+                }
+                catch (Exception ex)
+                {
+                    // Subscriber failures must not strand worker ownership and silence
+                    // every later END notification. Other engine events are synchronous,
+                    // but this queue has to preserve its own drain invariant.
+                    Log.Error(ex, "播放结束通知订阅者异常");
+                }
+            }
+
+            // Do not reclaim worker ownership after disposal. A producer cannot
+            // legally enqueue once _disposed is set, and leaving the ownership bit
+            // set is harmless because the engine is no longer reachable by audio
+            // callbacks. This guard also prevents a shutdown-time spin when a
+            // queued completion raced with Dispose().
+            if (_disposed) return;
+            if (!_endNotifications.TryRetainWorker()) return;
+        }
+    }
+
+    private void PublishEndCompletion(in PlaybackEndCompletion completion)
+    {
+        if (_disposed) return;
+
+        var notifyStopped = false;
+        lock (_control)
+        {
+            if (_disposed) return;
+
+            lock (_swap)
+            {
+                if (!ShouldPublishEnd(
+                        completion.Kind,
+                        completion.IdentityRevision,
+                        completion.ControlRevision,
+                        completion.Channel,
+                        completion.Track,
+                        PlaybackRevision,
+                        Volatile.Read(ref _currentControlRevision),
+                        _current,
+                        CurrentTrack))
+                    return;
+
+                // 身份校验与状态提交必须在同一个指针临界区内；音频回调不拿
+                // _control，若先放开 _swap，它可能在两者之间完成下一次交接。
+                if (completion.Kind == PlaybackEndKind.Ended)
+                {
+                    notifyStopped = State != PlayerState.Stopped;
+                    State = PlayerState.Stopped;
+                }
+            }
+        }
+
+        var args = new PlaybackTrackEventArgs(
+            completion.IdentityRevision,
+            completion.ControlRevision,
+            completion.Channel,
+            completion.Track,
+            completion.Path,
+            completion.Kind == PlaybackEndKind.Ended);
+
+        if (completion.Kind == PlaybackEndKind.Transitioned)
+        {
+            // 外部订阅者可能同步切歌、Seek 或退出；绝不能在 _control / _swap 内调用。
+            if (!IsEndCompletionCurrent(completion)) return;
+            TrackTransitioned?.Invoke(this, args);
+            return;
+        }
+
+        // State=Stopped was committed under _control. A later Seek/output rebuild
+        // may legitimately cancel auto-advance without changing that state, so a
+        // second completion check must not swallow its matching state notification.
+        // If Play already superseded it, the current-state check suppresses the
+        // stale Stopped notification instead.
+        if (notifyStopped && State == PlayerState.Stopped)
+            StateChanged?.Invoke(this, PlayerState.Stopped);
+
+        // Stopped remains ordered before TrackEnded. A control issued after the
+        // state commit may still cancel only the automatic queue advance.
+        if (!IsEndCompletionCurrent(completion)) return;
+        TrackEnded?.Invoke(this, args);
+    }
+
+    private bool IsEndCompletionCurrent(in PlaybackEndCompletion completion)
+    {
+        if (_disposed) return false;
+
+        lock (_swap)
+        {
+            return !_disposed && ShouldPublishEnd(
+                completion.Kind,
+                completion.IdentityRevision,
+                completion.ControlRevision,
+                completion.Channel,
+                completion.Track,
+                PlaybackRevision,
+                Volatile.Read(ref _currentControlRevision),
+                _current,
+                CurrentTrack);
+        }
+    }
+
+    internal static bool ShouldPublishEnd(
+        PlaybackEndKind kind,
+        int completionIdentityRevision,
+        int completionControlRevision,
+        int completionChannel,
+        TrackInfo? completionTrack,
+        int currentIdentityRevision,
+        int currentControlRevision,
+        int currentChannel,
+        TrackInfo? currentTrack)
+    {
+        if (completionIdentityRevision == 0 ||
+            completionIdentityRevision != currentIdentityRevision ||
+            completionChannel == 0 || completionChannel != currentChannel ||
+            completionTrack is null || !ReferenceEquals(completionTrack, currentTrack))
+            return false;
+
+        // A seamless hand-off is already an audio fact: later Pause/Seek/Stop or
+        // output-chain rebuilds must not prevent the UI from learning that the
+        // current track changed. Natural END is different: a later user control
+        // intentionally cancels the queued auto-advance.
+        return kind == PlaybackEndKind.Transitioned ||
+               (completionControlRevision != 0 &&
+                completionControlRevision == currentControlRevision);
     }
 
     /// <summary>回收无缝交接攒下的旧流。由看门狗每秒调用一次。</summary>
@@ -890,7 +1223,6 @@ public sealed class PlaybackEngine : IPlaybackEngine
                 Log.Debug(ex, "释放解码流失败");
             }
 
-            lock (_swap) { _syncProcedures.Remove(handle); }
         }
     }
 
@@ -901,6 +1233,10 @@ public sealed class PlaybackEngine : IPlaybackEngine
         {
             handle = _current;
             _current = 0;
+            _currentEndSyncGeneration = 0;
+            // Invalidate completions already handed to the worker before clearing
+            // the identity. This is required even when no mixer currently exists.
+            AdvanceTrackIdentityLocked();
             CurrentTrack = null;
         }
 
@@ -967,6 +1303,15 @@ public sealed class PlaybackEngine : IPlaybackEngine
         if (_disposed) return;
         _disposed = true;
 
+        // 先封住新请求，并在任何音频锁之外等待 Prescan / 建流工作结束。
+        // App 会在本方法返回后立刻 BassRuntime.Shutdown，不能留下后台 BASS 调用。
+        _preloadWork.CloseAndWait();
+
+        // END callbacks can only observe _disposed and stop enqueueing after this
+        // point; drop any metadata still owned by the worker before releasing the
+        // remaining native handles.
+        _endNotifications.Clear();
+
         _watchdog.Dispose();
 
         lock (_control)
@@ -987,7 +1332,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
                 Log.Debug(ex, "释放输出后端失败");
             }
 
-            lock (_swap) { _syncProcedures.Clear(); }
+            _backendRecovery.Cancel();
 
             _legacySpectrumEnabled = false;
             _spectrumConsumers = 0;
@@ -1180,4 +1525,112 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
         public void Dispose() => Interlocked.Exchange(ref _owner, null)?.ReleaseSpectrumLease();
     }
+}
+
+/// <summary>
+/// 预载后台工作的单飞与关闭屏障。键由播放代际和路径组成，路径比较遵循 Windows
+/// 文件语义且忽略大小写；关闭后拒绝新工作，并可同步等到已接纳的任务全部完成。
+/// </summary>
+internal sealed class PreloadWorkTracker
+{
+    private readonly object _gate = new();
+    private readonly Dictionary<WorkKey, Task> _active = new(WorkKeyComparer.Instance);
+    private bool _closed;
+
+    internal bool IsClosed
+    {
+        get { lock (_gate) return _closed; }
+    }
+
+    internal int ActiveCount
+    {
+        get { lock (_gate) return _active.Count; }
+    }
+
+    internal bool TryStart(int generation, string path, Action work)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(path);
+        ArgumentNullException.ThrowIfNull(work);
+
+        var key = new WorkKey(generation, path);
+        var start = new TaskCompletionSource<bool>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        lock (_gate)
+        {
+            if (_closed || _active.ContainsKey(key)) return false;
+
+            // start 屏障保证任务在写入字典、挂好完成回调之前不会执行用户工作。
+            var task = Task.Run(() =>
+            {
+                start.Task.GetAwaiter().GetResult();
+                work();
+            });
+
+            _active.Add(key, task);
+            _ = task.ContinueWith(
+                static (completed, state) =>
+                {
+                    var completion = (Completion)state!;
+                    _ = completed.Exception; // 观察异常，避免未观察任务异常
+                    completion.Owner.RemoveCompleted(completion.Key, completed);
+                },
+                new Completion(this, key),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+
+            start.SetResult(true);
+            return true;
+        }
+    }
+
+    internal void CloseAndWait()
+    {
+        Task[] tasks;
+        lock (_gate)
+        {
+            _closed = true;
+            tasks = _active.Values.ToArray();
+        }
+
+        try
+        {
+            Task.WhenAll(tasks).GetAwaiter().GetResult();
+        }
+        catch
+        {
+            // 工作异常由任务完成回调观察；关闭屏障的职责是排空，不能阻断音频资源释放。
+        }
+
+        lock (_gate)
+        {
+            // 已关闭后不会再加入新任务，快照中的任务也都已经完成。
+            _active.Clear();
+        }
+    }
+
+    private void RemoveCompleted(WorkKey key, Task completed)
+    {
+        lock (_gate)
+        {
+            if (_active.TryGetValue(key, out var tracked) && ReferenceEquals(tracked, completed))
+                _active.Remove(key);
+        }
+    }
+
+    private readonly record struct WorkKey(int Generation, string Path);
+
+    private sealed class WorkKeyComparer : IEqualityComparer<WorkKey>
+    {
+        internal static readonly WorkKeyComparer Instance = new();
+
+        public bool Equals(WorkKey x, WorkKey y) =>
+            x.Generation == y.Generation &&
+            StringComparer.OrdinalIgnoreCase.Equals(x.Path, y.Path);
+
+        public int GetHashCode(WorkKey obj) =>
+            HashCode.Combine(obj.Generation, StringComparer.OrdinalIgnoreCase.GetHashCode(obj.Path));
+    }
+
+    private readonly record struct Completion(PreloadWorkTracker Owner, WorkKey Key);
 }

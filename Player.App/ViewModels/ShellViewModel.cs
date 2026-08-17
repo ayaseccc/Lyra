@@ -118,6 +118,26 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     partial void OnIsScanningChanged(bool value) => OnPropertyChanged(nameof(ShowStatusText));
 
+    partial void OnCurrentPageChanging(object? value)
+    {
+        if (CurrentPage is IDisposable disposable && !ReferenceEquals(CurrentPage, value))
+            disposable.Dispose();
+    }
+
+    partial void OnCurrentPageChanged(object? value)
+    {
+        // The left search box is shared by track/album/artist pages. Keep its
+        // text owned by the newly selected page so a stale filter never leaks
+        // into a different view (or remains visible on settings/search pages).
+        var pageFilter = value is TrackListPageViewModel tracks ? tracks.FilterText : string.Empty;
+
+        if (!string.Equals(FilterText, pageFilter, StringComparison.Ordinal))
+            FilterText = pageFilter;
+        OnPropertyChanged(nameof(IsTrackFilterPage));
+    }
+
+    public bool IsTrackFilterPage => CurrentPage is TrackListPageViewModel;
+
     /// <summary>
     /// 左侧栏顶部搜索框（UI-R0：搜索从主区移到侧栏）。中转给当前曲目列表页；
     /// 页面切换时把新页面的过滤词带回来。
@@ -127,8 +147,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     partial void OnFilterTextChanged(string value)
     {
-        if (CurrentPage is TrackListPageViewModel page)
-            page.FilterText = value;
+        if (CurrentPage is TrackListPageViewModel tracks
+            && !string.Equals(tracks.FilterText, value, StringComparison.Ordinal))
+            tracks.FilterText = value;
     }
 
     // ---------------- 启动 ----------------
@@ -350,10 +371,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             ? (CurrentPage as TrackListPageViewModel)?.FilterText ?? string.Empty
             : string.Empty;
 
-        // 搜索框与当前页过滤词保持同步（页面切换时带回）
-        if (CurrentPage is TrackListPageViewModel previousPage)
-            FilterText = previousPage.FilterText;
-
         switch (nav.Kind)
         {
             case NavKind.AllTracks:
@@ -390,29 +407,20 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             }
 
             case NavKind.OnlineSearch:
-                CurrentPage = new OnlineSearchViewModel(
+                Func<CancellationToken, Task>? probeSources = _onlineSources is null
+                    ? null
+                    : _onlineSources.ProbeAllAsync;
+                var searchPage = new OnlineSearchViewModel(
                     _onlineSources?.All ?? Array.Empty<Player.Core.Online.IOnlineSource>(), Player, _downloads,
-                    DownloadDirPicker);
+                    DownloadDirPicker, probeSources);
+                CurrentPage = searchPage;
+                _ = searchPage.InitializeAsync();
                 break;
 
             case NavKind.Downloads:
                 CurrentPage = new DownloadPageViewModel(_downloads!);
                 break;
 
-            case NavKind.Settings:
-                var settingsVm = new SettingsPageViewModel(_library, _engine, ScanAsync, _client,
-                    () => ImportM3uCommand.Execute(null));
-                settingsVm.OnListSettingsChanged = () =>
-                {
-                    // L3.1：列/分组设置变化即时刷新当前列表页
-                    if (CurrentPage is TrackListPageViewModel trackPage)
-                    {
-                        trackPage.RefreshColumns();
-                        trackPage.ReloadConfigDependentDisplay();
-                    }
-                };
-                CurrentPage = settingsVm;
-                break;
         }
     }
 
@@ -1043,6 +1051,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         _library.ScanCompleted -= OnScanCompleted;
         _playlists.PlaylistsChanged -= OnPlaylistsChanged;
         Player.PropertyChanged -= OnPlayerPropertyChanged;
+        Player.LocateRequested -= OnPlayerLocateRequested;
+        _statusTimer?.Stop();
+        if (CurrentPage is IDisposable disposable) disposable.Dispose();
     }
 }
-

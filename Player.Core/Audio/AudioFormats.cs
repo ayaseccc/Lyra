@@ -4,7 +4,7 @@ namespace Player.Core.Audio;
 /// 支持的音频格式（PLAN 第 5 节）。
 /// mp3 / mp2 / mp1 / wav / aiff / ogg 由 bass.dll 内置支持；
 /// flac→bassflac、ape→bassape、wv→basswv、opus→bassopus；
-/// m4a / aac / alac 在 Windows 10+ 由 BASS 通过系统编解码器支持，另有 bass_aac / bassalac 插件兜底。
+/// m4a / aac 由 BASS 在 Windows 10+ 通过系统编解码器支持；alac 另有 bassalac 插件兜底。
 /// </summary>
 public static class AudioFormats
 {

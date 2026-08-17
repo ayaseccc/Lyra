@@ -28,7 +28,6 @@ public static class BassRuntime
     private static readonly string[] PluginCandidates =
     {
         "bassflac.dll",   // FLAC / Ogg FLAC
-        "bass_aac.dll",   // AAC / MP4（Win10+ 亦可由系统编解码器兜底）
         "bassalac.dll",   // ALAC
         "bassape.dll",    // Monkey's Audio
         "basswv.dll",     // WavPack

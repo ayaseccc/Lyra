@@ -31,6 +31,7 @@ public partial class MainWindow : FluentWindow
     private TrackRecord? _draggingTrack;
     private TrackRecord[] _dragPayload = Array.Empty<TrackRecord>();
     private bool _volumeDragging;
+    private double _lastTrackViewportWidth;
 
     private Player.App.SystemMedia.SmtcService? _smtcService;
 
@@ -179,8 +180,7 @@ public partial class MainWindow : FluentWindow
         try
         {
             _smtcService = new Player.App.SystemMedia.SmtcService(new WindowInteropHelper(this).Handle, Player);
-            _smtcRetryTimer?.Stop();
-            _smtcRetryTimer = null;
+            ReleaseSmtcRetryTimer();
             Serilog.Log.Information("SMTC 已就绪（媒体键/锁屏控制可用）");
         }
         catch (Exception ex)
@@ -189,21 +189,34 @@ public partial class MainWindow : FluentWindow
             _smtcRetryCount++;
             if (_smtcRetryCount <= 3)
             {
-                _smtcRetryTimer ??= new System.Windows.Threading.DispatcherTimer
+                if (_smtcRetryTimer is null)
                 {
-                    Interval = TimeSpan.FromSeconds(8)
-                };
+                    _smtcRetryTimer = new System.Windows.Threading.DispatcherTimer
+                    {
+                        Interval = TimeSpan.FromSeconds(8)
+                    };
+                    _smtcRetryTimer.Tick += OnSmtcRetryTick;
+                }
                 if (!_smtcRetryTimer.IsEnabled)
                 {
-                    _smtcRetryTimer.Tick += (_, _) =>
-                    {
-                        _smtcRetryTimer!.Stop();
-                        InitSmtc();
-                    };
                     _smtcRetryTimer.Start();
                 }
             }
         }
+    }
+
+    private void OnSmtcRetryTick(object? sender, EventArgs e)
+    {
+        _smtcRetryTimer?.Stop();
+        InitSmtc();
+    }
+
+    private void ReleaseSmtcRetryTimer()
+    {
+        if (_smtcRetryTimer is not { } timer) return;
+        timer.Stop();
+        timer.Tick -= OnSmtcRetryTick;
+        _smtcRetryTimer = null;
     }
 
     /// <summary>P4 在线搜索：回车触发搜索。</summary>
@@ -459,8 +472,7 @@ public partial class MainWindow : FluentWindow
         }
         _closingCleanupDone = true;
 
-        _smtcRetryTimer?.Stop();
-        _smtcRetryTimer = null;
+        ReleaseSmtcRetryTimer();
         _tray?.Dispose();
         _tray = null;
         _globalHotkeys?.Dispose();
@@ -509,7 +521,7 @@ public partial class MainWindow : FluentWindow
             // 居中：CanContentScroll 下 ScrollViewer 偏移单位是"行"，滚到 行号 - 可见行数/2
             var scroll = FindVisualChild<System.Windows.Controls.ScrollViewer>(list, _ => true);
             if (scroll is null) return;
-            var index = page.DisplayItems.IndexOf(item);
+            var index = page.IndexOfDisplayItem(item);
             if (scroll.ViewportHeight > 1)
                 scroll.ScrollToVerticalOffset(Math.Max(0, index - scroll.ViewportHeight / 2));
         });
@@ -897,6 +909,11 @@ public partial class MainWindow : FluentWindow
         Shell.PropertyChanged += (_, e) =>
         {
             if (e.PropertyName != nameof(ShellViewModel.CurrentPage)) return;
+            if (Shell.CurrentPage is TrackListPageViewModel trackPage)
+                trackPage.SetViewportWidth(_lastTrackViewportWidth > 0
+                    ? _lastTrackViewportWidth
+                    : Math.Max(0, MainContentHost.ActualWidth
+                        - SystemParameters.VerticalScrollBarWidth - 12));
             if (Shell.CurrentPage is not SettingsPageViewModel settings)
             {
                 // 离开设置页：取消进行中的改绑捕获
@@ -1130,6 +1147,16 @@ public partial class MainWindow : FluentWindow
         if (sender is not FrameworkElement el || el.Tag is not string property) return;
         if (CurrentTrackPage is not { } page || page.IsGrouped) return;
         page.SortBy(property);
+    }
+
+    private void OnTrackListViewportSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        // The presenter already excludes the permanent vertical scrollbar. Each
+        // TrackRowStyle item then consumes 6px padding on both sides, so columns
+        // and the independent header must share the remaining content width.
+        _lastTrackViewportWidth = Math.Max(0, e.NewSize.Width - 12);
+        if (Shell?.CurrentPage is TrackListPageViewModel page)
+            page.SetViewportWidth(_lastTrackViewportWidth);
     }
 
     private void OnTrackListSelectionChanged(object sender, SelectionChangedEventArgs e)

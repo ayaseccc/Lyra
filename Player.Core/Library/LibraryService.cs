@@ -1,3 +1,4 @@
+using System.Collections.Frozen;
 using Player.Core.Infra;
 using Serilog;
 
@@ -10,20 +11,19 @@ namespace Player.Core.Library;
 public sealed class LibraryService : IDisposable
 {
     private readonly LibraryWatcher _watcher = new();
+    private readonly object _watcherLifecycleGate = new();
     private readonly SemaphoreSlim _scanLock = new(1, 1);
-    private readonly object _cacheGate = new();
+    private readonly LibraryRescanQueue _rescanQueue = new();
+    private LibrarySnapshot _snapshot = LibrarySnapshot.Empty;
 
-    private List<TrackRecord> _tracks = new();
-    private Dictionary<long, TrackRecord> _byId = new();
-    private Dictionary<string, TrackRecord> _byPath = new(StringComparer.OrdinalIgnoreCase);
-
-    private List<AlbumGroup>? _albumCache;
-    private List<ArtistGroup>? _artistCache;
-    private List<FolderPlaylist>? _folderCache;
-
+    // The lifetime token cancels both an active scan and callers waiting for the
+    // single-flight gate.  The gate itself is intentionally kept alive after
+    // Dispose: a waiter may still be unwinding and calling Release in finally.
+    private readonly CancellationTokenSource _lifetimeCts = new();
     private CancellationTokenSource? _scanCts;
-    private volatile bool _rescanPending;
-    private bool _disposed;
+    private readonly object _scanCtsGate = new();
+    private int _isScanning;
+    private int _disposed;
 
     public LibraryService()
     {
@@ -31,11 +31,18 @@ public sealed class LibraryService : IDisposable
     }
 
     /// <summary>曲库快照。扫描结束后整体替换，界面拿到的永远是一致的一份。</summary>
-    public IReadOnlyList<TrackRecord> Tracks => _tracks;
+    public IReadOnlyList<TrackRecord> Tracks
+    {
+        get
+        {
+            var snapshot = Volatile.Read(ref _snapshot);
+            return snapshot.Tracks;
+        }
+    }
 
     public IReadOnlyList<string> Roots => ConfigService.Current.Library.Folders;
 
-    public bool IsScanning { get; private set; }
+    public bool IsScanning => Volatile.Read(ref _isScanning) != 0;
 
     /// <summary>曲库内容变了（载入完成 / 扫描完成）。可能在后台线程触发。</summary>
     public event EventHandler? LibraryChanged;
@@ -73,20 +80,41 @@ public sealed class LibraryService : IDisposable
             return new ScanResult();
         }
 
-        await _scanLock.WaitAsync(cancellationToken).ConfigureAwait(false);
+        using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
+            cancellationToken, _lifetimeCts.Token);
 
         try
         {
-            IsScanning = true;
+            await _scanLock.WaitAsync(linkedCts.Token).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException)
+        {
+            return new ScanResult { Cancelled = true };
+        }
+
+        if (IsDisposed)
+        {
+            _scanLock.Release();
+            return new ScanResult { Cancelled = true };
+        }
+
+        try
+        {
+            Volatile.Write(ref _isScanning, 1);
             ScanStarted?.Invoke(this, EventArgs.Empty);
 
-            _scanCts?.Dispose();
-            _scanCts = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            lock (_scanCtsGate)
+            {
+                // ScanAsync is single-flight, so the previous source has already
+                // completed.  Do not dispose it from a new caller while its
+                // finally block may still be observing the token.
+                _scanCts = linkedCts;
+            }
 
             var progress = new Progress<ScanProgress>(p => ScanProgressChanged?.Invoke(this, p));
 
             var result = await LibraryScanner
-                .ScanAsync(roots, fullRescan, progress, _scanCts.Token)
+                .ScanAsync(roots, fullRescan, progress, linkedCts.Token)
                 .ConfigureAwait(false);
 
             if (!result.Cancelled)
@@ -110,35 +138,40 @@ public sealed class LibraryService : IDisposable
         }
         finally
         {
-            IsScanning = false;
-            _scanLock.Release();
-
-            // 扫描期间攒下的目录变化，扫完补跑一次，免得被永久漏掉
-            if (_rescanPending && !_disposed)
+            Volatile.Write(ref _isScanning, 0);
+            lock (_scanCtsGate)
             {
-                _rescanPending = false;
-                _ = Task.Run(async () =>
-                {
-                    try
-                    {
-                        await Task.Delay(500).ConfigureAwait(false);
-                        await ScanAsync(fullRescan: false).ConfigureAwait(false);
-                    }
-                    catch (Exception ex) { Log.Debug(ex, "补跑增量扫描失败"); }
-                });
+                if (ReferenceEquals(_scanCts, linkedCts))
+                    _scanCts = null;
             }
+            _scanLock.Release();
         }
     }
 
     public void CancelScan()
     {
-        try { _scanCts?.Cancel(); }
+        CancellationTokenSource? scan;
+        lock (_scanCtsGate) scan = _scanCts;
+
+        try { scan?.Cancel(); }
         catch (Exception ex) { Log.Debug(ex, "取消扫描失败"); }
     }
 
-    public void StartWatching() => _watcher.Start(Roots);
+    public void StartWatching()
+    {
+        lock (_watcherLifecycleGate)
+        {
+            if (!IsDisposed) _watcher.Start(Roots);
+        }
+    }
 
-    public void StopWatching() => _watcher.Stop();
+    public void StopWatching()
+    {
+        lock (_watcherLifecycleGate)
+        {
+            if (!IsDisposed) _watcher.Stop();
+        }
+    }
 
     /// <summary>
     /// 把一批文件/文件夹并入曲库并返回对应曲目（拖到歌单上、或"添加文件"用）。
@@ -189,7 +222,8 @@ public sealed class LibraryService : IDisposable
     public void RemoveTracksUnderRoot(string root)
     {
         var normalized = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var ids = _tracks
+        var snapshot = Volatile.Read(ref _snapshot);
+        var ids = snapshot.Tracks
             .Where(t => LibraryScanner.IsUnderAnyRoot(t.Path, new[] { normalized }))
             .Select(t => t.Id)
             .ToList();
@@ -230,27 +264,52 @@ public sealed class LibraryService : IDisposable
         return result;
     }
 
-    private async void OnWatcherChangesSettled(object? sender, EventArgs e)
+    private void OnWatcherChangesSettled(object? sender, EventArgs e)
     {
-        if (_disposed) return;
+        RequestRescan();
+    }
 
-        if (IsScanning)
-        {
-            // 正在扫描，先记下来，扫完统一补一次
-            _rescanPending = true;
+    private void RequestRescan()
+    {
+        if (!_rescanQueue.Request(out var shouldSchedule) || !shouldSchedule)
             return;
-        }
 
-        Log.Information("检测到曲库目录变化，执行增量扫描");
-        try { await ScanAsync(fullRescan: false).ConfigureAwait(false); }
-        catch (Exception ex) { Log.Error(ex, "目录变化触发的增量扫描失败"); }
+        _ = Task.Run(ProcessPendingRescansAsync);
+    }
+
+    private async Task ProcessPendingRescansAsync()
+    {
+        while (_rescanQueue.TryTake())
+        {
+            try
+            {
+                Log.Information("检测到曲库目录变化，执行增量扫描");
+                await ScanAsync(fullRescan: false).ConfigureAwait(false);
+            }
+            catch (Exception ex)
+            {
+                // ScanAsync normally converts failures to ScanResult.  Keep this
+                // guard so an unexpected pre-scan failure cannot strand worker ownership.
+                Log.Error(ex, "目录变化触发的增量扫描失败");
+            }
+        }
     }
 
     private void SwapSnapshot(List<TrackRecord> tracks)
     {
+        var snapshot = BuildSnapshot(tracks, Roots.ToArray());
+        Volatile.Write(ref _snapshot, snapshot);
+        LibraryChanged?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static LibrarySnapshot BuildSnapshot(
+        IReadOnlyList<TrackRecord> tracks, IReadOnlyList<string> roots)
+    {
+        // 先固定曲目序列，再以同一批对象构建全部索引与聚合；发布前没有任何读者可见。
+        var stableTracks = tracks.ToArray();
         var byId = new Dictionary<long, TrackRecord>(tracks.Count);
         var byPath = new Dictionary<string, TrackRecord>(tracks.Count, StringComparer.OrdinalIgnoreCase);
-        foreach (var track in tracks)
+        foreach (var track in stableTracks)
         {
             byId[track.Id] = track;
             byPath[track.Path] = track;
@@ -258,35 +317,49 @@ public sealed class LibraryService : IDisposable
 
         // 三份聚合在当前线程（扫描时即后台线程）先算好，
         // 免得界面刷新时在 UI 线程上对万级曲库做 GroupBy 造成卡顿
-        var albums = BuildAlbums(tracks);
-        var artists = BuildArtists(tracks);
-        var folders = BuildFolderPlaylists(tracks, Roots);
+        var albums = BuildAlbums(stableTracks);
+        var artists = BuildArtists(stableTracks);
+        var folders = BuildFolderPlaylists(stableTracks, roots);
 
-        lock (_cacheGate)
-        {
-            _tracks = tracks;
-            _byId = byId;
-            _byPath = byPath;
-            _albumCache = albums;
-            _artistCache = artists;
-            _folderCache = folders;
-        }
+        return new LibrarySnapshot(
+            Array.AsReadOnly(stableTracks),
+            byId.ToFrozenDictionary(),
+            byPath.ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
+            albums.AsReadOnly(),
+            artists.AsReadOnly(),
+            folders.AsReadOnly());
+    }
 
-        LibraryChanged?.Invoke(this, EventArgs.Empty);
+    /// <summary>Harness 专用：不触碰数据库或配置，按生产路径构建并原子发布测试快照。</summary>
+    internal void ReplaceSnapshotForTest(
+        IReadOnlyList<TrackRecord> tracks, IReadOnlyList<string>? roots = null)
+    {
+        ArgumentNullException.ThrowIfNull(tracks);
+        var snapshot = BuildSnapshot(tracks, roots ?? Array.Empty<string>());
+        Volatile.Write(ref _snapshot, snapshot);
     }
 
     // ---------------- 查询 ----------------
 
-    public TrackRecord? GetById(long id) => _byId.TryGetValue(id, out var track) ? track : null;
+    public TrackRecord? GetById(long id)
+    {
+        var snapshot = Volatile.Read(ref _snapshot);
+        return snapshot.ById.TryGetValue(id, out var track) ? track : null;
+    }
 
-    public TrackRecord? GetByPath(string path) => _byPath.TryGetValue(path, out var track) ? track : null;
+    public TrackRecord? GetByPath(string path)
+    {
+        var snapshot = Volatile.Read(ref _snapshot);
+        return snapshot.ByPath.TryGetValue(path, out var track) ? track : null;
+    }
 
     public IReadOnlyList<TrackRecord> GetTracksByIds(IEnumerable<long> ids)
     {
+        var snapshot = Volatile.Read(ref _snapshot);
         var result = new List<TrackRecord>();
         foreach (var id in ids)
         {
-            if (_byId.TryGetValue(id, out var track))
+            if (snapshot.ById.TryGetValue(id, out var track))
                 result.Add(track);
         }
         return result;
@@ -294,31 +367,25 @@ public sealed class LibraryService : IDisposable
 
     public IReadOnlyList<AlbumGroup> GetAlbums()
     {
-        lock (_cacheGate)
-        {
-            return _albumCache ??= BuildAlbums(_tracks);
-        }
+        var snapshot = Volatile.Read(ref _snapshot);
+        return snapshot.Albums;
     }
 
     public IReadOnlyList<ArtistGroup> GetArtists()
     {
-        lock (_cacheGate)
-        {
-            return _artistCache ??= BuildArtists(_tracks);
-        }
+        var snapshot = Volatile.Read(ref _snapshot);
+        return snapshot.Artists;
     }
 
     public IReadOnlyList<FolderPlaylist> GetFolderPlaylists()
     {
-        lock (_cacheGate)
-        {
-            return _folderCache ??= BuildFolderPlaylists(_tracks, Roots);
-        }
+        var snapshot = Volatile.Read(ref _snapshot);
+        return snapshot.Folders;
     }
 
     // ---------------- 聚合 ----------------
 
-    private static List<AlbumGroup> BuildAlbums(List<TrackRecord> tracks)
+    private static List<AlbumGroup> BuildAlbums(IReadOnlyList<TrackRecord> tracks)
     {
         return tracks
             .GroupBy(t => t.DisplayAlbum + "\u0001" + t.DisplayAlbumArtist, StringComparer.OrdinalIgnoreCase)
@@ -338,14 +405,14 @@ public sealed class LibraryService : IDisposable
                     AlbumArtist = first.DisplayAlbumArtist,
                     CoverHash = ordered.FirstOrDefault(t => t.CoverHash is not null)?.CoverHash,
                     TotalDurationMs = ordered.Sum(t => t.DurationMs),
-                    Tracks = ordered
+                    Tracks = ordered.AsReadOnly()
                 };
             })
             .OrderBy(a => a.Album, StringComparer.OrdinalIgnoreCase)
             .ToList();
     }
 
-    private static List<ArtistGroup> BuildArtists(List<TrackRecord> tracks)
+    private static List<ArtistGroup> BuildArtists(IReadOnlyList<TrackRecord> tracks)
     {
         return tracks
             .GroupBy(t => t.DisplayArtist, StringComparer.OrdinalIgnoreCase)
@@ -363,7 +430,7 @@ public sealed class LibraryService : IDisposable
                     AlbumCount = ordered.Select(t => t.DisplayAlbum)
                         .Distinct(StringComparer.OrdinalIgnoreCase).Count(),
                     CoverHash = ordered.FirstOrDefault(t => t.CoverHash is not null)?.CoverHash,
-                    Tracks = ordered
+                    Tracks = ordered.AsReadOnly()
                 };
             })
             .OrderBy(a => a.Name, StringComparer.OrdinalIgnoreCase)
@@ -374,7 +441,8 @@ public sealed class LibraryService : IDisposable
     /// 文件夹虚拟歌单：把每首曲目归到「所属根目录下的顶层子文件夹」。
     /// 直接躺在根目录下的散曲不产生歌单（它们仍然在「全部歌曲」里）。
     /// </summary>
-    private static List<FolderPlaylist> BuildFolderPlaylists(List<TrackRecord> tracks, IReadOnlyList<string> roots)
+    private static List<FolderPlaylist> BuildFolderPlaylists(
+        IReadOnlyList<TrackRecord> tracks, IReadOnlyList<string> roots)
     {
         if (roots.Count == 0 || tracks.Count == 0) return new List<FolderPlaylist>();
 
@@ -425,6 +493,7 @@ public sealed class LibraryService : IDisposable
                 Tracks = (IReadOnlyList<TrackRecord>)kv.Value.Tracks
                     .OrderBy(t => t.Path, StringComparer.OrdinalIgnoreCase)
                     .ToList()
+                    .AsReadOnly()
             })
             .ToList();
 
@@ -458,17 +527,66 @@ public sealed class LibraryService : IDisposable
         return string.IsNullOrEmpty(name) ? trimmed : name;
     }
 
+    /// <summary>一次发布的完整只读视图；构造完成后不再改变。</summary>
+    private sealed class LibrarySnapshot
+    {
+        internal static readonly LibrarySnapshot Empty = new(
+            Array.Empty<TrackRecord>(),
+            new Dictionary<long, TrackRecord>().ToFrozenDictionary(),
+            new Dictionary<string, TrackRecord>(StringComparer.OrdinalIgnoreCase)
+                .ToFrozenDictionary(StringComparer.OrdinalIgnoreCase),
+            Array.Empty<AlbumGroup>(),
+            Array.Empty<ArtistGroup>(),
+            Array.Empty<FolderPlaylist>());
+
+        internal LibrarySnapshot(
+            IReadOnlyList<TrackRecord> tracks,
+            FrozenDictionary<long, TrackRecord> byId,
+            FrozenDictionary<string, TrackRecord> byPath,
+            IReadOnlyList<AlbumGroup> albums,
+            IReadOnlyList<ArtistGroup> artists,
+            IReadOnlyList<FolderPlaylist> folders)
+        {
+            Tracks = tracks;
+            ById = byId;
+            ByPath = byPath;
+            Albums = albums;
+            Artists = artists;
+            Folders = folders;
+        }
+
+        internal IReadOnlyList<TrackRecord> Tracks { get; }
+        internal FrozenDictionary<long, TrackRecord> ById { get; }
+        internal FrozenDictionary<string, TrackRecord> ByPath { get; }
+        internal IReadOnlyList<AlbumGroup> Albums { get; }
+        internal IReadOnlyList<ArtistGroup> Artists { get; }
+        internal IReadOnlyList<FolderPlaylist> Folders { get; }
+    }
+
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        if (Interlocked.Exchange(ref _disposed, 1) != 0) return;
 
-        _watcher.ChangesSettled -= OnWatcherChangesSettled;
-        _watcher.Dispose();
+        // Close scheduling first.  A watcher callback already in flight either
+        // records work before this point (then Close drops it) or is rejected.
+        _rescanQueue.Close();
 
-        try { _scanCts?.Cancel(); } catch { /* 忽略 */ }
-        _scanCts?.Dispose();
-        _scanLock.Dispose();
+        lock (_watcherLifecycleGate)
+        {
+            _watcher.ChangesSettled -= OnWatcherChangesSettled;
+            _watcher.Dispose();
+        }
+
+        try { _lifetimeCts.Cancel(); } catch { /* 忽略 */ }
+        CancelScan();
+
+        // Do not dispose _scanLock or _lifetimeCts here.  Dispose is synchronous
+        // while ScanAsync is deliberately awaitable; releasing either primitive
+        // before the active scan reaches its finally block reintroduces the
+        // shutdown race this service is meant to avoid.  Both are owned by this
+        // short-lived service and become collectible once the scan unwinds.
     }
+
+    private bool IsDisposed => Volatile.Read(ref _disposed) != 0;
 }
 

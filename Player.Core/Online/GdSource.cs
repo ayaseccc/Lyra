@@ -325,9 +325,13 @@ public sealed class GdSource : IOnlineSource
                     ? OnlineResult<T>.Ok(data)
                     : OnlineResult<T>.Fail("响应解析失败");
             }
+            catch (OperationCanceledException) when (ct.IsCancellationRequested)
+            {
+                throw;
+            }
             catch (OperationCanceledException)
             {
-                return OnlineResult<T>.Fail("请求已取消");
+                return OnlineResult<T>.Fail("请求超时，请稍后重试");
             }
             catch (Exception ex)
             {

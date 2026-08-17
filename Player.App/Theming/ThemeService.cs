@@ -1,4 +1,7 @@
+using System.Collections.Concurrent;
 using System.IO;
+using System.Threading;
+using System.Threading.Tasks;
 using System.Windows;
 using System.Windows.Media;
 using System.Windows.Media.Imaging;
@@ -37,6 +40,17 @@ public static class ThemeService
     private static double _progress = 1.0;
     private static bool _initialized;
     private static string? _lastCoverHash;
+    private static long _paletteRequestVersion;
+
+    // 取色只读 32x32 像素，但仍会触发磁盘读取和大数组量化；按封面+底色缓存，
+    // 并合并同一 key 的并发请求，避免快速切歌时重复工作。
+    private static readonly ConcurrentDictionary<string, ThemePalette> PaletteCache =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly ConcurrentDictionary<string, Task<ThemePalette>> PaletteLoads =
+        new(StringComparer.OrdinalIgnoreCase);
+    private static readonly Dictionary<string, SolidColorBrush> MutableBrushes =
+        new(StringComparer.Ordinal);
+    private const int PaletteCacheLimit = 256;
 
     /// <summary>深色 / 浅色基底。</summary>
     public static bool DarkBase { get; private set; }
@@ -82,13 +96,14 @@ public static class ThemeService
 
         ApplyMiniPlayerResources();
 
-        if (!Tint)
-        {
-            var palette = DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback();
-            ApplyPalette(palette);
-            _current = palette;
-            _target = palette;
-        }
+        // Player.xaml intentionally contains a dark emergency fallback so XAML can
+        // load before configuration. Always replace it with the configured base at
+        // startup, including cover-tint mode where no cover may ever arrive.
+        var palette = NoCoverPalette(DarkBase, Tint);
+        ApplyPalette(palette);
+        _current = palette;
+        _target = palette;
+        _progress = 1.0;
     }
 
     /// <summary>L3.1 个性化应用到 Application 资源：行高/全局字体/字号缩放。
@@ -124,8 +139,20 @@ public static class ThemeService
     public static void ApplyModeFromConfig()
     {
         Initialize();
-        var ui = ConfigService.Current.Ui;
-        SetMode(DarkBase, Tint);
+        // 个性化参数已经写入内存配置。这里只刷新当前视觉帧，不重复保存配置、
+        // 重跑封面取色或重置 300ms 主题动画。
+        var palette = _timer.IsEnabled
+            ? Lerp(_current, _target, EaseOut(_progress))
+            : _current;
+        if (!_timer.IsEnabled && Tint && _lastCoverHash is null)
+        {
+            // 染色模式尚未有当前曲目时，_current 仍可能是静态初始化值；
+            // 用与 SetMode 相同的无封面回退，避免设置页滑块把浅色底误刷成深色。
+            palette = NoCoverPalette(DarkBase, tint: true);
+            _current = _target = palette;
+            _progress = 1.0;
+        }
+        ApplyPalette(palette);
     }
 
     /// <summary>设置页切换：底色（深/浅）× 染色（开/关）。</summary>
@@ -135,6 +162,7 @@ public static class ThemeService
 
         DarkBase = darkBase;
         Tint = tint;
+        var requestVersion = Interlocked.Increment(ref _paletteRequestVersion);
         ConfigService.Current.Ui.ThemeBase = darkBase ? "Dark" : "Light";
         ConfigService.Current.Ui.ThemeTint = tint;
         ConfigService.Save();
@@ -146,13 +174,27 @@ public static class ThemeService
 
         ApplyMiniPlayerResources();
 
-        var palette = tint
-            ? (_lastCoverHash is null
-                ? (darkBase ? ThemeDeriver.DeriveDark(new RgbColor(0x30, 0x40, 0x60)) : ThemeDeriver.NeutralFallback())
-                : DeriveFromCover(_lastCoverHash))
-            : (darkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback());
+        if (!tint)
+        {
+            // 关闭染色是一个明确的逃生路径：停止旧动画、取消旧的异步提交，
+            // 不读取当前封面，也不等待任何后台任务。
+            _timer.Stop();
+            var fixedPalette = NoCoverPalette(darkBase, tint: false);
+            _current = fixedPalette;
+            _target = fixedPalette;
+            _progress = 1.0;
+            ApplyPalette(fixedPalette);
+            return;
+        }
 
-        AnimateTo(palette);
+        var coverHash = _lastCoverHash;
+        if (string.IsNullOrWhiteSpace(coverHash))
+        {
+            AnimateTo(NoCoverPalette(darkBase, tint: true));
+            return;
+        }
+
+        RequestCoverPalette(coverHash, darkBase, requestVersion);
     }
 
     /// <summary>切歌钩子（PlayerViewModel.ApplyTrackDisplay 调用）。</summary>
@@ -161,30 +203,120 @@ public static class ThemeService
         if (!_initialized) Initialize();
         _lastCoverHash = coverHash;
 
-        var palette = coverHash is null
-            ? (DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback())
-            : DeriveFromCover(coverHash);
-
+        // 关闭染色时不应为每次切歌读取/解码封面；SetMode 已经应用固定调色板。
         if (!Tint) return;
 
-        Serilog.Log.Information("主题：深色={Dark} 封面 {Hash} → 背景 {Bg} 表面 {Surface} 强调 {Accent} 文字 {Text}",
-            DarkBase, coverHash ?? "(无)", palette.Background, palette.Surface, palette.Accent, palette.TextPrimary);
+        var requestVersion = Interlocked.Increment(ref _paletteRequestVersion);
+        if (string.IsNullOrWhiteSpace(coverHash))
+        {
+            var fallback = NoCoverPalette(DarkBase, tint: true);
+            AnimateTo(fallback);
+            return;
+        }
+
+        RequestCoverPalette(coverHash, DarkBase, requestVersion);
+    }
+
+    private static void RequestCoverPalette(string coverHash, bool darkBase, long requestVersion)
+    {
+        var key = CacheKey(coverHash, darkBase);
+        if (PaletteCache.TryGetValue(key, out var cached))
+        {
+            ApplyCoverPaletteIfCurrent(coverHash, darkBase, requestVersion, cached);
+            return;
+        }
+
+        var dispatcher = Application.Current?.Dispatcher;
+        if (dispatcher is null) return;
+
+        var load = PaletteLoads.GetOrAdd(key, _ => Task.Run(() => DeriveFromCover(coverHash, darkBase)));
+        _ = ApplyLoadedPaletteAsync(load, key, coverHash, darkBase, requestVersion, dispatcher);
+    }
+
+    private static async Task ApplyLoadedPaletteAsync(
+        Task<ThemePalette> load,
+        string key,
+        string coverHash,
+        bool darkBase,
+        long requestVersion,
+        System.Windows.Threading.Dispatcher dispatcher)
+    {
+        try
+        {
+            var palette = await load.ConfigureAwait(false);
+            AddPaletteCache(key, palette);
+            if (dispatcher.HasShutdownStarted || dispatcher.HasShutdownFinished) return;
+
+            _ = dispatcher.BeginInvoke(new Action(() =>
+                ApplyCoverPaletteIfCurrent(coverHash, darkBase, requestVersion, palette)));
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "封面取色失败，使用固定回退色（Hash 已省略）");
+        }
+        finally
+        {
+            PaletteLoads.TryRemove(key, out _);
+        }
+    }
+
+    private static void ApplyCoverPaletteIfCurrent(
+        string coverHash,
+        bool darkBase,
+        long requestVersion,
+        ThemePalette palette)
+    {
+        if (requestVersion != Volatile.Read(ref _paletteRequestVersion)
+            || !Tint
+            || DarkBase != darkBase
+            || !string.Equals(_lastCoverHash, coverHash, StringComparison.OrdinalIgnoreCase))
+            return;
+
+        Serilog.Log.Information("主题：深色={Dark} 封面已应用 → 背景 {Bg} 表面 {Surface} 强调 {Accent} 文字 {Text}",
+            darkBase, palette.Background, palette.Surface, palette.Accent, palette.TextPrimary);
         AnimateTo(palette);
     }
 
-    private static ThemePalette DeriveFromCover(string coverHash)
+    private static string CacheKey(string coverHash, bool darkBase) =>
+        (darkBase ? "D:" : "L:") + coverHash;
+
+    private static void AddPaletteCache(string key, ThemePalette palette)
+    {
+        PaletteCache[key] = palette;
+        if (PaletteCache.Count <= PaletteCacheLimit) return;
+
+        // 主题缓存不是音频数据，偶尔移除一个任意旧项即可；不在 UI 线程做全量 Clear。
+        foreach (var old in PaletteCache.Keys)
+        {
+            if (!string.Equals(old, key, StringComparison.OrdinalIgnoreCase))
+            {
+                PaletteCache.TryRemove(old, out _);
+                break;
+            }
+        }
+    }
+
+    private static ThemePalette DeriveFromCover(string coverHash, bool darkBase)
     {
         try
         {
             var pixels = LoadSamplePixels(coverHash);
-            if (pixels.Count == 0) return DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback();
+            if (pixels.Count == 0) return NoCoverPalette(darkBase, tint: true);
             var colors = CoverColorExtractor.Extract(pixels);
-            return DarkBase ? ThemeDeriver.DeriveDark(colors.Main) : ThemeDeriver.DeriveLight(colors.Main);
+            return darkBase ? ThemeDeriver.DeriveDark(colors.Main) : ThemeDeriver.DeriveLight(colors.Main);
         }
         catch
         {
-            return DarkBase ? ThemePalette.FixedDark : ThemeDeriver.NeutralFallback();
+            return NoCoverPalette(darkBase, tint: true);
         }
+    }
+
+    private static ThemePalette NoCoverPalette(bool darkBase, bool tint)
+    {
+        if (!darkBase) return ThemeDeriver.NeutralFallback();
+        return tint
+            ? ThemeDeriver.DeriveDark(new RgbColor(0x30, 0x40, 0x60))
+            : ThemePalette.FixedDark;
     }
 
     private static IReadOnlyList<RgbColor> LoadSamplePixels(string coverHash)
@@ -313,14 +445,10 @@ public static class ThemeService
         // 染色时覆盖 WPF-UI 控件强调色，保证按钮/选中态与整体一致
         if (Tint)
         {
-            var accentBrush = new SolidColorBrush(Color.FromArgb(p.Accent.A, p.Accent.R, p.Accent.G, p.Accent.B));
-            accentBrush.Freeze();
-            var accentTextBrush = new SolidColorBrush(Color.FromArgb(p.TextPrimary.A, p.TextPrimary.R, p.TextPrimary.G, p.TextPrimary.B));
-            accentTextBrush.Freeze();
-            resources["AccentFillColorDefaultBrush"] = accentBrush;
-            resources["AccentFillColorSecondaryBrush"] = accentBrush;
-            resources["AccentFillColorTertiaryBrush"] = accentBrush;
-            resources["AccentTextFillColorPrimaryBrush"] = accentTextBrush;
+            Set(resources, "AccentFillColorDefaultBrush", p.Accent);
+            Set(resources, "AccentFillColorSecondaryBrush", p.Accent);
+            Set(resources, "AccentFillColorTertiaryBrush", p.Accent);
+            Set(resources, "AccentTextFillColorPrimaryBrush", p.TextPrimary);
         }
         else
         {
@@ -375,8 +503,20 @@ public static class ThemeService
 
     private static void Set(ResourceDictionary resources, string key, RgbColor c)
     {
-        var brush = new SolidColorBrush(Color.FromArgb(c.A, c.R, c.G, c.B));
-        brush.Freeze();
-        resources[key] = brush;
+        var color = Color.FromArgb(c.A, c.R, c.G, c.B);
+        if (!MutableBrushes.TryGetValue(key, out var brush) || brush.IsFrozen)
+        {
+            brush = new SolidColorBrush(color);
+            MutableBrushes[key] = brush;
+            resources[key] = brush;
+            return;
+        }
+
+        if (brush.Color != color) brush.Color = color;
+
+        // 染色关闭时会移除 WPF-UI 的 Accent 覆盖。再次开启只需把自有画刷
+        // 放回本地资源；绝不修改合并字典里的 WPF-UI 回退画刷。
+        if (!resources.Contains(key) || !ReferenceEquals(resources[key], brush))
+            resources[key] = brush;
     }
 }

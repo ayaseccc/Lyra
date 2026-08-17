@@ -84,6 +84,7 @@ public sealed class DownloadService : IDisposable
     private readonly object _gate = new();
     private DownloadItem? _current;
     private CancellationTokenSource? _cts;
+    private Task? _workerTask;
     private bool _disposed;
 
     public DownloadService(OnlineSources sources, LibraryService library)
@@ -100,16 +101,25 @@ public sealed class DownloadService : IDisposable
     /// <summary>全部完成后由调用方触发媒体库增量扫描（App 层接）。</summary>
     public event Action? BatchCompleted;
 
-    public DownloadItem? Current => _current;
+    public DownloadItem? Current
+    {
+        get
+        {
+            lock (_gate) return _current;
+        }
+    }
 
     public IReadOnlyList<DownloadItem> Snapshot()
     {
         lock (_gate)
         {
             var list = new List<DownloadItem>();
-            if (_current is not null) list.Add(_current);
-            list.AddRange(_queue);
-            list.AddRange(_history);   // 历史（最新在前）
+            var seen = new HashSet<DownloadItem>(ReferenceEqualityComparer.Instance);
+            if (_current is not null && seen.Add(_current)) list.Add(_current);
+            foreach (var queued in _queue)
+                if (seen.Add(queued)) list.Add(queued);
+            foreach (var historical in _history)
+                if (seen.Add(historical)) list.Add(historical);   // 历史（最新在前）
             return list;
         }
     }
@@ -117,13 +127,19 @@ public sealed class DownloadService : IDisposable
     /// <summary>任务进入终态时归档（历史列表，超出上限丢最旧）。</summary>
     private void AddHistory(DownloadItem item)
     {
+        DownloadItem? evicted = null;
         lock (_gate)
         {
             if (_history.Contains(item)) return;
             _history.Insert(0, item);
             if (_history.Count > HistoryLimit)
+            {
+                evicted = _history[^1];
                 _history.RemoveAt(_history.Count - 1);
+            }
         }
+
+        if (evicted is not null) TryDisposeCancellation(evicted);
     }
 
     /// <summary>从历史里摘除（重复确认后重新入队时用）。</summary>
@@ -140,27 +156,23 @@ public sealed class DownloadService : IDisposable
     public DownloadItem Enqueue(OnlineTrack track, string sourceKey, int preferredBr,
         Func<DownloadItem, bool>? confirmDuplicate = null, string? downloadDir = null)
     {
-        if (_disposed)
-        {
-            return new DownloadItem
-            {
-                Track = track,
-                SourceKey = sourceKey,
-                PreferredBr = preferredBr,
-                FileName = BuildFileName(track, sourceKey, preferredBr),
-                Status = DownloadStatus.Failed,
-                Error = "下载服务已释放"
-            };
-        }
-
         var item = new DownloadItem
         {
             Track = track,
             SourceKey = sourceKey,
             PreferredBr = preferredBr,
-            FileName = BuildFileName(track, sourceKey, preferredBr),
+            FileName = BuildFileName(track),
             DownloadDir = string.IsNullOrWhiteSpace(downloadDir) ? null : downloadDir
         };
+
+        lock (_gate)
+        {
+            if (_disposed)
+            {
+                RejectDisposed(item);
+                return item;
+            }
+        }
 
         if (IsDuplicateInLibrary(track))
         {
@@ -177,9 +189,14 @@ public sealed class DownloadService : IDisposable
             item.Error = null;
         }
 
-        _queue.Enqueue(item);
+        if (!TryEnqueue(item))
+        {
+            RejectDisposed(item);
+            return item;
+        }
+
         Raise(item);
-        _ = Task.Run(RunAsync);
+        StartWorker();
         return item;
     }
 
@@ -190,62 +207,95 @@ public sealed class DownloadService : IDisposable
         RemoveFromHistory(item);
         item.Status = DownloadStatus.Queued;
         item.Error = null;
+
+        if (!TryEnqueue(item))
+        {
+            RejectDisposed(item);
+            return;
+        }
+
         Raise(item);
-        _queue.Enqueue(item);
-        _ = Task.Run(RunAsync);
+        StartWorker();
     }
 
     /// <summary>取消重复项（丢弃）。</summary>
     public void CancelDuplicate(DownloadItem item)
     {
         if (item.Status != DownloadStatus.Duplicate) return;
-        item.Status = DownloadStatus.Failed;
-        item.Error = "已取消（库内重复）";
+        item.Status = DownloadStatus.Cancelled;
+        item.Error = null;
         Raise(item);
+        TryDisposeCancellation(item);
     }
 
     /// <summary>取消任务：下载中 → 取消当前下载（队列继续）；排队中 → 移出队列。</summary>
     public void Cancel(DownloadItem item)
     {
+        var cancelCurrent = false;
+        var removed = false;
         lock (_gate)
         {
             if (ReferenceEquals(item, _current))
             {
-                item.CancelCts.Cancel();
-                return;
+                cancelCurrent = true;
+            }
+            else if (item.Status == DownloadStatus.Queued)
+            {
+                // Enqueue and worker dequeue use the same gate, so rebuilding the
+                // FIFO cannot race either operation or reorder a newly queued item.
+                var rest = new Queue<DownloadItem>();
+                while (_queue.TryDequeue(out var queued))
+                {
+                    if (ReferenceEquals(queued, item)) removed = true;
+                    else rest.Enqueue(queued);
+                }
+                while (rest.TryDequeue(out var queued)) _queue.Enqueue(queued);
             }
         }
 
-        // 排队中的任务：从队列摘除并标记（worker 并发出队时可能已被取走，届时走 _current 分支）
-        if (item.Status == DownloadStatus.Queued)
+        // Cancellation callbacks may run synchronously; never invoke them while
+        // holding the queue state lock.
+        if (cancelCurrent)
         {
-            var rest = new ConcurrentQueue<DownloadItem>();
-            DownloadItem? removed = null;
-            while (_queue.TryDequeue(out var q))
-            {
-                if (ReferenceEquals(q, item)) removed = q;
-                else rest.Enqueue(q);
-            }
-            while (rest.TryDequeue(out var r)) _queue.Enqueue(r);
+            try { item.CancelCts.Cancel(); }
+            catch (ObjectDisposedException) { }
+            return;
+        }
 
-            if (removed is not null)
-            {
-                item.Status = DownloadStatus.Cancelled;
-                item.Error = null;
-                Raise(item);
-            }
+        if (removed)
+        {
+            item.Status = DownloadStatus.Cancelled;
+            item.Error = null;
+            AddHistory(item);
+            Raise(item);
+            TryDisposeCancellation(item);
         }
     }
 
-    private async Task RunAsync()
+    private bool TryEnqueue(DownloadItem item)
     {
         lock (_gate)
         {
-            if (_current is not null || _cts is not null) return;   // 已在跑
-            _cts = new CancellationTokenSource();
+            if (_disposed) return false;
+            _queue.Enqueue(item);
+            return true;
         }
+    }
 
-        var ct = _cts.Token;
+    private void StartWorker()
+    {
+        lock (_gate)
+        {
+            if (_disposed || _current is not null || _cts is not null) return;   // 已在跑
+            _cts = new CancellationTokenSource();
+            var workerCts = _cts;
+            _workerTask = Task.Run(() => RunAsync(workerCts));
+        }
+    }
+
+    private async Task RunAsync(CancellationTokenSource workerCts)
+    {
+        var ct = workerCts.Token;
         try
         {
             while (true)
@@ -259,7 +309,11 @@ public sealed class DownloadService : IDisposable
                     if (!_queue.TryDequeue(out item))
                     {
                         _current = null;
-                        _cts = null;
+                        if (ReferenceEquals(_cts, workerCts))
+                        {
+                            _cts = null;
+                            _workerTask = null;
+                        }
                         break;
                     }
                     _current = item;
@@ -275,8 +329,40 @@ public sealed class DownloadService : IDisposable
                     // 用户取消当前任务：标记后继续下一个（不中断队列）
                     item.Status = DownloadStatus.Cancelled;
                     item.Error = null;
-                    Raise(item);
                     AddHistory(item);
+                    Raise(item);
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    // Service shutdown: leave the queue untouched by the worker
+                    // and let the outer cancellation path finish cleanup.
+                    throw;
+                }
+                catch (Exception ex)
+                {
+                    // A provider or tag writer must not fault the worker and strand
+                    // every item behind it.  ProcessItemAsync handles expected
+                    // failures itself; this is the final containment boundary.
+                    Log.Error(ex, "下载任务处理异常：{Name}", item.Track.Name);
+                    Fail(item, "下载任务异常：" + ex.Message);
+                }
+                finally
+                {
+                    if (item.IsDone && item.Status != DownloadStatus.Duplicate)
+                    {
+                        try { item.CancelCts.Dispose(); }
+                        catch (ObjectDisposedException) { }
+                    }
+                }
+
+                // Terminal items are already represented by _history. Keeping the
+                // same instance in _current during the four-second queue gap made
+                // Snapshot return it twice and caused the downloads page to reorder
+                // the row on every refresh.
+                lock (_gate)
+                {
+                    if (ReferenceEquals(_current, item))
+                        _current = null;
                 }
 
                 // 任务间隔 ≥4s（PLAN：串行队列；锁外延时）
@@ -286,10 +372,44 @@ public sealed class DownloadService : IDisposable
         }
         catch (OperationCanceledException)
         {
-            lock (_gate) { _current = null; _cts = null; }
-        }
+            DownloadItem? interrupted;
+            lock (_gate)
+            {
+                interrupted = _current;
+                _current = null;
+            }
 
-        BatchCompleted?.Invoke();   // 后台线程触发；订阅方（媒体库扫描）也是后台，安全
+            if (interrupted is not null && !interrupted.IsDone)
+            {
+                interrupted.Status = DownloadStatus.Cancelled;
+                interrupted.Error = null;
+                TryDisposeCancellation(interrupted);
+            }
+        }
+        finally
+        {
+            lock (_gate)
+            {
+                if (ReferenceEquals(_cts, workerCts))
+                {
+                    _cts = null;
+                    _workerTask = null;
+                }
+            }
+
+            workerCts.Dispose();
+            if (!_disposed)
+            {
+                try
+                {
+                    BatchCompleted?.Invoke();   // 后台线程触发；订阅方（媒体库扫描）也是后台，安全
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "下载批次完成回调失败");
+                }
+            }
+        }
     }
 
     private async Task ProcessItemAsync(DownloadItem item, CancellationToken ct)
@@ -371,8 +491,8 @@ public sealed class DownloadService : IDisposable
             await WriteLyricIfAnyAsync(target, item, source, ct).ConfigureAwait(false);
             item.Status = DownloadStatus.Completed;
             item.ProgressPercent = 100;
-            Raise(item);
             AddHistory(item);
+            Raise(item);
             Log.Information("下载完成：{Target}（实际 {Br}）", target, item.ActualBr);
         }
         catch (OperationCanceledException)
@@ -399,7 +519,13 @@ public sealed class DownloadService : IDisposable
 
         var total = response.Content.Headers.ContentLength ?? 0;
         await using var src = await response.Content.ReadAsStreamAsync(ct).ConfigureAwait(false);
-        await using var dst = new FileStream(tempPath, FileMode.Create, FileAccess.Write, FileShare.None, 64 * 1024);
+        await using var dst = new FileStream(
+            tempPath,
+            FileMode.Create,
+            FileAccess.Write,
+            FileShare.None,
+            64 * 1024,
+            FileOptions.Asynchronous | FileOptions.SequentialScan);
         var buffer = new byte[64 * 1024];
         long written = 0;
         while (true)
@@ -408,15 +534,22 @@ public sealed class DownloadService : IDisposable
             if (n == 0) break;
             await dst.WriteAsync(buffer.AsMemory(0, n), ct).ConfigureAwait(false);
             written += n;
-            if (total > 0) item.ProgressPercent = (int)(written * 100 / total);
-            Raise(item);
+            if (total > 0)
+            {
+                var nextProgress = (int)Math.Clamp(written * 100d / total, 0d, 100d);
+                if (nextProgress != item.ProgressPercent)
+                {
+                    item.ProgressPercent = nextProgress;
+                    Raise(item);
+                }
+            }
         }
 
         return true;
     }
 
     /// <summary>TagLibSharp 写标签（标题/歌手/专辑/曲号）+ 封面（在线取图下载）。</summary>
-    private static async Task WriteTagsAsync(string path, DownloadItem item, IOnlineSource source, CancellationToken ct)
+    private async Task WriteTagsAsync(string path, DownloadItem item, IOnlineSource source, CancellationToken ct)
     {
         TagLib.File tagFile = TagLib.File.Create(path);
         try
@@ -439,8 +572,9 @@ public sealed class DownloadService : IDisposable
             {
                 try
                 {
-                    using var client = new HttpClient { Timeout = TimeSpan.FromSeconds(20) };
-                    var bytes = await client.GetByteArrayAsync(picUrl, ct).ConfigureAwait(false);
+                    using var coverCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+                    coverCts.CancelAfter(TimeSpan.FromSeconds(20));
+                    var bytes = await _http.GetByteArrayAsync(picUrl, coverCts.Token).ConfigureAwait(false);
                     if (bytes.Length > 0)
                     {
                         var ext2 = DownloadTemplater.ExtensionFromUrl(picUrl);
@@ -450,6 +584,10 @@ public sealed class DownloadService : IDisposable
                         };
                         tagFile.Tag.Pictures = new[] { picture };
                     }
+                }
+                catch (OperationCanceledException) when (ct.IsCancellationRequested)
+                {
+                    throw;
                 }
                 catch (Exception ex)
                 {
@@ -487,19 +625,36 @@ public sealed class DownloadService : IDisposable
             && (track.DurationMs <= 0 || Math.Abs(t.Duration.TotalMilliseconds - track.DurationMs) < 2000));
     }
 
-    private string BuildFileName(OnlineTrack track, string sourceKey, int preferredBr) =>
+    private static string BuildFileName(OnlineTrack track) =>
         $"{DownloadTemplater.SanitizeComponent(track.Name)}.bin";
 
     private void Fail(DownloadItem item, string error)
     {
         item.Status = DownloadStatus.Failed;
         item.Error = error;
-        Raise(item);
         AddHistory(item);
+        Raise(item);
         Log.Warning("下载失败：{Name}（{Error}）", item.Track.Name, error);
     }
 
-    private void Raise(DownloadItem item) => ItemChanged?.Invoke(item);
+    private void Raise(DownloadItem item)
+    {
+        try { ItemChanged?.Invoke(item); }
+        catch (Exception ex) { Log.Debug(ex, "下载状态回调失败：{Name}", item.Track.Name); }
+    }
+
+    private static void RejectDisposed(DownloadItem item)
+    {
+        item.Status = DownloadStatus.Failed;
+        item.Error = "下载服务已释放";
+        TryDisposeCancellation(item);
+    }
+
+    private static void TryDisposeCancellation(DownloadItem item)
+    {
+        try { item.CancelCts.Dispose(); }
+        catch (ObjectDisposedException) { }
+    }
 
     private static void TryDelete(string path)
     {
@@ -509,15 +664,49 @@ public sealed class DownloadService : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
-        _cts?.Cancel();
+        Task? worker;
+        CancellationTokenSource? workerCts;
         lock (_gate)
         {
-            _queue.Clear();
-            _current = null;
-            _cts = null;
+            if (_disposed) return;
+            _disposed = true;
+            worker = _workerTask;
+            workerCts = _cts;
+            while (_queue.TryDequeue(out var queued))
+            {
+                queued.Status = DownloadStatus.Cancelled;
+                queued.Error = null;
+                TryDisposeCancellation(queued);
+            }
+            foreach (var historical in _history)
+                TryDisposeCancellation(historical);
         }
-        _http.Dispose();
+
+        try { workerCts?.Cancel(); } catch (ObjectDisposedException) { }
+
+        // Let the active request observe cancellation before closing HttpClient.
+        // Dispose is synchronous for the existing public API; if a provider takes
+        // longer than the bounded wait, defer the final HttpClient dispose to the
+        // tracked worker instead of racing it from this thread.
+        if (worker is not null && !worker.IsCompleted)
+        {
+            try { worker.Wait(TimeSpan.FromSeconds(2)); }
+            catch (AggregateException ex) when (ex.InnerExceptions.All(e => e is OperationCanceledException)) { }
+            catch (InvalidOperationException) { }
+            catch (Exception ex) { Log.Debug(ex, "等待下载 worker 退出失败"); }
+        }
+
+        if (worker is null || worker.IsCompleted)
+        {
+            _http.Dispose();
+        }
+        else
+        {
+            _ = worker.ContinueWith(
+                _ => _http.Dispose(),
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
     }
 }

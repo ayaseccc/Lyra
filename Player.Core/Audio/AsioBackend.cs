@@ -16,7 +16,8 @@ public sealed class AsioBackend : IOutputBackend, IOutputDeviceEnumerator
     private readonly object _gate = new();
 
     /// <summary>必须用字段持有：驱动回调只拿到函数指针，委托被 GC 就会崩。</summary>
-    private AsioNotifyProcedure? _notifyProcedure;
+    private readonly AsioNotifyProcedure _notifyProcedure;
+    private readonly AsioNotificationMailbox _notifyMailbox = new();
 
     private int _device = -1;
     private int _firstChannel;
@@ -40,6 +41,8 @@ public sealed class AsioBackend : IOutputBackend, IOutputDeviceEnumerator
     public event EventHandler<string>? DeviceLost;
 
     public event EventHandler<string>? FormatChanged;
+
+    public AsioBackend() => _notifyProcedure = OnAsioNotify;
 
     public IReadOnlyList<OutputDeviceInfo> EnumerateDevices()
     {
@@ -108,6 +111,11 @@ public sealed class AsioBackend : IOutputBackend, IOutputDeviceEnumerator
 
             _bufferSamples = ResolveBuffer(settings.AsioBufferSamples);
 
+            // 在启动前注册通知，避免驱动在首个启动块里发出的变化被漏掉。
+            var notifyGeneration = _notifyMailbox.BeginSession();
+            if (!BassAsio.SetNotify(_notifyProcedure, new IntPtr(notifyGeneration)))
+                Log.Warning("注册 ASIO 驱动通知失败：{Error}；仍保留 Poll 掉线检测", BassAsio.LastError);
+
             if (!BassAsio.Start(_bufferSamples, 0))
             {
                 var firstError = BassAsio.LastError;
@@ -123,10 +131,6 @@ public sealed class AsioBackend : IOutputBackend, IOutputDeviceEnumerator
                     throw new OutputBackendException($"ASIO 启动失败（{error}）");
                 }
             }
-
-            // 驱动侧的变化（采样率被面板改了、设备复位/掉线）通过它通知上来
-            _notifyProcedure = OnAsioNotify;
-            BassAsio.SetNotify(_notifyProcedure, IntPtr.Zero);
 
             IsRunning = true;
             _paused = false;
@@ -208,27 +212,16 @@ public sealed class AsioBackend : IOutputBackend, IOutputDeviceEnumerator
         _ => $"ASIO 初始化失败（{error}）"
     };
 
-    /// <summary>驱动回调线程！这里只记录并广播，绝不做耗时操作。</summary>
+    /// <summary>
+    /// 驱动回调线程！这里只写无分配 mailbox。读取采样率、日志和事件派发统一在 Poll 完成。
+    /// </summary>
     private void OnAsioNotify(AsioNotify notify, IntPtr user)
     {
-        try
-        {
-            if (notify == AsioNotify.Rate)
-            {
-                var rate = (int)Math.Round(BassAsio.Rate);
-                Log.Information("ASIO 面板把采样率改成了 {Rate} Hz，需要按新格式重建链路", rate);
-                SampleRate = rate;
-                FormatChanged?.Invoke(this, $"ASIO 设备采样率变为 {rate} Hz");
-                return;
-            }
-
-            Log.Warning("ASIO 设备复位通知（{Notify}），多半是拔线或驱动重启", notify);
-            DeviceLost?.Invoke(this, "ASIO 设备已复位或断开");
-        }
-        catch (Exception ex)
-        {
-            Log.Error(ex, "处理 ASIO 通知时异常");
-        }
+        var flags = notify == AsioNotify.Rate
+            ? AsioNotificationFlags.Rate
+            : AsioNotificationFlags.Reset;
+        var generation = unchecked((int)user.ToInt64());
+        _notifyMailbox.Post(generation, flags);
     }
 
     public void Pause()
@@ -271,11 +264,31 @@ public sealed class AsioBackend : IOutputBackend, IOutputDeviceEnumerator
         try
         {
             SetCurrentDevice();
-            if (BassAsio.IsStarted) return;
+            if (!BassAsio.IsStarted)
+            {
+                Log.Warning("ASIO 已停止但播放器仍在播放状态，判定为设备异常");
+                IsRunning = false;
+                _notifyMailbox.EndSession();
+                DeviceLost?.Invoke(this, "ASIO 设备已停止");
+                return;
+            }
 
-            Log.Warning("ASIO 已停止但播放器仍在播放状态，判定为设备异常");
-            IsRunning = false;
-            DeviceLost?.Invoke(this, "ASIO 设备已停止");
+            var generation = _notifyMailbox.CurrentGeneration;
+            var flags = _notifyMailbox.Drain(generation);
+            if (flags == AsioNotificationFlags.None) return;
+
+            if ((flags & AsioNotificationFlags.Rate) != 0)
+            {
+                var rate = (int)Math.Round(BassAsio.Rate);
+                SampleRate = rate;
+                Log.Information("ASIO 面板把采样率改成了 {Rate} Hz，需要按新格式重建链路", rate);
+                FormatChanged?.Invoke(this, $"ASIO 设备采样率变为 {rate} Hz");
+                return;
+            }
+
+            // Reset 按 ASIO 文档表示驱动请求重新初始化；交给同一后端重建，失败时由引擎回退。
+            Log.Information("ASIO 驱动请求重新初始化输出，需要重建链路");
+            FormatChanged?.Invoke(this, "ASIO 驱动请求重新初始化输出");
         }
         catch (Exception ex)
         {
@@ -299,12 +312,16 @@ public sealed class AsioBackend : IOutputBackend, IOutputDeviceEnumerator
 
     private void Free()
     {
+        // 先失效当前代际并移除回调，防止 Free 期间迟到通知污染下一次 Start。
+        _notifyMailbox.EndSession();
+        try { BassAsio.SetNotify(null!, IntPtr.Zero); }
+        catch (Exception ex) { Log.Debug(ex, "移除 ASIO 通知回调失败"); }
+
         try { BassAsio.Free(); }
         catch (Exception ex) { Log.Debug(ex, "BassAsio.Free 失败"); }
 
         _initialized = false;
         IsRunning = false;
-        _notifyProcedure = null;
     }
 
     public void Dispose()

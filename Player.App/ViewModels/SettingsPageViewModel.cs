@@ -1,5 +1,7 @@
 using System.Collections.ObjectModel;
+using System.ComponentModel;
 using System.Linq;
+using System.Windows.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using Microsoft.Win32;
@@ -32,13 +34,18 @@ public sealed record BufferOption(int Value, string Name)
 /// 设置页。P1 做了媒体库组，P2 加上输出组（PLAN 第 8 节）：
 /// 后端 / 设备 / 独占 / 缓冲 / 采样率策略，改动即时生效，不需要重启程序。
 /// </summary>
-public sealed partial class SettingsPageViewModel : ObservableObject
+public sealed partial class SettingsPageViewModel : ObservableObject, IDisposable
 {
+    private static readonly TimeSpan SaveDebounceDelay = TimeSpan.FromMilliseconds(200);
+
     private readonly LibraryService _library;
     private readonly IPlaybackEngine _engine;
     private readonly ChkszClient _client;
     private readonly Func<bool, Task> _requestScan;
     private readonly Action? _importM3u;
+    private readonly DispatcherTimer _saveDebounceTimer;
+    private bool _savePending;
+    private bool _disposed;
 
     /// <summary>初始化期间不要把界面上的默认值当成用户改动去应用。</summary>
     private bool _loading = true;
@@ -51,6 +58,11 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         _client = client ?? new ChkszClient();
         _requestScan = requestScan;
         _importM3u = importM3u;
+        _saveDebounceTimer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher.CurrentDispatcher)
+        {
+            Interval = SaveDebounceDelay
+        };
+        _saveDebounceTimer.Tick += OnSaveDebounceTick;
 
         Folders = new ObservableCollection<string>(ConfigService.Current.Library.Folders);
 
@@ -800,7 +812,11 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
     public ObservableCollection<ApiEndpointRow> ApiEndpoints { get; } = new();
 
-    private void OnApiRowChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e) => PersistEndpoints();
+    private void OnApiRowChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        var debounce = e.PropertyName is nameof(ApiEndpointRow.Url) or nameof(ApiEndpointRow.Key);
+        PersistEndpoints(debounce);
+    }
 
     [RelayCommand]
     private void AddApiEndpoint()
@@ -808,7 +824,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         var row = new ApiEndpointRow { Kind = ApiKinds[0] };
         row.PropertyChanged += OnApiRowChanged;
         ApiEndpoints.Add(row);
-        PersistEndpoints();
+        PersistEndpoints(debounce: false);
     }
 
     [RelayCommand]
@@ -816,10 +832,10 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     {
         row.PropertyChanged -= OnApiRowChanged;
         ApiEndpoints.Remove(row);
-        PersistEndpoints();
+        PersistEndpoints(debounce: false);
     }
 
-    private void PersistEndpoints()
+    private void PersistEndpoints(bool debounce)
     {
         if (_loading) return;
         ConfigService.Current.Online.ApiEndpoints = ApiEndpoints
@@ -830,7 +846,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject
                 Key = r.Key.Trim()
             })
             .ToList();
-        ConfigService.Save();
+        if (debounce) ScheduleConfigSave();
+        else SaveConfigImmediately();
         OnPropertyChanged(nameof(QuotaDisplay));
     }
 
@@ -904,9 +921,6 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
     // ================= L3.1 个性化（外观区：列表 / 列 / 字体 / 颜色） =================
 
-    /// <summary>个性化变化后由 Shell 注入刷新当前列表页（列绑定/分组重建）。</summary>
-    public Action? OnListSettingsChanged { get; set; }
-
     // ---- 列表 ----
 
     public sealed record RowHeightOption(int Value, string Name)
@@ -950,7 +964,6 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         if (_loading) return;
         ConfigService.Current.Ui.GroupCoverVisible = value;
         ConfigService.Save();
-        OnListSettingsChanged?.Invoke();
     }
 
     // ---- 列 ----
@@ -972,6 +985,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject
 
     public void RefreshColumnRows()
     {
+        foreach (var oldRow in ColumnRows)
+            oldRow.PropertyChanged -= OnColumnRowChanged;
         ColumnRows.Clear();
         var cols = ConfigService.Current.Ui.Columns;
         foreach (var col in TrackListPageViewModel.TrackColumns)
@@ -983,13 +998,19 @@ public sealed partial class SettingsPageViewModel : ObservableObject
                 Visible = cols.Contains(col.Key),
                 Width = ConfigService.Current.Ui.ColumnWidths.TryGetValue(col.Key, out var w) ? w : col.DefaultWidth
             };
-            row.PropertyChanged += (_, _) => ApplyColumnRow(row);
+            row.PropertyChanged += OnColumnRowChanged;
             ColumnRows.Add(row);
         }
     }
 
+    private void OnColumnRowChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (sender is not ColumnSettingRow row) return;
+        ApplyColumnRow(row, debounce: e.PropertyName == nameof(ColumnSettingRow.Width));
+    }
+
     /// <summary>列的显示/宽度/顺序变化 → 落盘并刷新当前列表页。</summary>
-    private void ApplyColumnRow(ColumnSettingRow row)
+    private void ApplyColumnRow(ColumnSettingRow row, bool debounce)
     {
         if (_loading) return;
         ConfigService.Current.Ui.ColumnWidths[row.Key] = row.Width;
@@ -1005,8 +1026,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject
             }
             ConfigService.Current.Ui.Columns.Insert(Math.Min(insertAt, ConfigService.Current.Ui.Columns.Count), row.Key);
         }
-        ConfigService.Save();
-        OnListSettingsChanged?.Invoke();
+        if (debounce) ScheduleConfigSave();
+        else SaveConfigImmediately();
     }
 
     /// <summary>列上移/下移（设置页按钮）。</summary>
@@ -1031,9 +1052,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         if (target < 0 || target >= cols.Count) return;
         cols.RemoveAt(idx);
         cols.Insert(target, row.Key);
-        ConfigService.Save();
+        SaveConfigImmediately();
         RefreshColumnRows();
-        OnListSettingsChanged?.Invoke();
     }
 
     // ---- 恢复默认外观（L3.1；预设已按用户意见删除，留待以后版本做主题） ----
@@ -1055,11 +1075,10 @@ public sealed partial class SettingsPageViewModel : ObservableObject
         ui.HoverOpacity = 0.07;
         ui.Columns = TrackListPageViewModel.TrackColumns.Select(c => c.Key).ToList();
         ui.ColumnWidths.Clear();
-        ConfigService.Save();
+        SaveConfigImmediately();
         Theming.ThemeService.ApplyUiPersonalization();
         Theming.ThemeService.ApplyModeFromConfig();
         ReloadUiProperties();
-        OnListSettingsChanged?.Invoke();
     }
 
     /// <summary>重读配置刷新全部外观属性（预设/恢复默认后设置页控件同步）。</summary>
@@ -1182,7 +1201,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     {
         if (_loading) return;
         ConfigService.Current.Ui.SelectedOpacity = value;
-        ConfigService.Save();
+        ScheduleConfigSave();
         Theming.ThemeService.ApplyModeFromConfig();
     }
 
@@ -1193,7 +1212,46 @@ public sealed partial class SettingsPageViewModel : ObservableObject
     {
         if (_loading) return;
         ConfigService.Current.Ui.HoverOpacity = value;
-        ConfigService.Save();
+        ScheduleConfigSave();
         Theming.ThemeService.ApplyModeFromConfig();
+    }
+
+    private void ScheduleConfigSave()
+    {
+        if (_loading || _disposed) return;
+        _savePending = true;
+        _saveDebounceTimer.Stop();
+        _saveDebounceTimer.Start();
+    }
+
+    private void OnSaveDebounceTick(object? sender, EventArgs e) => FlushPendingSave();
+
+    private void SaveConfigImmediately()
+    {
+        _saveDebounceTimer.Stop();
+        _savePending = false;
+        ConfigService.Save();
+    }
+
+    private void FlushPendingSave()
+    {
+        _saveDebounceTimer.Stop();
+        if (!_savePending) return;
+        _savePending = false;
+        ConfigService.Save();
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+
+        _saveDebounceTimer.Tick -= OnSaveDebounceTick;
+        FlushPendingSave();
+
+        foreach (var row in ApiEndpoints)
+            row.PropertyChanged -= OnApiRowChanged;
+        foreach (var row in ColumnRows)
+            row.PropertyChanged -= OnColumnRowChanged;
     }
 }

@@ -13,8 +13,7 @@ public enum NavKind
     Playlist,
     FolderPlaylist,
     OnlineSearch,
-    Downloads,
-    Settings
+    Downloads
 }
 
 /// <summary>左侧栏的一行。分组标题也是同一个集合里的条目，只是不可选中。</summary>

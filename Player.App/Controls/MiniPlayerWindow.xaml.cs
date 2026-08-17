@@ -1069,8 +1069,7 @@ public partial class MiniPlayerWindow : Window
         }
 
         var hwnd = new WindowInteropHelper(this).Handle;
-        if (hwnd == IntPtr.Zero
-            || !GetWindowRect(hwnd, out _dragStartRect))
+        if (hwnd == IntPtr.Zero || !GetWindowRect(hwnd, out _dragStartRect))
             return;
 
         _dragStartCursor = cursor;
@@ -1110,14 +1109,14 @@ public partial class MiniPlayerWindow : Window
             BeginInteractiveChange(hwnd, recordSizingStart: false, suspendHitTesting: false);
         }
 
-        SetWindowPos(
+        // Move the HWND directly in device pixels. This keeps the surface live
+        // even when Windows has DragFullWindows disabled, and avoids a WPF
+        // layout pass for every pointer sample.
+        MoveIntoNearestWorkingArea(
             hwnd,
-            IntPtr.Zero,
             _dragStartRect.Left + deltaX,
             _dragStartRect.Top + deltaY,
-            0,
-            0,
-            SwpNoSize | SwpNoZOrder | SwpNoActivate);
+            useTargetDpiSize: false);
         e.Handled = true;
     }
 
@@ -1138,12 +1137,13 @@ public partial class MiniPlayerWindow : Window
     {
         if (!_dragActive) return;
 
-        var moved = _dragMoved;
         _dragActive = false;
+        var moved = _dragMoved;
         _dragMoved = false;
         if (releaseCapture && Mouse.Captured == this)
             Mouse.Capture(null);
-        if (moved) EndInteractiveChange();
+        if (moved)
+            EndInteractiveChange();
     }
 
     private bool IsSurfaceDoubleClick(NativePoint cursor, int reportedClickCount)

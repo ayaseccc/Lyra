@@ -34,21 +34,27 @@ public sealed class OnlineSearchItem
 /// P4 在线搜索：关键词 + 音源下拉 + 翻页；[source]_album 整张专辑；
 /// 双击结果试听（临时播放，不写歌单/队列）。
 /// </summary>
-public sealed partial class OnlineSearchViewModel : ObservableObject
+public sealed partial class OnlineSearchViewModel : ObservableObject, IDisposable
 {
     private readonly IReadOnlyList<IOnlineSource> _sources;
     private readonly PlayerViewModel _player;
     private readonly Player.Core.Downloads.DownloadService? _downloads;
     private readonly Func<string?, string?>? _pickDirectory;
+    private readonly Func<CancellationToken, Task>? _probeSources;
+    private CancellationTokenSource? _initializeCts;
     private CancellationTokenSource? _searchCts;
+    private bool _disposed;
+    private long _searchGeneration;
 
     public OnlineSearchViewModel(IReadOnlyList<IOnlineSource> sources, PlayerViewModel player,
-        Player.Core.Downloads.DownloadService? downloads = null, Func<string?, string?>? pickDirectory = null)
+        Player.Core.Downloads.DownloadService? downloads = null, Func<string?, string?>? pickDirectory = null,
+        Func<CancellationToken, Task>? probeSources = null)
     {
         _sources = sources;
         _player = player;
         _downloads = downloads;
         _pickDirectory = pickDirectory;
+        _probeSources = probeSources;
 
         // 默认选中网易云（PLAN：默认音源 netease）；无 Key/不可用则自动落回 GD
         var preferred = sources.FirstOrDefault(s => s.Key == "netease" && s.IsAvailable) ?? sources.FirstOrDefault(s => s.IsAvailable) ?? sources.FirstOrDefault();
@@ -112,6 +118,9 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
     private bool _isSearching;
 
     [ObservableProperty]
+    private bool _isInitializing;
+
+    [ObservableProperty]
     private string _statusText = string.Empty;
 
     [ObservableProperty]
@@ -124,7 +133,7 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
     public bool IsOnlinePreview => _player.IsOnlinePreview;
 
     /// <summary>搜索按钮可用（搜索中禁用）。</summary>
-    public bool CanSearch => !IsSearching;
+    public bool CanSearch => !IsSearching && !IsInitializing;
 
     public bool HasPreviousPage => Page > 1;
 
@@ -135,6 +144,8 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
         OnPropertyChanged(nameof(HasResults));
         OnPropertyChanged(nameof(CanSearch));
     }
+
+    partial void OnIsInitializingChanged(bool value) => OnPropertyChanged(nameof(CanSearch));
 
     partial void OnPageChanged(int value)
     {
@@ -151,6 +162,53 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
 
     /// <summary>双击试听。</summary>
     public event Action<OnlineSearchItem>? PlayRequested;
+
+    public async Task InitializeAsync()
+    {
+        if (_disposed || _probeSources is null) return;
+
+        var initializeCts = new CancellationTokenSource();
+        if (Interlocked.CompareExchange(ref _initializeCts, initializeCts, null) is not null)
+        {
+            initializeCts.Dispose();
+            return;
+        }
+
+        IsInitializing = true;
+        StatusText = "正在检测音源…";
+        try
+        {
+            await _probeSources(initializeCts.Token);
+            if (_disposed) return;
+
+            OnPropertyChanged(nameof(Sources));
+            var current = SelectedSource?.Source;
+            var preferred = current is { IsAvailable: true }
+                ? current
+                : _sources.FirstOrDefault(s => s.Key == "netease" && s.IsAvailable)
+                  ?? _sources.FirstOrDefault(s => s.IsAvailable)
+                  ?? _sources.FirstOrDefault();
+            SelectedSource = preferred is null ? null : new SourceOption(preferred);
+
+            if (StatusText == "正在检测音源…")
+                StatusText = _sources.Any(s => s.IsAvailable) ? string.Empty : "没有可用的在线音源";
+        }
+        catch (OperationCanceledException) when (initializeCts.IsCancellationRequested || _disposed)
+        {
+            // 页面已离开；进程级探测仍由 OnlineSources 自己完成。
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "在线音源探测失败");
+            if (!_disposed) StatusText = "音源检测失败，可稍后重试";
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _initializeCts, null, initializeCts);
+            initializeCts.Dispose();
+            if (!_disposed) IsInitializing = false;
+        }
+    }
 
     [RelayCommand]
     private async Task SearchAsync()
@@ -213,6 +271,7 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
 
     private async Task LoadAsync(int page)
     {
+        if (_disposed) return;
         var source = SelectedSource?.Source;
         if (source is null || !source.IsAvailable)
         {
@@ -220,9 +279,9 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
             return;
         }
 
-        _searchCts?.Cancel();
-        _searchCts = new CancellationTokenSource();
-        var ct = _searchCts.Token;
+        var searchCts = BeginSearch();
+        var ct = searchCts.Token;
+        var generation = Volatile.Read(ref _searchGeneration);
 
         IsSearching = true;
         StatusText = "正在搜索…";
@@ -232,7 +291,7 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
                 ? await source.SearchAlbumAsync(Keyword.Trim(), limit: 20, page: page, ct)
                 : await source.SearchAsync(Keyword.Trim(), limit: 20, page: page, ct);
 
-            if (ct.IsCancellationRequested) return;
+            if (ct.IsCancellationRequested || _disposed || generation != _searchGeneration) return;
 
             if (!result.Success)
             {
@@ -268,12 +327,34 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
         {
             // 兜底：任何意外都不让 AsyncRelayCommand 把异常抛到 UI 线程弹窗
             Serilog.Log.Warning(ex, "在线搜索失败");
-            StatusText = "搜索出错：" + ex.Message;
+            if (!_disposed && generation == Volatile.Read(ref _searchGeneration))
+                StatusText = "搜索出错：" + ex.Message;
         }
         finally
         {
-            IsSearching = false;
+            if (!_disposed && generation == _searchGeneration)
+                IsSearching = false;
+            FinishSearch(searchCts);
         }
+    }
+
+    private CancellationTokenSource BeginSearch()
+    {
+        var next = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _searchCts, next);
+        Interlocked.Increment(ref _searchGeneration);
+        if (previous is not null)
+        {
+            try { previous.Cancel(); }
+            catch (ObjectDisposedException) { }
+        }
+        return next;
+    }
+
+    private void FinishSearch(CancellationTokenSource searchCts)
+    {
+        Interlocked.CompareExchange(ref _searchCts, null, searchCts);
+        searchCts.Dispose();
     }
 
     private static string FormatDuration(long ms)
@@ -283,5 +364,23 @@ public sealed partial class OnlineSearchViewModel : ObservableObject
         return span.TotalHours >= 1
             ? string.Format("{0}:{1:00}:{2:00}", (int)span.TotalHours, span.Minutes, span.Seconds)
             : string.Format("{0}:{1:00}", (int)span.TotalMinutes, span.Seconds);
+    }
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        Interlocked.Increment(ref _searchGeneration);
+
+        var initializeCts = Interlocked.Exchange(ref _initializeCts, null);
+        try { initializeCts?.Cancel(); }
+        catch (ObjectDisposedException) { }
+
+        var searchCts = Interlocked.Exchange(ref _searchCts, null);
+        try { searchCts?.Cancel(); }
+        catch (ObjectDisposedException) { }
+
+        // Each in-flight async operation owns and disposes its source in finally.
+        // Disposing here could race a provider that is registering cancellation.
     }
 }

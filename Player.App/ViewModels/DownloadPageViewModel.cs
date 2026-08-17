@@ -1,6 +1,7 @@
 using System;
 using System.Collections.ObjectModel;
 using System.Linq;
+using System.Threading;
 using CommunityToolkit.Mvvm.ComponentModel;
 using Player.Core.Downloads;
 using Player.Core.Online;
@@ -8,10 +9,11 @@ using Player.Core.Online;
 namespace Player.App.ViewModels;
 
 /// <summary>下载管理页：串行队列 / 进度 / 结果 / 重复确认（P4-5）。</summary>
-public sealed partial class DownloadPageViewModel : ObservableObject
+public sealed partial class DownloadPageViewModel : ObservableObject, IDisposable
 {
     private readonly DownloadService _service;
     private readonly System.Windows.Threading.Dispatcher _dispatcher;
+    private int _refreshScheduled;
 
     public DownloadPageViewModel(DownloadService service)
     {
@@ -67,21 +69,57 @@ public sealed partial class DownloadPageViewModel : ObservableObject
         public bool IsDone => Item.IsDone;
     }
 
-    private void OnItemChanged(DownloadItem item) =>
-        _dispatcher.BeginInvoke(Refresh);
+    private void OnItemChanged(DownloadItem item)
+    {
+        if (_disposed
+            || _dispatcher.HasShutdownStarted
+            || _dispatcher.HasShutdownFinished
+            || Interlocked.Exchange(ref _refreshScheduled, 1) != 0)
+            return;
+
+        try
+        {
+            _dispatcher.BeginInvoke(
+                System.Windows.Threading.DispatcherPriority.Background,
+                new Action(() =>
+                {
+                    // Clear before taking the snapshot. An event racing the refresh
+                    // then schedules one follow-up instead of being silently lost.
+                    Interlocked.Exchange(ref _refreshScheduled, 0);
+                    if (!_disposed) Refresh();
+                }));
+        }
+        catch (InvalidOperationException)
+        {
+            Interlocked.Exchange(ref _refreshScheduled, 0);
+        }
+    }
 
     private void Refresh()
     {
         var current = _service.Snapshot().ToList();
-        foreach (var item in current)
+
+        // Snapshot is authoritative: DownloadService caps terminal history at 50
+        // and disposes evicted items. Keeping stale rows would both grow this page
+        // forever and expose actions backed by an already-disposed CTS.
+        for (var i = Items.Count - 1; i >= 0; i--)
         {
+            if (!current.Any(item => ReferenceEquals(item, Items[i].Item)))
+                Items.RemoveAt(i);
+        }
+
+        for (var targetIndex = 0; targetIndex < current.Count; targetIndex++)
+        {
+            var item = current[targetIndex];
             var row = Items.FirstOrDefault(r => ReferenceEquals(r.Item, item));
             if (row is null)
             {
-                Items.Add(new DownloadRow { Item = item });
+                Items.Insert(targetIndex, new DownloadRow { Item = item });
             }
             else
             {
+                var oldIndex = Items.IndexOf(row);
+                if (oldIndex != targetIndex) Items.Move(oldIndex, targetIndex);
                 row.Refresh();   // 已有行也要刷新（进度/状态/取消按钮可见性），修复：行是普通类不通知
             }
         }
@@ -100,5 +138,12 @@ public sealed partial class DownloadPageViewModel : ObservableObject
             _service.Cancel(row.Item);
     }
 
-    public void Dispose() => _service.ItemChanged -= OnItemChanged;
+    private volatile bool _disposed;
+
+    public void Dispose()
+    {
+        if (_disposed) return;
+        _disposed = true;
+        _service.ItemChanged -= OnItemChanged;
+    }
 }

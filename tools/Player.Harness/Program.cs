@@ -93,8 +93,12 @@ public static class Program
                 RunDspProbe();
                 break;
 
+            case "concurrency":
+                RunAudioConcurrencyChecks();
+                break;
+
             default:
-                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme / shortcuts / gdprobe）");
+                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme / shortcuts / gdprobe / concurrency）");
                 return 2;
         }
 
@@ -717,6 +721,13 @@ public static class Program
             Check(".lrc 内容正确", result.Document.Lines.Count == 2 && result.Document.Lines[0].Text == "本地歌词第一句");
             Check("无 Key 时没有在线歌词也不抛异常", result.Document.Lines.Count == 2);
 
+            using (var cancelled = new CancellationTokenSource())
+            {
+                cancelled.Cancel();
+                Check("本地歌词调用方取消向上传播",
+                    ThrowsOperationCanceled(() => service.LoadForTrackAsync(track, cancelled.Token)));
+            }
+
             // 没有 .lrc、没有 Key → 安静返回 Empty（不弹窗不崩溃）
             var noLrc = new TrackRecord { Id = 2, Path = Path.Combine(dir, "no-lrc.flac"), Title = "x", DurationMs = 1000 };
             var empty = await service.LoadForTrackAsync(noLrc);
@@ -800,6 +811,368 @@ public static class Program
     {
         if (ok) _passed++; else _failed++;
         Console.WriteLine($"  {(ok ? "✓" : "✗ 失败")}  {what}");
+    }
+
+    private static void RunAudioConcurrencyChecks()
+    {
+        Console.WriteLine("=== 音频回调代际与后端恢复合并 ===");
+
+        var mailbox = new AsioNotificationMailbox();
+        var firstSession = mailbox.BeginSession();
+        mailbox.Post(firstSession, AsioNotificationFlags.Rate);
+        mailbox.Post(firstSession, AsioNotificationFlags.Reset);
+        Check("ASIO Rate/Reset 同一批次合并", mailbox.Drain(firstSession) ==
+            (AsioNotificationFlags.Rate | AsioNotificationFlags.Reset));
+        Check("ASIO mailbox drain 后为空", mailbox.Drain(firstSession) == AsioNotificationFlags.None);
+
+        var secondSession = mailbox.BeginSession();
+        mailbox.Post(firstSession, AsioNotificationFlags.Rate);
+        Check("旧 ASIO session 回调不污染新 session",
+            mailbox.Drain(secondSession) == AsioNotificationFlags.None);
+
+        mailbox.Post(secondSession, AsioNotificationFlags.Rate);
+        Check("当前 ASIO session 通知可读取",
+            mailbox.Drain(secondSession) == AsioNotificationFlags.Rate);
+
+        // Warm all lazy paths before checking the driver-shaped hot path.
+        mailbox.Post(secondSession, AsioNotificationFlags.Rate);
+        mailbox.Drain(secondSession);
+        var before = GC.GetAllocatedBytesForCurrentThread();
+        for (var i = 0; i < 100_000; i++)
+        {
+            mailbox.Post(secondSession, AsioNotificationFlags.Rate);
+            mailbox.Drain(secondSession);
+        }
+        var allocated = GC.GetAllocatedBytesForCurrentThread() - before;
+        Check($"ASIO mailbox 100k 次 post/drain 零托管分配（实测 {allocated} B）", allocated == 0);
+
+        var queue = new BackendRecoveryQueue();
+        var active = new object();
+        var stale = new object();
+        queue.Activate(active);
+
+        Check("旧 backend sender 被拒绝",
+            !queue.TryEnqueue(stale, BackendRecoveryKind.FormatChanged, "stale", out _));
+
+        Check("首个 backend 通知启动 worker",
+            queue.TryEnqueue(active, BackendRecoveryKind.FormatChanged, "format", out var firstSchedule) &&
+            firstSchedule);
+        Check("重复 backend 通知不启动第二个 worker",
+            queue.TryEnqueue(active, BackendRecoveryKind.FormatChanged, "duplicate", out var duplicateSchedule) &&
+            !duplicateSchedule);
+        Check("重复通知只取一个批次",
+            queue.TryTake(out var request) && request.Kind == BackendRecoveryKind.FormatChanged);
+        Check("批次取完后 worker 状态清空", !queue.TryTake(out _));
+
+        queue.TryEnqueue(active, BackendRecoveryKind.FormatChanged, "format", out _);
+        queue.TryEnqueue(active, BackendRecoveryKind.DeviceLost, "lost", out _);
+        Check("DeviceLost 覆盖同批 FormatChanged",
+            queue.TryTake(out request) && request.Kind == BackendRecoveryKind.DeviceLost);
+
+        queue.TryEnqueue(active, BackendRecoveryKind.FormatChanged, "old", out _);
+        var oldGeneration = queue.CurrentGeneration;
+        queue.AdvanceSession(active);
+        Check("后端会话推进后丢弃旧 pending", !queue.TryTake(out _));
+        Check("旧 backend generation 请求不再有效",
+            !queue.IsCurrent(new BackendRecoveryRequest(active, oldGeneration,
+                BackendRecoveryKind.FormatChanged, "old")));
+
+        queue.AdvanceSession(active);
+        var scheduled = 0;
+        Parallel.For(0, 1_000, _ =>
+        {
+            if (queue.TryEnqueue(active, BackendRecoveryKind.FormatChanged, "burst", out var shouldSchedule) &&
+                shouldSchedule)
+                Interlocked.Increment(ref scheduled);
+        });
+        Check("1000 个并发 backend 通知只排一个 worker", scheduled == 1);
+        queue.TryTake(out _);
+
+        const int channel = 17;
+        const int generation = 42;
+        Check("当前 END sync channel+generation 接受",
+            PlaybackEngine.IsCurrentEndSync(channel, generation, channel, new IntPtr(generation)));
+        Check("旧 END sync channel 拒绝",
+            !PlaybackEngine.IsCurrentEndSync(channel, generation, channel + 1, new IntPtr(generation)));
+        Check("旧 END sync generation 拒绝",
+            !PlaybackEngine.IsCurrentEndSync(channel, generation, channel, new IntPtr(generation - 1)));
+        Check("空 END sync generation 拒绝",
+            !PlaybackEngine.IsCurrentEndSync(channel, 0, channel, IntPtr.Zero));
+
+        var firstTrack = new TrackInfo { Path = "first.flac" };
+        var secondTrack = new TrackInfo { Path = "second.flac" };
+        var endQueue = new PlaybackEndQueue();
+        var first = new PlaybackEndCompletion(7, 70, 101, firstTrack, PlaybackEndKind.Ended, firstTrack.Path);
+        var second = new PlaybackEndCompletion(8, 80, 102, secondTrack, PlaybackEndKind.Transitioned, secondTrack.Path);
+        endQueue.Enqueue(first, out var firstWorker);
+        endQueue.Enqueue(second, out var secondWorker);
+        Check("END queue 首个生产者独占 worker", firstWorker && !secondWorker);
+        Check("END queue FIFO 保持曲目顺序",
+            endQueue.TryTake(out var firstTaken) && firstTaken.Equals(first) &&
+            endQueue.TryTake(out var secondTaken) && secondTaken.Equals(second));
+        Check("END queue 为空时 worker 正确释放", !endQueue.TryRetainWorker());
+        endQueue.Clear();
+
+        Check("END completion 当前曲目身份接受",
+            PlaybackEngine.ShouldPublishEnd(
+                PlaybackEndKind.Ended, 7, 70, 101, firstTrack, 7, 70, 101, firstTrack));
+        Check("END completion 同路径不同对象拒绝",
+            !PlaybackEngine.ShouldPublishEnd(
+                PlaybackEndKind.Ended, 7, 70, 101, firstTrack, 7, 70, 101,
+                new TrackInfo { Path = firstTrack.Path }));
+        Check("END completion 旧曲目代际拒绝",
+            !PlaybackEngine.ShouldPublishEnd(
+                PlaybackEndKind.Ended, 7, 70, 101, firstTrack, 8, 70, 101, firstTrack));
+        Check("Transitioned 排队后 Pause 推进控制代际仍发布",
+            PlaybackEngine.ShouldPublishEnd(
+                PlaybackEndKind.Transitioned, 8, 80, 102, secondTrack, 8, 81, 102, secondTrack));
+        Check("Transitioned 排队后 Seek 再推进控制代际仍发布",
+            PlaybackEngine.ShouldPublishEnd(
+                PlaybackEndKind.Transitioned, 8, 80, 102, secondTrack, 8, 82, 102, secondTrack));
+        Check("自然 END 排队后用户控制会取消迟到续播",
+            !PlaybackEngine.ShouldPublishEnd(
+                PlaybackEndKind.Ended, 7, 70, 101, firstTrack, 7, 71, 101, firstTrack));
+        Check("END 后 Playing 状态重挂不暂停源",
+            !PlaybackEngine.ShouldPauseReattachedSource(PlayerState.Playing));
+        Check("END 后 Stopped 状态重挂暂停源",
+            PlaybackEngine.ShouldPauseReattachedSource(PlayerState.Stopped));
+
+        var transitionedEvent = new PlaybackTrackEventArgs(
+            8, 80, 102, secondTrack, secondTrack.Path, requiresControlMatch: false);
+        Check("迟到 Transitioned 与当前 B seek 使用同一代际",
+            transitionedEvent.HasTrackIdentity(8));
+        Check("A 代际 seek 不会覆盖 B 的进度",
+            !transitionedEvent.HasTrackIdentity(7));
+
+        RunPreloadWorkTrackerChecks();
+        RunLibrarySnapshotConcurrencyChecks();
+        RunLibraryRescanQueueChecks();
+        RunCancellationSemanticsChecks();
+
+        Console.WriteLine();
+    }
+
+    private static void RunPreloadWorkTrackerChecks()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 下一曲预载单飞与退出排空 ===");
+
+        var tracker = new PreloadWorkTracker();
+        using var firstStarted = new ManualResetEventSlim();
+        using var secondStarted = new ManualResetEventSlim();
+        using var release = new ManualResetEventSlim();
+        var executions = 0;
+
+        var firstAccepted = tracker.TryStart(11, @"C:\Music\Album\Next.MP3", () =>
+        {
+            Interlocked.Increment(ref executions);
+            firstStarted.Set();
+            release.Wait();
+        });
+
+        Check("首个预载请求被接纳", firstAccepted && firstStarted.Wait(TimeSpan.FromSeconds(2)));
+        Check("同代际同路径只运行一次",
+            !tracker.TryStart(11, @"C:\Music\Album\Next.MP3", () =>
+                Interlocked.Increment(ref executions)));
+        Check("预载路径按大小写不敏感合并",
+            !tracker.TryStart(11, @"c:\music\album\next.mp3", () =>
+                Interlocked.Increment(ref executions)));
+
+        var nextGenerationAccepted = tracker.TryStart(12, @"c:\music\album\next.mp3", () =>
+        {
+            Interlocked.Increment(ref executions);
+            secondStarted.Set();
+            release.Wait();
+        });
+        Check("相同路径的新播放代际可独立预载",
+            nextGenerationAccepted && secondStarted.Wait(TimeSpan.FromSeconds(2)));
+        Check("所有已接纳预载任务均被跟踪", tracker.ActiveCount == 2);
+
+        var closeTask = Task.Run(tracker.CloseAndWait);
+        Check("关闭先封住预载入口", SpinWait.SpinUntil(() => tracker.IsClosed, TimeSpan.FromSeconds(2)) &&
+            !tracker.TryStart(13, @"C:\Music\Other.flac", () => { }));
+        Check("仍有预载工作时关闭会等待", !closeTask.Wait(TimeSpan.FromMilliseconds(100)));
+
+        release.Set();
+        Check("关闭等待全部预载任务退出", closeTask.Wait(TimeSpan.FromSeconds(5)));
+        Check("排空后无残留预载任务", tracker.ActiveCount == 0 && executions == 2);
+    }
+
+    private static void RunLibrarySnapshotConcurrencyChecks()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 曲库快照原子发布 ===");
+
+        using var library = new LibraryService();
+        var generationA = BuildLibraryGeneration("A");
+        var generationB = BuildLibraryGeneration("B");
+        var ids = Enumerable.Range(1, generationA.Count).Select(i => (long)i).ToArray();
+        var roots = new[] { @"C:\snapshot" };
+        library.ReplaceSnapshotForTest(generationA, roots);
+
+        using var start = new ManualResetEventSlim();
+        var inconsistencies = 0;
+        var writer = Task.Run(() =>
+        {
+            start.Wait();
+            for (var i = 0; i < 750; i++)
+                library.ReplaceSnapshotForTest((i & 1) == 0 ? generationB : generationA, roots);
+        });
+
+        var readers = Enumerable.Range(0, 3).Select(_ => Task.Run(() =>
+        {
+            start.Wait();
+            for (var i = 0; i < 3_000; i++)
+            {
+                var tracks = library.Tracks;
+                var byIds = library.GetTracksByIds(ids);
+                var albums = library.GetAlbums();
+                var artists = library.GetArtists();
+                var folders = library.GetFolderPlaylists();
+
+                var consistent = IsSingleLibraryGeneration(tracks, generationA.Count) &&
+                    IsSingleLibraryGeneration(byIds, generationA.Count) &&
+                    albums.Count == 1 &&
+                    IsSingleLibraryGeneration(albums[0].Tracks, generationA.Count) &&
+                    artists.Count == 1 &&
+                    IsSingleLibraryGeneration(artists[0].Tracks, generationA.Count) &&
+                    folders.Count == 1 &&
+                    IsSingleLibraryGeneration(folders[0].Tracks, generationA.Count);
+
+                if (!consistent) Interlocked.Increment(ref inconsistencies);
+            }
+        })).ToArray();
+
+        start.Set();
+        Task.WaitAll(readers.Append(writer).ToArray());
+        Check("并发发布/读取不出现半新半旧集合", inconsistencies == 0);
+
+        library.ReplaceSnapshotForTest(generationA, roots);
+        Check("快照路径索引保持大小写不敏感",
+            library.GetByPath(@"c:\SNAPSHOT\a\ALBUM\01.FLAC")?.Title == "A:01");
+    }
+
+    private static void RunLibraryRescanQueueChecks()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 曲库监听补扫单 worker ===");
+
+        var queue = new LibraryRescanQueue();
+        Check("首个目录变化启动 worker",
+            queue.Request(out var firstSchedule) && firstSchedule);
+        Check("扫描开始前的成串变化合并",
+            queue.Request(out var duplicateSchedule) && !duplicateSchedule && queue.TryTake());
+
+        // Model the old lost-wakeup window deterministically: the worker has
+        // consumed its request and is still scanning when the final change arrives.
+        Check("扫描进行中的最后一次变化留下补扫",
+            queue.Request(out var duringScanSchedule) && !duringScanSchedule && queue.TryTake());
+
+        Check("worker 无待办时原子释放所有权", !queue.TryTake());
+        Check("释放边界后的新变化能启动新 worker",
+            queue.Request(out var replacementSchedule) && replacementSchedule && queue.TryTake());
+        Check("无额外变化不会无限补扫", !queue.TryTake());
+
+        var concurrentQueue = new LibraryRescanQueue();
+        var workersScheduled = 0;
+        Parallel.For(0, 1_000, _ =>
+        {
+            if (concurrentQueue.Request(out var shouldSchedule) && shouldSchedule)
+                Interlocked.Increment(ref workersScheduled);
+        });
+        Check("1000 个并发变化只启动一个 worker", workersScheduled == 1);
+        Check("并发变化只合并为一次补扫",
+            concurrentQueue.TryTake() && !concurrentQueue.TryTake());
+
+        queue.Request(out _);
+        queue.Close();
+        Check("退出后丢弃待办且拒绝新补扫",
+            !queue.TryTake() && !queue.Request(out var shutdownSchedule) && !shutdownSchedule);
+    }
+
+    private static List<TrackRecord> BuildLibraryGeneration(string marker)
+    {
+        return Enumerable.Range(1, 48).Select(i => new TrackRecord
+        {
+            Id = i,
+            Path = $@"C:\snapshot\{marker}\album\{i:D2}.flac",
+            Title = $"{marker}:{i:D2}",
+            Artist = marker,
+            Album = marker,
+            AlbumArtist = marker,
+            TrackNo = i,
+            DurationMs = 180_000
+        }).ToList();
+    }
+
+    private static bool IsSingleLibraryGeneration(
+        IReadOnlyList<TrackRecord> tracks, int expectedCount)
+    {
+        if (tracks.Count != expectedCount || tracks.Count == 0) return false;
+        var marker = tracks[0].Title.AsSpan(0, 1).ToString();
+        if (marker is not ("A" or "B")) return false;
+
+        return tracks.All(track =>
+            track.Title.StartsWith(marker + ":", StringComparison.Ordinal) &&
+            string.Equals(track.Artist, marker, StringComparison.Ordinal) &&
+            string.Equals(track.Album, marker, StringComparison.Ordinal));
+    }
+
+    private static void RunCancellationSemanticsChecks()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 在线调用取消语义 ===");
+
+        using var callerCancellation = new CancellationTokenSource();
+        callerCancellation.Cancel();
+        using (var gd = new GdSource(new BlockingUntilCancelledHandler()))
+        {
+            Check("GD 调用方取消向上传播",
+                ThrowsOperationCanceled(() =>
+                    gd.SearchAsync("cancel", 1, 1, callerCancellation.Token)));
+        }
+
+        var endpoints = ConfigService.Current.Online.ApiEndpoints;
+        var harnessEndpoint = new ApiEndpointConfig
+        {
+            Kind = "chksz",
+            Url = "https://harness.invalid",
+            Key = "harness-key"
+        };
+        endpoints.Insert(0, harnessEndpoint);
+
+        try
+        {
+            using (var chksz = new ChkszClient(new BlockingUntilCancelledHandler()))
+            {
+                Check("ChKSz 调用方取消向上传播",
+                    ThrowsOperationCanceled(() =>
+                        chksz.SearchAsync("cancel", 1, 0, callerCancellation.Token)));
+            }
+
+            using var timeoutClient = new ChkszClient(new SimulatedTimeoutHandler());
+            var timeout = timeoutClient.SearchAsync("timeout", 1, 0, CancellationToken.None)
+                .GetAwaiter().GetResult();
+            Check("ChKSz 非调用方取消仍映射为超时失败",
+                !timeout.Success && timeout.Error.Contains("超时", StringComparison.Ordinal));
+        }
+        finally
+        {
+            endpoints.Remove(harnessEndpoint);
+        }
+    }
+
+    private static bool ThrowsOperationCanceled(Func<Task> action)
+    {
+        try
+        {
+            action().GetAwaiter().GetResult();
+            return false;
+        }
+        catch (OperationCanceledException)
+        {
+            return true;
+        }
     }
 
     /// <summary>环境不具备条件时显式记账跳过（审计：跳过项要打印数量与原因，结尾汇总）。</summary>
@@ -1013,6 +1386,26 @@ public static class Program
         Check("未知扩展名回退 bin", DownloadTemplater.ExtensionFromUrl("https://x.com/a") == ".bin");
         Check("URL 带路径保留最后扩展", DownloadTemplater.ExtensionFromUrl("http://host/abc.MP3?k=1") == ".mp3");
 
+        using (var client = new ChkszClient())
+        using (var sources = new OnlineSources(client))
+        using (var library = new LibraryService())
+        using (var downloads = new DownloadService(sources, library))
+        {
+            var duplicate = new DownloadItem
+            {
+                Track = new OnlineTrack("dup", "重复曲目", new[] { "测试" },
+                    "测试专辑", string.Empty, "dup", "gd"),
+                SourceKey = "gd",
+                PreferredBr = 320,
+                FileName = "duplicate.flac",
+                Status = DownloadStatus.Duplicate,
+                Error = "与媒体库中已有曲目重复"
+            };
+            downloads.CancelDuplicate(duplicate);
+            Check("取消重复下载使用 Cancelled 终态且清空错误",
+                duplicate.Status == DownloadStatus.Cancelled && duplicate.Error is null && duplicate.IsDone);
+        }
+
         Console.WriteLine();
     }
 
@@ -1101,6 +1494,23 @@ public static class Program
         protected override Task<HttpResponseMessage> SendAsync(
             System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
             => throw new System.Net.Http.HttpRequestException("模拟断网：网络不可达");
+    }
+
+    private sealed class BlockingUntilCancelledHandler : System.Net.Http.HttpMessageHandler
+    {
+        protected override async Task<HttpResponseMessage> SendAsync(
+            System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            await Task.Delay(Timeout.InfiniteTimeSpan, cancellationToken).ConfigureAwait(false);
+            throw new InvalidOperationException("取消处理器不应正常返回");
+        }
+    }
+
+    private sealed class SimulatedTimeoutHandler : System.Net.Http.HttpMessageHandler
+    {
+        protected override Task<HttpResponseMessage> SendAsync(
+            System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
+            => Task.FromException<HttpResponseMessage>(new OperationCanceledException("模拟请求超时"));
     }
 
     /// <summary>BASS URL 流 flags 诊断（P4-4；需联网 + BASS 初始化）。</summary>

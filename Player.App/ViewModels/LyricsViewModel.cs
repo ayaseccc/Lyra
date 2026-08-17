@@ -32,6 +32,7 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer _timer;
 
     private int _loadVersion;
+    private CancellationTokenSource? _loadCts;
     private TrackRecord? _track;
     private LyricDocument _document = LyricDocument.Empty;
     private TimeSpan _effectiveOffset;
@@ -159,6 +160,7 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     public async Task LoadForTrackAsync(TrackRecord track)
     {
         var version = ++_loadVersion;
+        var loadCts = BeginLoad();
 
         // 立即绑定新曲目并刷新菜单勾选（否则切歌后菜单还显示上一首的来源偏好）
         _track = track;
@@ -166,10 +168,22 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
 
         StatusText = "加载歌词…";
 
-        var result = await _lyrics.LoadForTrackAsync(track).ConfigureAwait(true);
-        if (version != _loadVersion) return;
+        try
+        {
+            var result = await _lyrics.LoadForTrackAsync(track, loadCts.Token).ConfigureAwait(true);
+            if (version != _loadVersion || loadCts.IsCancellationRequested || _disposed) return;
 
-        ApplyResult(result);
+            ApplyResult(result);
+        }
+        catch (OperationCanceledException) when (loadCts.IsCancellationRequested || _disposed)
+        {
+            // A new track superseded this request. Cancellation is expected and
+            // must not briefly overwrite the new song's status.
+        }
+        finally
+        {
+            FinishLoad(loadCts);
+        }
     }
 
     /// <summary>手动「重新获取」：跳过缓存直接走 API（本地 .lrc 仍优先）。</summary>
@@ -179,18 +193,30 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         if (_track is null) return;
 
         var version = ++_loadVersion;
+        var loadCts = BeginLoad();
         StatusText = "重新获取中…";
+        try
+        {
+            var result = await _lyrics.RefreshFromOnlineAsync(_track, loadCts.Token).ConfigureAwait(true);
+            if (version != _loadVersion || loadCts.IsCancellationRequested || _disposed) return;
 
-        var result = await _lyrics.RefreshFromOnlineAsync(_track).ConfigureAwait(true);
-        if (version != _loadVersion) return;
-
-        ApplyResult(result);
+            ApplyResult(result);
+        }
+        catch (OperationCanceledException) when (loadCts.IsCancellationRequested || _disposed)
+        {
+            // See LoadForTrackAsync: stale network/file work is intentionally silent.
+        }
+        finally
+        {
+            FinishLoad(loadCts);
+        }
     }
 
     /// <summary>播放停止/无曲目时清空。</summary>
     public void Reset()
     {
         _loadVersion++;
+        CancelLoad();
         _track = null;
         _document = LyricDocument.Empty;
         RenderLines = Array.Empty<LyricRenderLine>();
@@ -401,52 +427,100 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private async Task RematchAsync()
     {
-        if (_track is null) return;
+        if (_track is not { } track) return;
         if (!ChkszClient.HasApiKey)
         {
             StatusText = "还没有填 API Key，无法在线匹配（设置页 → 在线）";
             return;
         }
 
+        var version = ++_loadVersion;
+        var loadCts = BeginLoad();
         StatusText = "搜索候选…";
 
-        var candidates = await _lyrics.FindCandidatesAsync(_track).ConfigureAwait(true);
-        if (_track is null) return;
-
-        if (candidates.Count == 0)
+        try
         {
-            StatusText = "没有搜索到候选结果";
-            return;
+            var candidates = await _lyrics.FindCandidatesAsync(track, loadCts.Token).ConfigureAwait(true);
+            if (!IsCurrentLoad(track, version, loadCts)) return;
+
+            if (candidates.Count == 0)
+            {
+                StatusText = "没有搜索到候选结果";
+                return;
+            }
+
+            // The modal dialog pumps the dispatcher, so playback may advance while
+            // it is open. Revalidate the captured track after the user responds.
+            var choice = RematchDialog.Show(candidates, track.DisplayTitle);
+            if (choice is null || !IsCurrentLoad(track, version, loadCts)) return;
+
+            if (choice.Id <= 0)
+            {
+                // 用户选择"清除匹配"
+                _lyrics.ClearMatch(track.Path);
+                StatusText = "已清除匹配，将不再使用在线歌词";
+                var result = await _lyrics.LoadForTrackAsync(track, loadCts.Token).ConfigureAwait(true);
+                if (IsCurrentLoad(track, version, loadCts)) ApplyResult(result);
+                return;
+            }
+
+            StatusText = "应用匹配…";
+            var applied = await _lyrics.ApplyMatchAsync(track, choice.Id, loadCts.Token).ConfigureAwait(true);
+            if (!IsCurrentLoad(track, version, loadCts)) return;
+            ApplyResult(applied);
+
+            StatusText = !applied.IsEmpty
+                ? $"已匹配：{choice.Name}"
+                : "已保存匹配，但这首歌暂时没有歌词";
         }
-
-        var choice = RematchDialog.Show(candidates, _track.DisplayTitle);
-        if (choice is null) return;   // 取消
-
-        if (choice.Id <= 0)
+        catch (OperationCanceledException) when (loadCts.IsCancellationRequested || _disposed)
         {
-            // 用户选择"清除匹配"
-            _lyrics.ClearMatch(_track.Path);
-            StatusText = "已清除匹配，将不再使用在线歌词";
-            var result = await _lyrics.LoadForTrackAsync(_track).ConfigureAwait(true);
-            ApplyResult(result);
-            return;
+            // Switching tracks, starting another lyric operation, or disposing the
+            // page intentionally supersedes this rematch.
         }
-
-        StatusText = "应用匹配…";
-        var applied = await _lyrics.ApplyMatchAsync(_track, choice.Id).ConfigureAwait(true);
-        ApplyResult(applied);
-
-        if (!applied.IsEmpty)
-            StatusText = $"已匹配：{choice.Name}";
-        else
-            StatusText = "已保存匹配，但这首歌暂时没有歌词";
+        finally
+        {
+            FinishLoad(loadCts);
+        }
     }
+
+    private bool IsCurrentLoad(TrackRecord track, int version, CancellationTokenSource cts) =>
+        !_disposed && !cts.IsCancellationRequested && version == _loadVersion && ReferenceEquals(_track, track);
 
     public void Dispose()
     {
         if (_disposed) return;
         _disposed = true;
+        _loadVersion++;
+        CancelLoad();
         _timer.Stop();
         _timer.Tick -= OnTimerTick;
+    }
+
+    private CancellationTokenSource BeginLoad()
+    {
+        var next = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _loadCts, next);
+        if (previous is not null)
+        {
+            try { previous.Cancel(); } catch (ObjectDisposedException) { }
+        }
+        return next;
+    }
+
+    private void FinishLoad(CancellationTokenSource cts)
+    {
+        Interlocked.CompareExchange(ref _loadCts, null, cts);
+        cts.Dispose();
+    }
+
+    private void CancelLoad()
+    {
+        var current = Interlocked.Exchange(ref _loadCts, null);
+        if (current is null) return;
+        try { current.Cancel(); } catch (ObjectDisposedException) { }
+        // The in-flight operation owns disposal and will finish safely after its
+        // awaited I/O returns. This avoids disposing a token source underneath a
+        // provider that is still registering cancellation callbacks.
     }
 }

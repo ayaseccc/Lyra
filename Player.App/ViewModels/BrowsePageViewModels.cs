@@ -9,7 +9,7 @@ using Player.Core.Library;
 namespace Player.App.ViewModels;
 
 /// <summary>专辑视图：一行一张专辑，点进去看曲目。</summary>
-public sealed partial class AlbumPageViewModel : ObservableObject
+public sealed partial class AlbumPageViewModel : ObservableObject, IDisposable
 {
     private readonly DispatcherTimer _filterDebounce;
     private readonly Action<AlbumGroup> _openAlbum;
@@ -33,12 +33,7 @@ public sealed partial class AlbumPageViewModel : ObservableObject
         {
             Interval = TimeSpan.FromMilliseconds(200)
         };
-        _filterDebounce.Tick += (_, _) =>
-        {
-            _filterDebounce.Stop();
-            _appliedFilter = FilterText.Trim();
-            View.Refresh();
-        };
+        _filterDebounce.Tick += OnFilterDebounceTick;
     }
 
     public string Title => "专辑";
@@ -70,10 +65,23 @@ public sealed partial class AlbumPageViewModel : ObservableObject
     {
         if (SelectedAlbum is not null) _playAlbum(SelectedAlbum);
     }
+
+    private void OnFilterDebounceTick(object? sender, EventArgs e)
+    {
+        _filterDebounce.Stop();
+        _appliedFilter = FilterText.Trim();
+        View.Refresh();
+    }
+
+    public void Dispose()
+    {
+        _filterDebounce.Stop();
+        _filterDebounce.Tick -= OnFilterDebounceTick;
+    }
 }
 
 /// <summary>艺术家视图：一行一位艺术家，点进去看其全部曲目。</summary>
-public sealed partial class ArtistPageViewModel : ObservableObject
+public sealed partial class ArtistPageViewModel : ObservableObject, IDisposable
 {
     private readonly DispatcherTimer _filterDebounce;
     private readonly Action<ArtistGroup> _openArtist;
@@ -96,12 +104,7 @@ public sealed partial class ArtistPageViewModel : ObservableObject
         {
             Interval = TimeSpan.FromMilliseconds(200)
         };
-        _filterDebounce.Tick += (_, _) =>
-        {
-            _filterDebounce.Stop();
-            _appliedFilter = FilterText.Trim();
-            View.Refresh();
-        };
+        _filterDebounce.Tick += OnFilterDebounceTick;
     }
 
     public string Title => "艺术家";
@@ -132,5 +135,18 @@ public sealed partial class ArtistPageViewModel : ObservableObject
     private void PlaySelected()
     {
         if (SelectedArtist is not null) _playArtist(SelectedArtist);
+    }
+
+    private void OnFilterDebounceTick(object? sender, EventArgs e)
+    {
+        _filterDebounce.Stop();
+        _appliedFilter = FilterText.Trim();
+        View.Refresh();
+    }
+
+    public void Dispose()
+    {
+        _filterDebounce.Stop();
+        _filterDebounce.Tick -= OnFilterDebounceTick;
     }
 }

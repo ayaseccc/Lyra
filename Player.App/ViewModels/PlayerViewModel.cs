@@ -31,11 +31,17 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     private readonly ChkszClient _client;
 
     private bool _isSeeking;
+    private int _activeSeekRevision;
     private double? _pendingSeekTarget;
+    private int _pendingSeekRevision;
     private DateTime _seekGuardUntil;
     private DateTime _lastTrackStartedAt;
     private int _consecutiveQuickEnds;
     private bool _disposed;
+    private CancellationTokenSource? _previewCts;
+    private long _previewGeneration;
+    private CancellationTokenSource? _visualCts;
+    private long _visualGeneration;
 
     /// <summary>连续跳过坏文件的上限。曲库所在盘掉线时不能拿一万首在 UI 线程上硬试。</summary>
     private const int MaxSkipAttempts = 10;
@@ -163,9 +169,6 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     /// <summary>当前是否处于在线试听（临时播放态）。</summary>
     private bool _isOnlinePreview;
 
-    /// <summary>试听取流取消源（Dispose 时取消，审查修复）。</summary>
-    private readonly CancellationTokenSource _previewCts = new();
-
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(PlayModeIcon))]
     [NotifyPropertyChangedFor(nameof(PlayModeText))]
@@ -197,12 +200,6 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     /// <summary>Copy the latest fixed 16 spectrum levels without allocating.</summary>
     public bool TryCopySpectrum(Span<float> destination) => _engine.TryCopySpectrum(destination);
-
-    /// <summary>L3.2 频谱（转发引擎；迷你窗 30fps 拉取）。</summary>
-    public float[] GetSpectrumLevels(int bins = 16) => _engine.GetSpectrumLevels(bins);
-
-    /// <summary>L3.2 频谱开关（转发引擎；迷你窗/设置页用）。</summary>
-    public void EnableSpectrum(bool enabled) => _engine.EnableSpectrum(enabled);
 
     /// <summary>音量方块的亮起个数（0..10，UI-R1.5 反馈）。</summary>
     public int VolumeLevel => (int)Math.Round(Volume * 10);
@@ -363,8 +360,15 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _dispatcher.BeginInvoke(RefreshOutputState);
 
     /// <summary>无缝衔接已经发生：引擎自己换到了预载好的下一曲，这里把列表游标和界面追上去。</summary>
-    private void OnTrackTransitioned(object? sender, string path) => _dispatcher.BeginInvoke(() =>
+    private void OnTrackTransitioned(object? sender, PlaybackTrackEventArgs e) => _dispatcher.BeginInvoke(() =>
     {
+        // END notifications are asynchronous. A user seek/stop/open may have made
+        // this completion obsolete while it waited for the UI dispatcher.
+        if (!IsCurrentPlaybackEvent(e)) return;
+
+        var path = e.Path;
+        if (string.IsNullOrWhiteSpace(path)) return;
+
         var next = _list.PeekNext();
         if (next is not null && string.Equals(next.Path, path, StringComparison.OrdinalIgnoreCase))
         {
@@ -393,9 +397,18 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
         _lastTrackStartedAt = DateTime.UtcNow;
         _consecutiveQuickEnds = 0;
-        _pendingSeekTarget = null;
-        PositionSeconds = 0;
         DurationSeconds = _engine.Duration.TotalSeconds > 0 ? _engine.Duration.TotalSeconds : 1;
+
+        // The audio hand-off precedes this dispatcher callback. A seek started or
+        // completed on B during that delay belongs to B and must not be erased by
+        // the late transition UI reset. Pending state from A is discarded.
+        var activeSeekIsForThisTrack = _isSeeking && e.HasTrackIdentity(_activeSeekRevision);
+        var pendingSeekIsForThisTrack = _pendingSeekTarget.HasValue &&
+                                        e.HasTrackIdentity(_pendingSeekRevision);
+        if (!pendingSeekIsForThisTrack) ClearPendingSeek();
+        if (!activeSeekIsForThisTrack && !pendingSeekIsForThisTrack)
+            PositionSeconds = Math.Clamp(_engine.Position.TotalSeconds, 0, DurationSeconds);
+
         RefreshOutputInfo();
         RefreshWindowTitle();
         OnPropertyChanged(nameof(CurrentTrack));
@@ -485,50 +498,92 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     /// </summary>
     public async Task<bool> PlayOnlinePreviewAsync(Player.Core.Online.OnlineTrack track, string sourceKey, int preferredBr)
     {
+        var previewCts = BeginPreviewRequest();
+        var generation = Volatile.Read(ref _previewGeneration);
         var source = _onlineSources?.Get(sourceKey);
         if (source is null)
         {
+            Interlocked.CompareExchange(ref _previewCts, null, previewCts);
+            previewCts.Dispose();
             StatusText = "在线源不可用";
             return false;
         }
 
-        var stream = await source.GetStreamAsync(track, preferredBr, _previewCts.Token).ConfigureAwait(true);
-        if (!stream.Success)
+        try
         {
-            StatusText = "试听失败：" + stream.Error;
+            var stream = await source.GetStreamAsync(track, preferredBr, previewCts.Token).ConfigureAwait(true);
+            if (previewCts.IsCancellationRequested || generation != Volatile.Read(ref _previewGeneration) || _disposed)
+                return false;
+            if (!stream.Success)
+            {
+                StatusText = "试听失败：" + stream.Error;
+                return false;
+            }
+
+            _isOnlinePreview = true;
+            OnPropertyChanged(nameof(IsOnlinePreview));
+            if (!_engine.OpenUrl(stream.Data!.Url))
+            {
+                _isOnlinePreview = false;
+                OnPropertyChanged(nameof(IsOnlinePreview));
+                StatusText = "试听失败：无法打开音频流";
+                return false;
+            }
+
+            // URL 流没有本地标签：覆盖展示元数据（OnTrackOpened 之后执行）
+            Title = track.Name;
+            Artist = track.ArtistLine;
+            Album = track.Album;
+            OnPropertyChanged(nameof(ArtistAndAlbum));
+            TechnicalInfo = $"在线试听 · 实际 {QualityFormat.Br(stream.Data.ActualBr)}";
+            CancelVisualLoad();
+            CoverImage = null;
+            Lyrics.Reset();
+            RefreshWindowTitle();
+
+            _engine.Play();
+            StatusText = $"试听：{track.Name} · {track.ArtistLine}（{QualityFormat.Br(stream.Data.ActualBr)}）";
+            return true;
+        }
+        catch (OperationCanceledException) when (previewCts.IsCancellationRequested || _disposed)
+        {
             return false;
         }
-
-        _isOnlinePreview = true;
-        if (!_engine.OpenUrl(stream.Data!.Url))
+        finally
         {
-            _isOnlinePreview = false;
-            StatusText = "试听失败：无法打开音频流";
-            return false;
+            if (ReferenceEquals(Volatile.Read(ref _previewCts), previewCts))
+                Interlocked.CompareExchange(ref _previewCts, null, previewCts);
+            previewCts.Dispose();
         }
-
-        // URL 流没有本地标签：覆盖展示元数据（OnTrackOpened 之后执行）
-        Title = track.Name;
-        Artist = track.ArtistLine;
-        Album = track.Album;
-        OnPropertyChanged(nameof(ArtistAndAlbum));
-        TechnicalInfo = $"在线试听 · 实际 {QualityFormat.Br(stream.Data.ActualBr)}";
-        CoverImage = null;
-        Lyrics.Reset();
-        RefreshWindowTitle();
-
-        _engine.Play();
-        StatusText = $"试听：{track.Name} · {track.ArtistLine}（{QualityFormat.Br(stream.Data.ActualBr)}）";
-        return true;
     }
 
     /// <summary>切换到本地曲目时退出临时试听态（在 PlayTracks 开头调用）。</summary>
     private void ExitOnlinePreview()
     {
+        Interlocked.Increment(ref _previewGeneration);
+        var pending = Interlocked.Exchange(ref _previewCts, null);
+        if (pending is not null)
+        {
+            try { pending.Cancel(); } catch (ObjectDisposedException) { }
+        }
+
         if (!_isOnlinePreview) return;
         _isOnlinePreview = false;
+        OnPropertyChanged(nameof(IsOnlinePreview));
         _engine.ClearPreload();
         Lyrics.Reset();
+    }
+
+    private CancellationTokenSource BeginPreviewRequest()
+    {
+        var next = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _previewCts, next);
+        Interlocked.Increment(ref _previewGeneration);
+        if (previous is not null)
+        {
+            try { previous.Cancel(); } catch (ObjectDisposedException) { }
+        }
+        return next;
     }
 
     // ---------------- 对外播放入口 ----------------
@@ -595,9 +650,13 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void Stop()
     {
+        // Stop is also the cancellation boundary for an in-flight preview URL
+        // lookup. Otherwise a late network response can restart playback after the
+        // user explicitly stopped it.
+        ExitOnlinePreview();
         _engine.Stop();
         PositionSeconds = 0;
-        _pendingSeekTarget = null;
+        ClearPendingSeek();
     }
 
     [RelayCommand]
@@ -653,7 +712,12 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     /// 用户开始操作进度条（鼠标按下 / 开始拖动）。可重复调用。
     /// 从这一刻起到 <see cref="EndSeek"/> 为止，定时器不再回写进度条。
     /// </summary>
-    public void BeginSeek() => _isSeeking = true;
+    public void BeginSeek()
+    {
+        if (!_isSeeking)
+            _activeSeekRevision = _engine.PlaybackRevision;
+        _isSeeking = true;
+    }
 
     /// <summary>
     /// 松手：**无论点击还是拖动，释放时必然执行一次 seek**（P1.1-②）。
@@ -664,23 +728,52 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     /// </summary>
     public void EndSeek(double seconds)
     {
+        var seekRevision = _activeSeekRevision != 0
+            ? _activeSeekRevision
+            : _engine.PlaybackRevision;
         _isSeeking = false;
+        _activeSeekRevision = 0;
 
         if (!HasTrack) return;
+
+        // A drag that began on A must not seek B if a sample-boundary transition
+        // happened before mouse-up. A click path that did not call BeginSeek uses
+        // the current revision and remains supported.
+        if (seekRevision == 0 || seekRevision != _engine.PlaybackRevision)
+        {
+            ClearPendingSeek();
+            PositionSeconds = Math.Clamp(_engine.Position.TotalSeconds, 0, DurationSeconds);
+            return;
+        }
 
         // 一次拖动会被"鼠标松开"和"拖动结束"各调一次，同一位置只真正 seek 一次，
         // 免得 BASS 多冲一次缓冲（可能有极轻微爆音）
         if (_pendingSeekTarget is { } pending &&
+            _pendingSeekRevision == seekRevision &&
             Math.Abs(pending - seconds) < 0.05 &&
             DateTime.UtcNow < _seekGuardUntil)
             return;
 
         _engine.Seek(TimeSpan.FromSeconds(seconds));
 
+        if (seekRevision != _engine.PlaybackRevision)
+        {
+            ClearPendingSeek();
+            PositionSeconds = Math.Clamp(_engine.Position.TotalSeconds, 0, DurationSeconds);
+            return;
+        }
+
         // 乐观更新：立刻按目标值显示，不等下一个 tick 从引擎读回
         PositionSeconds = seconds;
         _pendingSeekTarget = seconds;
+        _pendingSeekRevision = seekRevision;
         _seekGuardUntil = DateTime.UtcNow.AddMilliseconds(700);
+    }
+
+    private void ClearPendingSeek()
+    {
+        _pendingSeekTarget = null;
+        _pendingSeekRevision = 0;
     }
 
     // ---------------- 内部 ----------------
@@ -720,8 +813,9 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         Artist = track.DisplayArtist;
         Album = string.IsNullOrWhiteSpace(track.DisplayAlbum) ? string.Empty : track.DisplayAlbum;
         OnPropertyChanged(nameof(ArtistAndAlbum));
-        CoverImage = CoverImageCache.GetLarge(track.CoverHash);   // UI-R4：大封面高清解码（列表行内用小图）
-        Credits = Player.Core.Library.CreditReader.Read(track.Path).ToLine();   // UI-R4：制作信息
+        CancelVisualLoad();
+        CoverImage = null;
+        Credits = string.Empty;
         ThemeService.OnTrackChanged(track.CoverHash);   // UI-R3：封面取色整体染色
         RefreshWindowTitle();
 
@@ -729,7 +823,59 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         ConfigService.Current.Ui.LastTrackPath = track.Path;
 
         // P3：切歌即异步加载歌词（.lrc > 缓存 > 在线匹配），失败不影响播放
+        _ = LoadTrackVisualsAsync(track);
         _ = Lyrics.LoadForTrackAsync(track);
+    }
+
+    private async Task LoadTrackVisualsAsync(TrackRecord track)
+    {
+        var cts = new CancellationTokenSource();
+        var previous = Interlocked.Exchange(ref _visualCts, cts);
+        if (previous is not null)
+        {
+            try { previous.Cancel(); } catch (ObjectDisposedException) { }
+        }
+        var generation = Interlocked.Increment(ref _visualGeneration);
+
+        try
+        {
+            var visuals = await Task.Run(() =>
+            {
+                cts.Token.ThrowIfCancellationRequested();
+                var cover = CoverImageCache.GetLarge(track.CoverHash);
+                cts.Token.ThrowIfCancellationRequested();
+                var credits = Player.Core.Library.CreditReader.Read(track.Path).ToLine();
+                return (cover, credits);
+            }, cts.Token).ConfigureAwait(false);
+
+            if (cts.IsCancellationRequested || _disposed || generation != Volatile.Read(ref _visualGeneration))
+                return;
+
+            await _dispatcher.InvokeAsync(() =>
+            {
+                if (_disposed || cts.IsCancellationRequested || generation != Volatile.Read(ref _visualGeneration)) return;
+                if (!ReferenceEquals(_list.Current, track)
+                    && !string.Equals(_list.Current?.Path, track.Path, StringComparison.OrdinalIgnoreCase)) return;
+                CoverImage = visuals.cover;
+                Credits = visuals.credits;
+            });
+        }
+        catch (OperationCanceledException) when (cts.IsCancellationRequested || _disposed)
+        {
+        }
+        finally
+        {
+            Interlocked.CompareExchange(ref _visualCts, null, cts);
+            cts.Dispose();
+        }
+    }
+
+    private void CancelVisualLoad()
+    {
+        Interlocked.Increment(ref _visualGeneration);
+        var cts = Interlocked.Exchange(ref _visualCts, null);
+        if (cts is null) return;
+        try { cts.Cancel(); } catch (ObjectDisposedException) { }
     }
 
     /// <summary>启动时静默恢复上次播放的曲目：只加载信息与歌词，不发声（UI-R1.5 反馈）。</summary>
@@ -796,7 +942,10 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         // 用户若在滑条上按下、把鼠标移开再松手，释放事件收不到，
         // _isSeeking 会一直挂着导致进度条永久冻结 —— 发现左键已松开就解除接管。
         if (_isSeeking && System.Windows.Input.Mouse.LeftButton == System.Windows.Input.MouseButtonState.Released)
+        {
             _isSeeking = false;
+            _activeSeekRevision = 0;
+        }
 
         if (_isSeeking || !HasTrack) return;
         if (_engine.State != PlayerState.Playing) return;
@@ -805,9 +954,13 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
         if (_pendingSeekTarget is { } target)
         {
-            var caughtUp = Math.Abs(enginePosition - target) <= 1.0;
-            if (!caughtUp && DateTime.UtcNow < _seekGuardUntil) return;
-            _pendingSeekTarget = null;
+            if (_pendingSeekRevision == _engine.PlaybackRevision)
+            {
+                var caughtUp = Math.Abs(enginePosition - target) <= 1.0;
+                if (!caughtUp && DateTime.UtcNow < _seekGuardUntil) return;
+            }
+
+            ClearPendingSeek();
         }
 
         PositionSeconds = enginePosition;
@@ -827,22 +980,40 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     }
 
     // 引擎只提供技术参数与时长；标题/艺术家一律以媒体库标签为准
-    private void OnTrackOpened(object? sender, TrackInfo info) => _dispatcher.BeginInvoke(() =>
+    private void OnTrackOpened(object? sender, TrackInfo info)
     {
-        TechnicalInfo = info.TechnicalSummary;
-        DurationSeconds = info.Duration.TotalSeconds > 0 ? info.Duration.TotalSeconds : 1;
-        PositionSeconds = 0;
-        HasTrack = true;
-        _pendingSeekTarget = null;
-        RefreshOutputInfo();
-        RefreshWindowTitle();
-    });
+        var revision = _engine.PlaybackRevision;
+        _dispatcher.BeginInvoke(() =>
+        {
+            if (revision != _engine.PlaybackRevision ||
+                !ReferenceEquals(info, _engine.CurrentTrack))
+                return;
 
-    private void OnStateChanged(object? sender, PlayerState state) => _dispatcher.BeginInvoke(() =>
+            TechnicalInfo = info.TechnicalSummary;
+            DurationSeconds = info.Duration.TotalSeconds > 0 ? info.Duration.TotalSeconds : 1;
+            HasTrack = true;
+
+            var activeSeekIsForThisTrack = _isSeeking && _activeSeekRevision == revision;
+            var pendingSeekIsForThisTrack = _pendingSeekTarget.HasValue &&
+                                            _pendingSeekRevision == revision;
+            if (!pendingSeekIsForThisTrack) ClearPendingSeek();
+            if (!activeSeekIsForThisTrack && !pendingSeekIsForThisTrack)
+                PositionSeconds = Math.Clamp(_engine.Position.TotalSeconds, 0, DurationSeconds);
+
+            RefreshOutputInfo();
+            RefreshWindowTitle();
+        });
+    }
+
+    private void OnStateChanged(object? sender, PlayerState _) => _dispatcher.BeginInvoke(() =>
     {
-        IsPlaying = state == PlayerState.Playing;
+        // State notifications may cross on the dispatcher when a user command
+        // supersedes a queued natural END. Always project the engine's current
+        // state instead of replaying a stale captured value.
+        var currentState = _engine.State;
+        IsPlaying = currentState == PlayerState.Playing;
 
-        if (state == PlayerState.Stopped && _engine.CurrentTrack is null)
+        if (currentState == PlayerState.Stopped && _engine.CurrentTrack is null)
         {
             HasTrack = false;
             IsPlaying = false;
@@ -850,7 +1021,11 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             DurationSeconds = 1;
             Title = "未在播放";
             Artist = string.Empty;
+            Album = string.Empty;
+            Credits = string.Empty;
+            OnPropertyChanged(nameof(ArtistAndAlbum));
             TechnicalInfo = string.Empty;
+            CancelVisualLoad();
             CoverImage = null;
             RefreshWindowTitle();
             Lyrics.Reset();
@@ -858,8 +1033,13 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     });
 
     // 来自 BASS 回调线程，必须切回 UI 线程再换曲（换曲会释放旧流）
-    private void OnTrackEnded(object? sender, EventArgs e) => _dispatcher.BeginInvoke(() =>
+    private void OnTrackEnded(object? sender, PlaybackTrackEventArgs e) => _dispatcher.BeginInvoke(() =>
     {
+        // Do this check on the dispatcher, immediately before mutating the queue.
+        // The engine performs the same check on its worker; this second check covers
+        // controls issued after publication but before the dispatcher callback runs.
+        if (!IsCurrentPlaybackEvent(e)) return;
+
         // 0 长度或立刻结束的文件会让"结束→下一首"在消息队列里空转，连着几首就停下来
         if (DateTime.UtcNow - _lastTrackStartedAt < TimeSpan.FromMilliseconds(600))
         {
@@ -889,6 +1069,11 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         PlayCurrentOrSkip();
     });
 
+    private bool IsCurrentPlaybackEvent(PlaybackTrackEventArgs e)
+    {
+        return !_disposed && _engine.IsPlaybackEventCurrent(e);
+    }
+
     private void OnErrorOccurred(object? sender, string message) =>
         _dispatcher.BeginInvoke(() => StatusText = message);
 
@@ -904,8 +1089,14 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         if (_disposed) return;
         _disposed = true;
 
-        _previewCts.Cancel();
-        _previewCts.Dispose();
+        Interlocked.Increment(ref _previewGeneration);
+        var previewCts = Interlocked.Exchange(ref _previewCts, null);
+        if (previewCts is not null)
+        {
+            try { previewCts.Cancel(); } catch (ObjectDisposedException) { }
+            // The in-flight preview owns disposal in its finally block.
+        }
+        CancelVisualLoad();
         _timer.Stop();
         _timer.Tick -= OnTimerTick;
 

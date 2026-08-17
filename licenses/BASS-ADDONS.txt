@@ -1,0 +1,123 @@
+BASS add-on licence terms
+
+The following terms are copied from the licence sections of the official
+archives named below. Each add-on is free to use with BASS and remains subject
+to the BASS terms in BASS.txt.
+
+-------------------------------------------------------------------------------
+BASSmix — https://www.un4seen.com/files/bassmix24.zip (bassmix.txt)
+-------------------------------------------------------------------------------
+BASSmix is free to use with BASS.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, BASSMIX IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY
+AND/OR FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS SHALL NOT BE HELD
+LIABLE FOR ANY DAMAGE THAT MAY RESULT FROM THE USE OF BASSMIX. YOU USE
+BASSMIX ENTIRELY AT YOUR OWN RISK.
+
+Usage of BASSmix indicates that you agree to the above conditions.
+
+All trademarks and other registered names contained in the BASSmix
+package are the property of their respective owners.
+-------------------------------------------------------------------------------
+BASSWASAPI — https://www.un4seen.com/files/basswasapi24.zip (basswasapi.txt)
+-------------------------------------------------------------------------------
+BASSWASAPI is free to use with BASS.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, BASSWASAPI IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY
+AND/OR FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS SHALL NOT BE HELD
+LIABLE FOR ANY DAMAGE THAT MAY RESULT FROM THE USE OF BASSWASAPI. YOU USE
+BASSWASAPI ENTIRELY AT YOUR OWN RISK.
+
+Usage of BASSWASAPI indicates that you agree to the above conditions.
+
+All trademarks and other registered names contained in the BASSWASAPI
+package are the property of their respective owners.
+
+-------------------------------------------------------------------------------
+BASSFLAC — https://www.un4seen.com/files/bassflac24.zip (bassflac.txt)
+-------------------------------------------------------------------------------
+BASSFLAC is free to use with BASS.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, BASSFLAC IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY
+AND/OR FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS SHALL NOT BE HELD
+LIABLE FOR ANY DAMAGE THAT MAY RESULT FROM THE USE OF BASSFLAC. YOU USE
+BASSFLAC ENTIRELY AT YOUR OWN RISK.
+
+Usage of BASSFLAC indicates that you agree to the above conditions.
+
+All trademarks and other registered names contained in the BASSFLAC
+package are the property of their respective owners.
+
+-------------------------------------------------------------------------------
+BASSAPE — https://www.un4seen.com/files/bassape24.zip (bassape.txt)
+-------------------------------------------------------------------------------
+BASSAPE is free to use with BASS.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, BASSAPE IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY
+AND/OR FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS SHALL NOT BE HELD
+LIABLE FOR ANY DAMAGE THAT MAY RESULT FROM THE USE OF BASSAPE. YOU USE
+BASSAPE ENTIRELY AT YOUR OWN RISK.
+
+Usage of BASSAPE indicates that you agree to the above conditions.
+
+All trademarks and other registered names contained in the BASSAPE
+package are the property of their respective owners.
+
+-------------------------------------------------------------------------------
+BASSWV — https://www.un4seen.com/files/basswv24.zip (basswv.txt)
+-------------------------------------------------------------------------------
+BASSWV is free to use with BASS.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, BASSWV IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY
+AND/OR FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS SHALL NOT BE HELD
+LIABLE FOR ANY DAMAGE THAT MAY RESULT FROM THE USE OF BASSWV. YOU USE
+BASSWV ENTIRELY AT YOUR OWN RISK.
+
+Usage of BASSWV indicates that you agree to the above conditions.
+
+All trademarks and other registered names contained in the BASSWV
+package are the property of their respective owners.
+
+-------------------------------------------------------------------------------
+BASSOPUS — https://www.un4seen.com/files/bassopus24.zip (bassopus.txt)
+-------------------------------------------------------------------------------
+BASSOPUS is free to use with BASS.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, BASSOPUS IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY
+AND/OR FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS SHALL NOT BE HELD
+LIABLE FOR ANY DAMAGE THAT MAY RESULT FROM THE USE OF BASSOPUS. YOU USE
+BASSOPUS ENTIRELY AT YOUR OWN RISK.
+
+Usage of BASSOPUS indicates that you agree to the above conditions.
+
+All trademarks and other registered names contained in the BASSOPUS
+package are the property of their respective owners.
+
+-------------------------------------------------------------------------------
+BASSALAC — https://www.un4seen.com/files/bassalac24.zip (bassalac.txt)
+-------------------------------------------------------------------------------
+BASSALAC is free to use with BASS.
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, BASSALAC IS PROVIDED
+"AS IS", WITHOUT WARRANTY OF ANY KIND, EITHER EXPRESSED OR IMPLIED,
+INCLUDING BUT NOT LIMITED TO THE IMPLIED WARRANTIES OF MERCHANTABILITY
+AND/OR FITNESS FOR A PARTICULAR PURPOSE. THE AUTHORS SHALL NOT BE HELD
+LIABLE FOR ANY DAMAGE THAT MAY RESULT FROM THE USE OF BASSALAC. YOU USE
+BASSALAC ENTIRELY AT YOUR OWN RISK.
+
+Usage of BASSALAC indicates that you agree to the above conditions.
+
+All trademarks and other registered names contained in the BASSALAC
+package are the property of their respective owners.

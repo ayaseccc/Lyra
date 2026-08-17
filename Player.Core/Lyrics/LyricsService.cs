@@ -156,16 +156,14 @@ public sealed class LyricsService : IDisposable
     }
 
     /// <summary>手动"重新获取"：跳过缓存，直接走 API（本地 .lrc 仍优先）。</summary>
-    public Task<LyricsLoadResult> RefreshFromOnlineAsync(TrackRecord track, CancellationToken cancellationToken = default)
+    public async Task<LyricsLoadResult> RefreshFromOnlineAsync(
+        TrackRecord track, CancellationToken cancellationToken = default)
     {
-        if (track is null || track.Path.Length == 0) return Task.FromResult(LyricsLoadResult.Empty);
+        if (track is null || track.Path.Length == 0) return LyricsLoadResult.Empty;
 
         var version = Interlocked.Increment(ref _loadVersion);
-        return LoadCoreAsync(track, useCache: false, cancellationToken).ContinueWith(t =>
-        {
-            var result = t.IsCompletedSuccessfully ? t.Result : LyricsLoadResult.Empty;
-            return version == Volatile.Read(ref _loadVersion) ? result : LyricsLoadResult.Empty;
-        }, cancellationToken);
+        var result = await LoadCoreAsync(track, useCache: false, cancellationToken).ConfigureAwait(false);
+        return version == Volatile.Read(ref _loadVersion) ? result : LyricsLoadResult.Empty;
     }
 
     private async Task<LyricsLoadResult> LoadCoreAsync(
@@ -178,7 +176,7 @@ public sealed class LyricsService : IDisposable
         // Embedded 偏好：内嵌优先，.lrc 次之
         if (preference == LyricPreference.Embedded)
         {
-            var embedded = await ReadEmbeddedAsync(track).ConfigureAwait(false);
+            var embedded = await ReadEmbeddedAsync(track, cancellationToken).ConfigureAwait(false);
             if (embedded is not null) return embedded;
 
             var lrc = await TryReadLrcAsync(track, cancellationToken).ConfigureAwait(false);
@@ -197,7 +195,7 @@ public sealed class LyricsService : IDisposable
             if (preference == LyricPreference.LrcFile)
                 return await LoadOnlineAsync(track, useCache, cancellationToken).ConfigureAwait(false);
 
-            var embedded = await ReadEmbeddedAsync(track).ConfigureAwait(false);
+            var embedded = await ReadEmbeddedAsync(track, cancellationToken).ConfigureAwait(false);
             if (embedded is not null) return embedded;
         }
 
@@ -216,6 +214,10 @@ public sealed class LyricsService : IDisposable
             var content = await File.ReadAllTextAsync(lrcPath, cancellationToken).ConfigureAwait(false);
             return BuildResult(LrcParser.Parse(content), LyricSource.LocalFile, track.Path);
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            throw;
+        }
         catch (Exception ex)
         {
             Log.Warning(ex, "读取本地 .lrc 失败：{Path}", lrcPath);
@@ -224,9 +226,13 @@ public sealed class LyricsService : IDisposable
     }
 
     /// <summary>内嵌标签歌词（USLT/LYRICS 等）。没有则返回 null。</summary>
-    private async Task<LyricsLoadResult?> ReadEmbeddedAsync(TrackRecord track)
+    private async Task<LyricsLoadResult?> ReadEmbeddedAsync(
+        TrackRecord track, CancellationToken cancellationToken)
     {
-        var embedded = await Task.Run(() => TagReader.ReadLyrics(track.Path)).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
+        var embedded = await Task.Run(
+            () => TagReader.ReadLyrics(track.Path), cancellationToken).ConfigureAwait(false);
+        cancellationToken.ThrowIfCancellationRequested();
         if (string.IsNullOrWhiteSpace(embedded)) return null;
 
         return BuildResult(LrcParser.Parse(embedded), LyricSource.Embedded, track.Path);
@@ -240,15 +246,28 @@ public sealed class LyricsService : IDisposable
         // 没有 ID：尝试自动匹配（一次/会话）
         if (neteaseId is null)
         {
+            // Do not burn the session retry guard while the service is
+            // unavailable (missing key or exhausted quota). A later key/quota
+            // change must be able to trigger the first real attempt.
+            if (!IsOnlineAvailable) return LyricsLoadResult.Empty;
+
             lock (_gate)
             {
                 if (_matchAttempted.Contains(track.Path)) return LyricsLoadResult.Empty;
                 _matchAttempted.Add(track.Path);
             }
 
-            if (!IsOnlineAvailable) return LyricsLoadResult.Empty;
-
-            var matched = await TryAutoMatchAsync(track, cancellationToken).ConfigureAwait(false);
+            long? matched;
+            try
+            {
+                matched = await TryAutoMatchAsync(track, cancellationToken).ConfigureAwait(false);
+            }
+            catch (OperationCanceledException)
+            {
+                // Cancellation is not a failed match. Let a future load retry.
+                lock (_gate) _matchAttempted.Remove(track.Path);
+                throw;
+            }
             if (matched is null) return LyricsLoadResult.Empty;
 
             neteaseId = matched;

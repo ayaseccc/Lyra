@@ -22,7 +22,7 @@ dotnet --list-sdks
 
 有输出且版本号以 `8.` 开头就没问题。如果提示「无法将 dotnet 项识别为…」，说明还没装，去上面的链接下载 **SDK x64** 安装即可（装完要重开一个终端窗口）。
 
-> 懒得装 SDK 也可以：仓库里的 `publish\Player.exe` 是自包含（self-contained）版本，双击就能跑，不需要任何 .NET 运行时。
+> 不安装 SDK 也可以：使用发布脚本生成的根目录 `Player-v1.0.0-win-x64.zip`，解压后双击 `Player.exe` 即可，目标机不需要预装 .NET。仓库内被忽略的 `publish/` 仅供本地测试夹具使用，不是交付目录。
 
 ## 二、构建与运行
 
@@ -78,7 +78,7 @@ data/
 
 ## 四、BASS 原生 DLL
 
-仓库的 `native/x64/` 里已经放好了 10 个 64 位 DLL（来自 [un4seen.com](https://www.un4seen.com/bass.html)，BASS 2.4.18.3）：
+仓库的 `native/x64/` 里放有 9 个 64 位 DLL（来自 [un4seen.com](https://www.un4seen.com/bass.html)）：
 
 | 文件 | 作用 |
 | --- | --- |
@@ -87,13 +87,12 @@ data/
 | `bassape.dll` | Monkey's Audio (APE) |
 | `basswv.dll` | WavPack |
 | `bassopus.dll` | Opus |
-| `bass_aac.dll` | AAC / MP4（第三方 add-on，下载路径在 `files/z/2/` 下） |
 | `bassalac.dll` | ALAC |
 | `bassasio.dll` | ASIO 输出（P2） |
 | `bassmix.dll` | 混音器，无缝播放靠它（P2） |
 | `basswasapi.dll` | WASAPI 独占 / 共享输出（P2） |
 
-要手动补充或升级时：从官网下载对应 zip，取出其中 **`x64/` 子目录里的 DLL**，放进 `native/x64/`，重新构建即可。程序启动时会逐个 `Bass.PluginLoad`，加载结果写在日志里。
+要手动补充或升级时：从官网下载对应 zip，取出其中 **`x64/` 子目录里的 DLL**，放进 `native/x64/`，重新构建即可。程序启动时会逐个 `Bass.PluginLoad`，加载结果写在日志里。Windows 10+ 的 AAC / M4A 由 BASS 通过系统编解码器支持；不随包分发 GPLv2 的第三方 `bass_aac.dll`。
 
 > BASS 个人非商业使用免费；将来若要商用需向 un4seen 购买授权（PLAN 第 11 节）。
 
@@ -136,10 +135,10 @@ ASIO / WASAPI 的出声效果没法离线验证，按 [docs/ASIO-验收指引.md
 
 ## 七、许可与第三方服务
 
-- **BASS / BASSASIO / BASSmix / BASSwasapi 及格式插件**：由 [un4seen](https://www.un4seen.com/) 提供，个人非商业使用免费；商业使用或上架收费前必须向 un4seen 取得对应授权。
+- **BASS / BASSASIO**：由 [un4seen](https://www.un4seen.com/) 提供，个人非商业使用免费；商业使用或上架收费前必须取得相应授权。BASSmix、BASSwasapi 与随包格式插件按各自条款免费与 BASS 一同使用。
 - **GD Studio API**：上游以 **CC BY-NC** 提供，本项目仅按个人非商业用途接入；使用时应保留署名并遵守上游条款。
 - **ChKSz API**：第三方在线服务，用户需使用自己的 Key 并遵守服务提供方的当前条款；本项目不附带 Key，也不授予在线音频或元数据的转授权。
-- **开源组件**：WPF-UI、CommunityToolkit.Mvvm、ManagedBass、Microsoft.Data.Sqlite / SQLitePCLRaw、TagLibSharp、Serilog / Serilog.Sinks.File。著作权与许可分别归各上游项目，以 NuGet 包与上游仓库随附的许可文本为准。
+- **开源组件与运行时**：精确版本、版权归属及 MIT / Apache-2.0 / LGPL-2.1-only 完整文本见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 与 `licenses/`。发布脚本还会把构建机官方 .NET 许可和第三方声明原样放入 zip。
 
 ## 八、安全约定
 

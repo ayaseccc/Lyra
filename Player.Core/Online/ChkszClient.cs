@@ -133,9 +133,15 @@ public sealed partial class ChkszClient : IDisposable
 
             return result.Result;
         }
+        catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+        {
+            // Caller cancellation is control flow. Propagate it so preview, lyric and
+            // download workers can discard stale work instead of reporting a failure.
+            throw;
+        }
         catch (OperationCanceledException)
         {
-            return ChkszResult<T>.Fail("请求已取消");
+            return ChkszResult<T>.Fail("请求超时，请稍后重试");
         }
         catch (Exception ex)
         {
