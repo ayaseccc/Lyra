@@ -1,147 +1,140 @@
-# Player
+# Player v1.0
 
-Windows 本地音乐播放器（类 foobar2000 的轻量定位 + 现代简洁界面），核心卖点是 ASIO / WASAPI 独占的位完美输出，以及通过 ChKSz API 接入的网易云在线能力。
+Player 是一款面向 Windows 10 / 11 x64 的本地优先音乐播放器：以媒体库和歌单为核心，提供 ASIO / WASAPI 输出、在线搜索与下载、完整歌词体验以及轻量迷你悬浮窗。发布包为 self-contained 便携版，目标电脑不需要预装 .NET。
 
-完整规划见 [PLAN.md](PLAN.md)。**当前进度：P0–P6、UI-R、L1–L3 代码侧已完成；P6 当前机器首轮已通过文件关联三路径、启动耗时与万曲扫描，仍需任务栏按钮/进度条目验、两小时频谱内存和干净机/新用户运行。**
+## 快速上手
 
-ASIO 实机验收步骤见 [docs/ASIO-验收指引.md](docs/ASIO-验收指引.md)。
+### 安装与首次运行
 
----
+1. 解压 `Player-v1.0.0-win-x64.zip` 到一个可长期使用且有写入权限的目录。
+2. 双击 `Player.exe`。首次运行按引导选择媒体库目录和输出设备；在线 API 可以跳过，之后再到“设置 → 在线”填写。
+3. 扫描完成后，从“全部歌曲 / 专辑 / 艺术家 / 文件夹”进入曲库，双击曲目播放。
+4. Player 会为当前用户注册 MP3、FLAC、M4A、APE、WV、OGG、OPUS、WAV、AIFF 打开方式。播放器已运行时再次双击音频，只会把文件交给现有窗口，不会启动第二个常驻实例。
 
-## 一、环境要求
+不要直接在压缩包里运行，也不要把新版文件零散覆盖到旧目录；请先完整解压。
 
-- Windows 10 / 11（x64）
-- [.NET 8 SDK](https://dotnet.microsoft.com/download/dotnet/8.0)（只运行不开发的话，装 .NET 8 Desktop Runtime 即可）
-- 可选：Visual Studio 2022（17.8+），装「.NET 桌面开发」工作负载
+### 在线服务（可选）
 
-先确认本机装没装 SDK，在 PowerShell 里执行：
+“设置 → 在线”的每一行由类型、地址和可选 Key 组成：
+
+- **GD 兼容**：地址填 `https://music-api.gdstudio.xyz/api.php`，Key 留空。它是默认零 Key 音源，承担搜索、试听、封面、歌词和下载。
+- **网易云兼容**：地址填 `https://api.chksz.com`，Key 填自己的 ChKSz Key。它作为网易云兜底源，并提供曲目匹配等需要账号额度的能力。
+
+地址只填根端点，不要附加 `?types=...`、`/api/163_search` 或 Key 查询参数；Player 会自动拼接请求。在线服务不可用时，本地播放不会受到影响。
+
+### 升级与数据迁移
+
+Player 的运行数据全部位于 `Player.exe` 同级的 `data/`：
+
+- `config.json`：媒体库路径、输出、界面、快捷键和在线配置；
+- `library.db`：曲库、歌单、匹配与歌词缓存；
+- `cache/`：封面等可重建缓存；
+- `logs/`：本机诊断日志。
+
+迁移时先从托盘菜单退出并确认 Player 进程已经结束，再把旧目录中的 **整个 `data/` 文件夹**复制到新版 `Player.exe` 同级目录。这样曲库、歌单、设置和 Key 会一起迁移。不要只复制 `config.json`，也不要把 `data/` 发给他人或提交到 Git。
+
+如果不复制旧 `data/`，新版会按全新安装启动并重新引导；配置损坏时程序会保留 `config.json.corrupt-时间戳` 后重建默认配置。
+
+### 从源码构建
+
+需要 .NET 8 SDK：
 
 ```powershell
-dotnet --list-sdks
-```
-
-有输出且版本号以 `8.` 开头就没问题。如果提示「无法将 dotnet 项识别为…」，说明还没装，去上面的链接下载 **SDK x64** 安装即可（装完要重开一个终端窗口）。
-
-> 不安装 SDK 也可以：使用发布脚本生成的根目录 `Player-v1.0.0-win-x64.zip`，解压后双击 `Player.exe` 即可，目标机不需要预装 .NET。仓库内被忽略的 `publish/` 仅供本地测试夹具使用，不是交付目录。
-
-## 二、构建与运行
-
-用命令行（在仓库根目录）：
-
-```powershell
-dotnet build                      # 构建整个解决方案
-dotnet run --project Player.App   # 运行
-```
-
-发布一个可直接拷走的自包含版本：
-
-```powershell
+dotnet build Player.sln -c Release
+dotnet run --project Player.App
 pwsh tools/publish.ps1 -Version 1.0.0
 ```
 
-脚本使用 `win-x64` + `--self-contained true` 先发布到独立暂存目录，再生成 `Player-v1.0.0-win-x64.zip`；包内已带 .NET 与 Windows Desktop 运行时，目标机无需预装 .NET。
+最后一条命令生成审计过的 self-contained `Player-v1.0.0-win-x64.zip`。
 
-用 Visual Studio：双击 `Player.sln`，把 `Player.App` 设为启动项目，F5 即可。
+## 功能总览
 
-## 三、目录结构
+### 本地播放与媒体库
+
+- 支持 MP3、FLAC、M4A、AAC、ALAC、APE、WV、OGG、OPUS、WAV、AIFF。
+- 多媒体库目录、全量/增量扫描、目录变化自动补扫、标签和内嵌封面读取。
+- 全部歌曲、专辑、艺术家、文件夹虚拟歌单，以及可新建、重命名、排序、导入导出的本地歌单。
+- 平铺与专辑分组、即时过滤、列排序、定位当前曲目、下一首播放、顺序/列表循环/单曲循环/随机。
+- 精确进度拖动和点击跳转；同采样率曲目可通过 mixer 预载实现无缝衔接。
+
+### 输出
+
+- **ASIO**：支持设备、输出声道、缓冲样本数和采样率跟随，适合低延迟与位完美场景。
+- **WASAPI**：支持独占/共享；没有专用 ASIO 驱动时可优先尝试独占模式。
+- **系统输出（DirectSound）**：兼容性兜底。
+- 后端和设备可以在播放中切换；设备失联或初始化失败时会安全回退，不要求重启播放器。
+- 位完美指示要求 ASIO 或 WASAPI 独占、音量 100%，且没有发生重采样。
+
+### 在线搜索与下载
+
+- 双在线源：GD Studio 为默认零 Key 源，ChKSz 网易云为可选兜底源。
+- 支持分页搜索、在线试听、音质逐级回退、封面与歌词获取。
+- 下载采用串行队列，支持取消、重复检测、目录选择和命名模板；完成后写入标签、封面和同名 `.lrc`，并自动增量入库。
+- 请求带节流、取消和断网降级；旧请求不会覆盖新搜索、新曲目或新歌词。
+
+### 歌词
+
+自动模式采用四级优先链：
 
 ```text
-MusicPlayer/
-├── PLAN.md                 开发规划（唯一事实来源，改需求先改它）
-├── Player.sln
-├── docs/                   ASIO 实机验收指引等
-├── tools/Player.Harness/   离线自测工具（无缝决策 + 媒体库端到端）
-├── Player.Core/            全部业务逻辑，纯 net8.0，不引用任何 WPF 类型
-│   ├── Audio/              BassRuntime、PlaybackEngine（decode → bassmix → 输出后端）、
-│   │                       IOutputBackend + ASIO / WASAPI / 系统输出三后端、
-│   │                       SeamlessPolicy、PlaybackList（四种播放模式）
-│   ├── Library/            LibraryDb / LibraryScanner / LibraryWatcher / LibraryService
-│   │                       TagReader（TagLibSharp）、PlaylistService、M3uFile
-│   └── Infra/              AppPaths、Db（SQLite）、ConfigService、LogSetup（Serilog）
-├── Player.App/             WPF 界面（net8.0-windows，产物 Player.exe）
-│   ├── Themes/Player.xaml  播放器自有调色板与控件样式（Fluent 外观来自 WPF-UI）
-│   ├── ViewModels/         Shell / Player / TrackList / Album / Artist / Settings
-│   ├── Views/              InputDialog（新建、重命名歌单）
-│   └── Converters/、Infra/ 封面缓存等
-└── native/x64/             BASS 系列原生 DLL（x64），构建时自动复制到输出目录
+同目录 .lrc → 音频内嵌歌词 → 本地缓存 → 在线（GD Studio 优先，失败时 ChKSz 兜底）
 ```
 
-运行期数据全部落在 exe 同级的 `data/` 下（便携绿色，整个文件夹拷走即迁移）：
+- 支持 LRC 时间轴、翻译并轨、无时间轴静态歌词、偏移调整和逐曲来源偏好。
+- **大歌词页**：封面背景、当前行高亮、滚轮/拖动浏览、点击歌词跳转；双击或 Esc 返回，空白区左右两侧可切歌。
+- **桌面歌词**：置顶、单双行、字体/字重/颜色/背景设置；解锁后可移动、调宽，锁定后鼠标穿透。
+- **迷你悬浮窗**：默认显示歌词，可切换 16 柱频谱；上一首、播放暂停、下一首和进度拖动均可直接操作。窗口可自由移动并按比例缩放，双击非交互区域恢复默认尺寸，双击封面返回主窗口。
+- 频谱样本来自 mixer DSP tap 的复制缓冲，不会额外读取或争抢 ASIO 解码/混音数据。
 
-```text
-data/
-├── config.json   媒体库目录、音量、播放模式；P3 起还会存 API Key —— 已在 .gitignore 中
-├── library.db    SQLite 媒体库
-├── cache/covers/ 封面缓存（按内容 hash 去重）
-└── logs/         player-YYYYMMDD.log
-```
+### 界面与个性化
 
-## 四、BASS 原生 DLL
+- 浅色/深色底色与封面取色可以独立组合；关闭染色后使用固定主题色，迷你窗始终不参与封面染色。
+- 三栏布局支持窄窗口；可调整行高、分组展开方式、列显隐/顺序/宽度、全局字体与字号、强调色、选中/悬停透明度。
+- 现代与复古右键菜单可切换；歌词字体设置同时作用于右栏、大歌词页和桌面歌词。
+- 所有外观设置均可恢复默认。
 
-仓库的 `native/x64/` 里放有 9 个 64 位 DLL（来自 [un4seen.com](https://www.un4seen.com/bass.html)）：
+### Windows 集成与退出语义
 
-| 文件 | 作用 |
+- SMTC/系统媒体键、锁屏和系统音量浮窗显示标题、艺术家、专辑和封面。
+- 任务栏缩略图提供上一首、播放暂停、下一首，并同步播放进度状态。
+- 可选托盘与“关闭到托盘”；未启用时关主窗即退出，启用后应从托盘菜单退出。
+- 主窗、迷你窗、桌面歌词、托盘和系统会话结束共用同一退出协调器，任意显示组合都不会留下后台 Player 进程。
+- 单实例文件转交和当前用户文件关联无需管理员权限。
+
+### 快捷键
+
+默认应用内快捷键如下，除 Tab/Esc 外均可在“设置 → 系统 → 快捷键”改绑：
+
+| 快捷键 | 功能 |
 | --- | --- |
-| `bass.dll` | 核心库，内置 mp3 / wav / aiff / ogg |
-| `bassflac.dll` | FLAC |
-| `bassape.dll` | Monkey's Audio (APE) |
-| `basswv.dll` | WavPack |
-| `bassopus.dll` | Opus |
-| `bassalac.dll` | ALAC |
-| `bassasio.dll` | ASIO 输出（P2） |
-| `bassmix.dll` | 混音器，无缝播放靠它（P2） |
-| `basswasapi.dll` | WASAPI 独占 / 共享输出（P2） |
+| Space | 播放 / 暂停 |
+| Left / Right | 后退 / 前进 5 秒 |
+| Ctrl+Left / Ctrl+Right | 上一曲 / 下一曲 |
+| Ctrl+F | 聚焦搜索 |
+| Enter | 播放列表中选中的曲目 |
+| Delete | 从当前歌单移除 |
+| Ctrl+L | 定位正在播放的曲目 |
+| F5 | 重扫媒体库 |
+| Tab | 平铺 / 专辑分组切换 |
+| Esc | 退出大歌词页或设置页 |
 
-要手动补充或升级时：从官网下载对应 zip，取出其中 **`x64/` 子目录里的 DLL**，放进 `native/x64/`，重新构建即可。程序启动时会逐个 `Bass.PluginLoad`，加载结果写在日志里。Windows 10+ 的 AAC / M4A 由 BASS 通过系统编解码器支持；不随包分发 GPLv2 的第三方 `bass_aac.dll`。
+全局热键默认关闭；启用后的默认组合为 `Ctrl+Alt+P` 播放/暂停、`Ctrl+Alt+Left/Right` 上一曲/下一曲，也可以改绑。文本框、下拉框和滑块获得焦点时，播放器会让输入控件优先处理按键。
 
-> BASS 个人非商业使用免费；将来若要商用需向 un4seen 购买授权（PLAN 第 11 节）。
+## ASIO 指引摘要
 
-## 五、已实现的功能
+1. 先安装声卡或 DAC 厂商提供的 x64 ASIO 驱动；设置 → 播放 → 后端选择 ASIO，再选择设备和实际接线对应的输出声道。
+2. 建议先用“跟随源文件”和 `256 samples` 验证稳定播放，再逐步尝试 128 或 64。出现爆音、断续、驱动重置时，先增大缓冲。
+3. 位完美使用时保持播放器音量 100%，不要选择固定采样率重采样；播放 44.1/48/96/192 kHz 样本时可用 DAC 面板核对采样率切换。
+4. ASIO 通常会独占或严格控制设备。测试期间若浏览器等应用无声属于常见驱动行为；日常兼容优先可改用 WASAPI 共享或系统输出。
+5. 若设备被拔出、占用或驱动初始化失败，Player 会回退系统输出。恢复设备后可从输出菜单重新选择 ASIO。
+6. 最低缓冲的稳定性取决于驱动、USB 控制器和系统负载；请以连续播放无爆音、无 underrun/xrun 为准，不要只追求更小数字。
 
-**播放（P0 / P0.1）**：BASS 默认输出（DirectSound），打开 / 播放 / 暂停 / 停止 / 精确 seek / 音量；进度条拖动与点击跳转不会弹回；曲目结束自动续播；支持 mp3 / flac / m4a / aac / alac / ape / wv / ogg / opus / wav / aiff。
+## 许可声明
 
-**媒体库（P1）**：SQLite 持久化；多根目录管理；全量与增量扫描（判据 mtime + 文件大小）、并行读标签、FileSystemWatcher 自动跟随目录变化；TagLibSharp 读标签（缺标签时按文件名兜底，会先剥掉曲号前缀）；内嵌封面按内容 hash 去重缓存。
+- **BASS / BASSASIO**：由 [un4seen](https://www.un4seen.com/) 提供，个人非商业使用免费；商业使用或收费发布前必须取得相应授权。BASSmix、BASSwasapi 与格式插件按各自条款使用。
+- **AAC / M4A**：Windows 10+ 使用系统提供给 BASS 的编解码能力。Player 不分发第三方 GPLv2 `bass_aac.dll`。
+- **GD Studio API**：服务与接口来自 **GD音乐台（music.gdstudio.xyz）/ GD Studio**，上游声明采用 **CC BY-NC 4.0**，仅限学习和个人非商业用途；使用者应保留署名并遵守上游当前频率限制与服务条款。
+- **ChKSz API**：第三方在线服务，用户必须使用自己的 Key 并遵守服务方当前条款。Player 不附带 Key，也不授予在线音频、歌词、封面或元数据的转授权。
+- **开源组件与 .NET 运行时**：精确组件版本、版权归属和 MIT / Apache-2.0 / LGPL-2.1-only 等完整文本见 `THIRD-PARTY-NOTICES.md` 与 `licenses/`。发布包同时包含构建所用 .NET 运行时的官方许可和第三方声明。
 
-**浏览（P1）**：左侧栏三组导航 —— 媒体库（全部歌曲 / 专辑 / 艺术家）、手工歌单、**文件夹虚拟歌单**（媒体库根目录下每个顶层子文件夹自动成为一个只读歌单，含子目录递归，随扫描自动更新）；曲目列表七列（标题 / 歌手 / 专辑 / 时长 / 格式 / 采样率 / 位深）可点击列头排序、顶部即时过滤、列表虚拟化。
-
-**歌单（P1）**：新建 / 重命名 / 删除、右键「添加到歌单」、从歌单移除、拖拽排序（未排序未过滤时）、m3u8 导入导出。
-
-**播放列表与模式（P1）**：双击任意列表即以当前可见顺序开播；上一首 / 下一首；顺序、列表循环、单曲循环、随机四种模式（记忆到 config.json）。
-
-**拖放（P1）**：拖入文件夹 = 加入媒体库并开播；拖入文件 = 直接播放（不入库）。
-
-**输出与无缝（P2）**：三种输出后端可在运行时切换，不需要重启——ASIO（采样率跟随源文件，可位完美）、WASAPI 独占/共享、系统输出（兜底）；同采样率的连续曲目样本级无缝衔接（提前 5 秒预载）；采样率跟随或固定 + 重采样两种策略；设备被占用、拔出、驱动复位一律自动回退系统输出并提示；左下角常驻输出指示，位完美时点亮。
-
-**在线与歌词（P3）**：ChKSz 四端点客户端（全局令牌桶 18 次/分、429 按 Retry-After 重试一次、额度以 `X-Quota-*` 响应头为准、URL 日志脱敏）；播放条右侧常驻额度指示；歌词三级优先级（同目录 `.lrc` > 本地缓存 > 在线），本地曲目按 标题+歌手+时长差<3s 自动匹配网易云 ID（结果持久化，可手动重新匹配）；歌词覆盖层（点击播放条封面展开）：滚动高亮当前行居中、点击行跳转、原文/双语/罗马音切换、偏移微调 ±0.1s 持久化；设置页新增在线组（API Key 填写 / 保存 / 测试连接）。所有在线失败安静降级，不影响本地播放。
-
-**在线搜索与下载（P4–P5）**：多音源搜索、试听、音质回退、歌词/封面下载、标签写入、命名模板、重复检测、下载队列与取消；断网时安静降级，不影响本地播放。
-
-**系统集成与发布（P6）**：SMTC/媒体键、全局快捷键、可选托盘、任务栏缩略图上一曲/播放暂停/下一曲按钮与进度状态；单实例命名管道转交、HKCU 九种音频格式文件关联、启动引导、损坏配置备份重建；`tools/publish.ps1` 生成无需预装 .NET 的 self-contained `win-x64` 便携 zip。
-
-## 六、离线自测
-
-```powershell
-# 无缝衔接与播放模式的决策逻辑（纯函数，不需要声卡）
-dotnet run --project tools/Player.Harness -- seamless
-
-# 扫描 / 歌单 / 持久化端到端（需要一个真实的音乐目录）
-dotnet run --project tools/Player.Harness -- library "D:\Music" 
-
-# P3：LRC 解析 / 令牌桶 / 额度头 / 歌词匹配 / 缓存存储（纯逻辑，不需要网络）
-dotnet run --project tools/Player.Harness -- lyrics
-```
-
-ASIO / WASAPI 的出声效果没法离线验证，按 [docs/ASIO-验收指引.md](docs/ASIO-验收指引.md) 在设备上实听。
-
-## 七、许可与第三方服务
-
-- **BASS / BASSASIO**：由 [un4seen](https://www.un4seen.com/) 提供，个人非商业使用免费；商业使用或上架收费前必须取得相应授权。BASSmix、BASSwasapi 与随包格式插件按各自条款免费与 BASS 一同使用。
-- **GD Studio API**：上游以 **CC BY-NC** 提供，本项目仅按个人非商业用途接入；使用时应保留署名并遵守上游条款。
-- **ChKSz API**：第三方在线服务，用户需使用自己的 Key 并遵守服务提供方的当前条款；本项目不附带 Key，也不授予在线音频或元数据的转授权。
-- **开源组件与运行时**：精确版本、版权归属及 MIT / Apache-2.0 / LGPL-2.1-only 完整文本见 [THIRD-PARTY-NOTICES.md](THIRD-PARTY-NOTICES.md) 与 `licenses/`。发布脚本还会把构建机官方 .NET 许可和第三方声明原样放入 zip。
-
-## 八、安全约定
-
-API Key 只能存在 `data/config.json` 并在设置页填写，**永远不进仓库、不进日志、不进任何报错信息**。提交前请确认 `git status` 里没有 `data/` 目录。
-
-仓库附带 `.githooks/pre-commit` 安全检查。每个新克隆需执行一次 `git config core.hooksPath .githooks`，之后每次提交都会检查完整暂存区，阻止保留前缀意外入仓。
+在线内容的版权仍归各权利人所有。Player 只提供本地播放和接口客户端能力，不改变第三方服务及内容本身的授权范围。
