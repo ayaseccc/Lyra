@@ -150,7 +150,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
             {
                 Kind = ApiKinds.FirstOrDefault(k => k.Value == ep.Kind) ?? ApiKinds[0],
                 Url = ep.Url,
-                Key = ep.Key
+                Key = ep.Key,
+                IsKeyRevealed = string.IsNullOrEmpty(ep.Key)
             };
             row.PropertyChanged += OnApiRowChanged;
             ApiEndpoints.Add(row);
@@ -808,12 +809,29 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
 
         [ObservableProperty]
         private string _key = string.Empty;
+
+        [ObservableProperty]
+        private bool _isKeyRevealed;
+
+        public string MaskedKey => SecretMask.ForDisplay(Key);
+
+        partial void OnKeyChanged(string value) => OnPropertyChanged(nameof(MaskedKey));
+
+        [RelayCommand]
+        private void ToggleKeyReveal() => IsKeyRevealed = !IsKeyRevealed;
+
+        public void HideKey() => IsKeyRevealed = false;
     }
 
     public ObservableCollection<ApiEndpointRow> ApiEndpoints { get; } = new();
 
     private void OnApiRowChanged(object? sender, PropertyChangedEventArgs e)
     {
+        if (e.PropertyName is not (nameof(ApiEndpointRow.Kind)
+            or nameof(ApiEndpointRow.Url)
+            or nameof(ApiEndpointRow.Key)))
+            return;
+
         var debounce = e.PropertyName is nameof(ApiEndpointRow.Url) or nameof(ApiEndpointRow.Key);
         PersistEndpoints(debounce);
     }
@@ -821,7 +839,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
     [RelayCommand]
     private void AddApiEndpoint()
     {
-        var row = new ApiEndpointRow { Kind = ApiKinds[0] };
+        var row = new ApiEndpointRow { Kind = ApiKinds[0], IsKeyRevealed = true };
         row.PropertyChanged += OnApiRowChanged;
         ApiEndpoints.Add(row);
         PersistEndpoints(debounce: false);
@@ -1250,7 +1268,10 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
         FlushPendingSave();
 
         foreach (var row in ApiEndpoints)
+        {
+            row.HideKey();
             row.PropertyChanged -= OnApiRowChanged;
+        }
         foreach (var row in ColumnRows)
             row.PropertyChanged -= OnColumnRowChanged;
     }

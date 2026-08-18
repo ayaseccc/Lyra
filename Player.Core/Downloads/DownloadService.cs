@@ -8,6 +8,7 @@ using System.Threading;
 using System.Threading.Tasks;
 using Player.Core.Infra;
 using Player.Core.Library;
+using Player.Core.Lyrics;
 using Player.Core.Online;
 using Serilog;
 
@@ -427,14 +428,14 @@ public sealed class DownloadService : IDisposable
         }
 
         var stream = await source.GetStreamAsync(item.Track, item.PreferredBr, ct).ConfigureAwait(false);
-        if (!stream.Success)
+        if (!stream.Success && ShouldRetryStreamFailure(stream))
         {
             stream = await source.GetStreamAsync(item.Track, item.PreferredBr, ct).ConfigureAwait(false);
-            if (!stream.Success)
-            {
-                Fail(item, "取流失败：" + stream.Error);
-                return;
-            }
+        }
+        if (!stream.Success)
+        {
+            Fail(item, "取流失败：" + stream.Error);
+            return;
         }
 
         item.ActualBr = stream.Data!.ActualBr;
@@ -478,17 +479,21 @@ public sealed class DownloadService : IDisposable
                     ["TrackNo"] = string.Empty,
                     ["Title"] = item.Track.Name
                 });
-            var target = Path.Combine(dir, relative.Trim(Path.DirectorySeparatorChar, ' ') + ext);
-            Directory.CreateDirectory(Path.GetDirectoryName(target)!);
+            var desiredTarget = DownloadTemplater.ResolveTargetPath(
+                dir,
+                relative.Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, ' '),
+                ext);
+            Directory.CreateDirectory(Path.GetDirectoryName(desiredTarget)!);
 
             await WriteTagsAsync(tempPath, item, source, ct).ConfigureAwait(false);
 
-            if (File.Exists(target)) TryDelete(target);
-            File.Move(tempPath, target);
+            // File.Move 本身作为原子占位；若名称已存在则递增后缀，永不删除用户文件。
+            var target = MoveToAvailablePath(tempPath, desiredTarget);
             item.TargetPath = target;
 
-            // 音频落盘成功后再写 .lrc（审查：先写 lrc 会让 File.Move 失败时留下孤立歌词文件）
-            await WriteLyricIfAnyAsync(target, item, source, ct).ConfigureAwait(false);
+            // 音频已原子落盘，歌词是 best-effort 附件：不覆盖用户文件，
+            // 也不能因为取词/写盘失败把已完成的音频标成失败。
+            await WriteLyricIfAnyAsync(target, item.Track, source, ct).ConfigureAwait(false);
             item.Status = DownloadStatus.Completed;
             item.ProgressPercent = 100;
             AddHistory(item);
@@ -603,13 +608,29 @@ public sealed class DownloadService : IDisposable
         }
     }
 
-    private static async Task WriteLyricIfAnyAsync(string targetPath, DownloadItem item, IOnlineSource source, CancellationToken ct)
+    internal static async Task<bool> WriteLyricIfAnyAsync(
+        string targetPath,
+        OnlineTrack track,
+        IOnlineSource source,
+        CancellationToken ct)
     {
-        var lyric = await source.GetLyricAsync(item.Track, ct).ConfigureAwait(false);
-        if (!lyric.Success || string.IsNullOrWhiteSpace(lyric.Data?.Lrc)) return;
+        try
+        {
+            var lyric = await source.GetLyricAsync(track, ct).ConfigureAwait(false);
+            if (!lyric.Success || string.IsNullOrWhiteSpace(lyric.Data?.Lrc)) return false;
 
-        var lrcPath = Path.ChangeExtension(targetPath, ".lrc");
-        await File.WriteAllTextAsync(lrcPath, lyric.Data.Lrc, System.Text.Encoding.UTF8, ct).ConfigureAwait(false);
+            return LyricsService.TryWriteLrcAtomically(targetPath, lyric.Data.Lrc);
+        }
+        catch (OperationCanceledException) when (ct.IsCancellationRequested)
+        {
+            Log.Debug("音频已落盘，歌词写入被取消：{Path}", targetPath);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Log.Debug(ex, "音频已落盘，歌词附件写入失败：{Path}", targetPath);
+            return false;
+        }
     }
 
     private bool IsDuplicateInLibrary(OnlineTrack track)
@@ -627,6 +648,34 @@ public sealed class DownloadService : IDisposable
 
     private static string BuildFileName(OnlineTrack track) =>
         $"{DownloadTemplater.SanitizeComponent(track.Name)}.bin";
+
+    internal static bool ShouldRetryStreamFailure(OnlineResult<OnlineStream> result)
+        => !result.Success
+        && !result.NotFound
+        && !result.AuthFailed
+        && !result.QuotaExhausted
+        && !result.RateLimited
+        && result.StatusCode == 0;
+
+    internal static string MoveToAvailablePath(string sourcePath, string desiredPath)
+    {
+        const int maxAttempts = 10_000;
+        for (var ordinal = 1; ordinal <= maxAttempts; ordinal++)
+        {
+            var candidate = DownloadTemplater.CollisionPath(desiredPath, ordinal);
+            try
+            {
+                File.Move(sourcePath, candidate);
+                return candidate;
+            }
+            catch (IOException) when (File.Exists(candidate))
+            {
+                // 目标已存在或被并发创建，继续尝试下一个确定性名称。
+            }
+        }
+
+        throw new IOException($"同名下载文件过多，无法为 {Path.GetFileName(desiredPath)} 分配安全名称");
+    }
 
     private void Fail(DownloadItem item, string error)
     {

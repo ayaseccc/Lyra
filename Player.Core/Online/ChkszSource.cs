@@ -34,12 +34,18 @@ public sealed class ChkszSource : IOnlineSource
         string keyword, int limit, int page, CancellationToken ct)
     {
         if (!ChkszClient.HasApiKey)
-            return OnlineResult<IReadOnlyList<OnlineTrack>>.Fail("未配置 API Key");
+            return OnlineResult<IReadOnlyList<OnlineTrack>>.Fail(
+                "未配置有效的 HTTPS API Key", statusCode: 401, authFailed: true);
 
         var result = await _client.SearchAsync(keyword, limit: limit, offset: (page - 1) * limit, cancellationToken: ct)
             .ConfigureAwait(false);
         if (!result.Success)
-            return OnlineResult<IReadOnlyList<OnlineTrack>>.Fail(result.Error, notFound: result.NotFound);
+        {
+            UpdateAvailability(result);
+            return Failure<SearchResult, IReadOnlyList<OnlineTrack>>(result);
+        }
+
+        IsAvailable = true;
 
         return OnlineResult<IReadOnlyList<OnlineTrack>>.Ok(result.Data!.Songs
             .Select(s => new OnlineTrack(
@@ -75,7 +81,12 @@ public sealed class ChkszSource : IOnlineSource
 
         var result = await _client.GetSongUrlAsync(songId, level, ct).ConfigureAwait(false);
         if (!result.Success)
-            return OnlineResult<OnlineStream>.Fail(result.Error, notFound: result.NotFound);
+        {
+            UpdateAvailability(result);
+            return Failure<SongUrlResult, OnlineStream>(result);
+        }
+
+        IsAvailable = true;
 
         if (string.IsNullOrWhiteSpace(result.Data?.Url))
             return OnlineResult<OnlineStream>.Fail("该音质没有资源", notFound: true);
@@ -92,7 +103,12 @@ public sealed class ChkszSource : IOnlineSource
 
         var result = await _client.GetLyricAsync(songId, ct).ConfigureAwait(false);
         if (!result.Success)
-            return OnlineResult<OnlineLyric>.Fail(result.Error, notFound: result.NotFound);
+        {
+            UpdateAvailability(result);
+            return Failure<LyricResult, OnlineLyric>(result);
+        }
+
+        IsAvailable = true;
 
         var lyric = result.Data!;
         if (string.IsNullOrWhiteSpace(lyric.Lrc))
@@ -118,6 +134,20 @@ public sealed class ChkszSource : IOnlineSource
         var result = await _client.SearchAsync("test", limit: 1, cancellationToken: ct).ConfigureAwait(false);
         IsAvailable = result.Success;
     }
+
+    private void UpdateAvailability<T>(ChkszResult<T> result)
+    {
+        if (result.AuthFailed || result.QuotaExhausted)
+            IsAvailable = false;
+    }
+
+    private static OnlineResult<TOut> Failure<TIn, TOut>(ChkszResult<TIn> result)
+        => OnlineResult<TOut>.Fail(
+            result.Error,
+            notFound: result.NotFound,
+            statusCode: result.StatusCode,
+            authFailed: result.AuthFailed,
+            quotaExhausted: result.QuotaExhausted);
 
     public void Dispose()
     {

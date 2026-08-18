@@ -557,8 +557,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         }
     }
 
-    /// <summary>切换到本地曲目时退出临时试听态（在 PlayTracks 开头调用）。</summary>
-    private void ExitOnlinePreview()
+    private void CancelPreviewRequest()
     {
         Interlocked.Increment(ref _previewGeneration);
         var pending = Interlocked.Exchange(ref _previewCts, null);
@@ -566,6 +565,12 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         {
             try { pending.Cancel(); } catch (ObjectDisposedException) { }
         }
+    }
+
+    /// <summary>成功切换到本地曲目后退出临时试听态。</summary>
+    private void ExitOnlinePreview()
+    {
+        CancelPreviewRequest();
 
         if (!_isOnlinePreview) return;
         _isOnlinePreview = false;
@@ -597,9 +602,9 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             return;
         }
 
-        ExitOnlinePreview();   // P4：切到本地曲目即结束在线试听
+        var previousList = _list.CaptureSnapshot();
         _list.Replace(tracks, sourceName, startIndex);
-        PlayCurrentOrSkip();
+        PlayCurrentOrSkip(previousList);
     }
 
     public void PlayTrack(TrackRecord track, IReadOnlyList<TrackRecord> context, string sourceName)
@@ -668,13 +673,14 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             return;
         }
 
+        var previousList = _list.CaptureSnapshot();
         if (_list.MoveNext(userInitiated: true) is null)
         {
             StatusText = "已经是最后一首";
             return;
         }
 
-        PlayCurrentOrSkip();
+        PlayCurrentOrSkip(previousList);
     }
 
     [RelayCommand]
@@ -688,6 +694,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             return;
         }
 
+        var previousList = _list.CaptureSnapshot();
         if (_list.MovePrevious() is null)
         {
             _engine.Seek(TimeSpan.Zero);
@@ -695,7 +702,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             return;
         }
 
-        PlayCurrentOrSkip();
+        PlayCurrentOrSkip(previousList);
     }
 
     // ---------------- 定位正在播放（UI-R1.5 ⑪） ----------------
@@ -778,33 +785,56 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     // ---------------- 内部 ----------------
 
-    private void PlayCurrentOrSkip()
+    private bool PlayCurrentOrSkip(
+        PlaybackListSnapshot? rollbackState = null,
+        bool previousTrackCanContinue = true)
     {
-        // 审查修复：Next/Prev/PlayPause 等所有切本地曲入口统一先退出在线试听态
-        ExitOnlinePreview();
+        // 切本地曲目的意图立即取消尚未完成的在线试听请求，但只有本地曲真正
+        // 打开成功后才退出正在播放的试听态。这样坏文件不会中断原音频或让 UI
+        // 与引擎身份分叉。
+        CancelPreviewRequest();
+        rollbackState ??= _list.CaptureSnapshot();
+        var previousTrack = _engine.CurrentTrack;
+        var previousWasPlaying = _engine.State == PlayerState.Playing;
         var attempts = Math.Min(MaxSkipAttempts, Math.Max(1, _list.Count));
 
         for (var i = 0; i < attempts; i++)
         {
             var track = _list.Current;
-            if (track is null) return;
+            if (track is null) break;
 
             if (_engine.Open(track.Path))
             {
+                ExitOnlinePreview();
                 _engine.Play();
                 ApplyTrackDisplay(track);
                 BumpPlayCount(track);
                 _lastTrackStartedAt = DateTime.UtcNow;
                 OnPropertyChanged(nameof(CurrentTrack));
-                return;
+                return true;
             }
 
             // 打开失败（文件被删/格式插件缺失）——跳到下一首继续试
             if (_list.MoveNext(userInitiated: true) is null) break;
         }
 
-        StatusText = "连续多个文件都打不开，已停止（详见 data/logs）";
+        _list.RestoreSnapshot(rollbackState);
+        if (!previousTrackCanContinue && previousTrack is not null)
+        {
+            _engine.Stop();
+            IsPlaying = false;
+            PositionSeconds = 0;
+        }
+
+        StatusText = previousTrack is null
+            ? "连续多个文件都打不开，未开始播放（详见 data/logs）"
+            : !previousTrackCanContinue
+                ? "后续文件无法播放，播放已停止（详见 data/logs）"
+                : previousWasPlaying
+                    ? "所选文件无法播放，继续播放原曲（详见 data/logs）"
+                    : "所选文件无法播放，已保留原曲（详见 data/logs）";
         OnPropertyChanged(nameof(CurrentTrack));
+        return false;
     }
 
     private void ApplyTrackDisplay(TrackRecord track)
@@ -1057,6 +1087,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             _consecutiveQuickEnds = 0;
         }
 
+        var previousList = _list.CaptureSnapshot();
         if (_list.MoveNext(userInitiated: false) is null)
         {
             _engine.Stop();
@@ -1066,7 +1097,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
             return;
         }
 
-        PlayCurrentOrSkip();
+        PlayCurrentOrSkip(previousList, previousTrackCanContinue: false);
     });
 
     private bool IsCurrentPlaybackEvent(PlaybackTrackEventArgs e)
@@ -1074,8 +1105,13 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         return !_disposed && _engine.IsPlaybackEventCurrent(e);
     }
 
-    private void OnErrorOccurred(object? sender, string message) =>
-        _dispatcher.BeginInvoke(() => StatusText = message);
+    private void OnErrorOccurred(object? sender, string message)
+    {
+        if (_dispatcher.CheckAccess())
+            StatusText = message;
+        else
+            _dispatcher.BeginInvoke(() => StatusText = message);
+    }
 
     private static string FormatTime(double seconds)
     {

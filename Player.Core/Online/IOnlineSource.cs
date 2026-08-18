@@ -29,7 +29,7 @@ public sealed record OnlineStream(string Url, int ActualBr, long SizeBytes);
 /// <summary>统一歌词结果（LRC 原文 + 可选翻译）。</summary>
 public sealed record OnlineLyric(string? Lrc, string? Translation);
 
-/// <summary>统一在线结果包装：成功带数据；失败带可读原因；NotFound = 无资源（搜不到/取流失败）。</summary>
+/// <summary>统一在线结果包装：成功带数据；失败保留可读原因与上游状态语义。</summary>
 public sealed class OnlineResult<T>
 {
     public bool Success { get; }
@@ -41,17 +41,42 @@ public sealed class OnlineResult<T>
     /// <summary>无资源（搜不到 / 该源无此音质 / 灰色歌曲）。UI 提示"没找到"而不是报错。</summary>
     public bool NotFound { get; }
 
-    private OnlineResult(bool success, T? data, string error, bool notFound)
+    /// <summary>上游 HTTP/业务状态；0 表示没有可用状态（例如网络异常）。</summary>
+    public int StatusCode { get; }
+
+    public bool AuthFailed { get; }
+
+    public bool QuotaExhausted { get; }
+
+    public bool RateLimited => StatusCode == 429;
+
+    private OnlineResult(
+        bool success,
+        T? data,
+        string error,
+        bool notFound,
+        int statusCode,
+        bool authFailed,
+        bool quotaExhausted)
     {
         Success = success;
         Data = data;
         Error = error;
         NotFound = notFound;
+        StatusCode = statusCode;
+        AuthFailed = authFailed;
+        QuotaExhausted = quotaExhausted;
     }
 
-    public static OnlineResult<T> Ok(T data) => new(true, data, string.Empty, false);
+    public static OnlineResult<T> Ok(T data) => new(true, data, string.Empty, false, 200, false, false);
 
-    public static OnlineResult<T> Fail(string error, bool notFound = false) => new(false, default, error, notFound);
+    public static OnlineResult<T> Fail(
+        string error,
+        bool notFound = false,
+        int statusCode = 0,
+        bool authFailed = false,
+        bool quotaExhausted = false)
+        => new(false, default, error, notFound, statusCode, authFailed, quotaExhausted);
 }
 
 /// <summary>

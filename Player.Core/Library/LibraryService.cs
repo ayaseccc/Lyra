@@ -73,13 +73,6 @@ public sealed class LibraryService : IDisposable
 
     public async Task<ScanResult> ScanAsync(bool fullRescan, CancellationToken cancellationToken = default)
     {
-        var roots = Roots.ToList();
-        if (roots.Count == 0)
-        {
-            Log.Information("没有配置媒体库根目录，跳过扫描");
-            return new ScanResult();
-        }
-
         using var linkedCts = CancellationTokenSource.CreateLinkedTokenSource(
             cancellationToken, _lifetimeCts.Token);
 
@@ -100,6 +93,16 @@ public sealed class LibraryService : IDisposable
 
         try
         {
+            // Roots must be captured after the scan lock. A folder removal that
+            // is waiting on this lock must be visible to the next scan rather
+            // than letting an old pre-lock snapshot resurrect deleted rows.
+            var roots = Roots.ToList();
+            if (roots.Count == 0)
+            {
+                Log.Information("没有配置媒体库根目录，跳过扫描");
+                return new ScanResult();
+            }
+
             Volatile.Write(ref _isScanning, 1);
             ScanStarted?.Invoke(this, EventArgs.Empty);
 
@@ -221,18 +224,55 @@ public sealed class LibraryService : IDisposable
     /// <summary>移除某个根目录时，把它下面的曲目一并清出曲库（扫描器已不再负责这件事）。</summary>
     public void RemoveTracksUnderRoot(string root)
     {
-        var normalized = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
-        var snapshot = Volatile.Read(ref _snapshot);
-        var ids = snapshot.Tracks
-            .Where(t => LibraryScanner.IsUnderAnyRoot(t.Path, new[] { normalized }))
-            .Select(t => t.Id)
+        var entered = false;
+        try
+        {
+            // Root removal and scanning mutate the same rows. Serializing them
+            // prevents an old scan from resurrecting tracks after deletion.
+            // This mutation is paired with the already-persisted root removal.
+            // Do not cancel the wait during shutdown: otherwise the root is gone
+            // from config while its old rows remain forever in the database.
+            _scanLock.Wait();
+            entered = true;
+
+            var normalized = root.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+            var remainingRoots = Roots
+                .Where(r => !string.IsNullOrWhiteSpace(r))
+                .Select(r => r.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+                .ToArray();
+            var snapshot = Volatile.Read(ref _snapshot);
+            var ids = SelectTrackIdsForRemovedRoot(snapshot.Tracks, normalized, remainingRoots);
+
+            if (ids.Count == 0) return;
+
+            LibraryDb.DeleteTracks(ids);
+            if (!IsDisposed)
+                SwapSnapshot(LibraryDb.GetAllTracks());
+            Log.Information("已移除根目录 {Root} 下的 {Count} 首曲目", normalized, ids.Count);
+        }
+        finally
+        {
+            if (entered) _scanLock.Release();
+        }
+    }
+
+    internal static List<long> SelectTrackIdsForRemovedRoot(
+        IReadOnlyList<TrackRecord> tracks,
+        string removedRoot,
+        IReadOnlyList<string> remainingRoots)
+    {
+        var removed = removedRoot.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar);
+        var remaining = remainingRoots
+            .Where(r => !string.IsNullOrWhiteSpace(r))
+            .Select(r => r.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
+            .ToArray();
+
+        return tracks
+            .Where(track =>
+                LibraryScanner.IsUnderAnyRoot(track.Path, new[] { removed }) &&
+                !LibraryScanner.IsUnderAnyRoot(track.Path, remaining))
+            .Select(track => track.Id)
             .ToList();
-
-        if (ids.Count == 0) return;
-
-        LibraryDb.DeleteTracks(ids);
-        SwapSnapshot(LibraryDb.GetAllTracks());
-        Log.Information("已移除根目录 {Root} 下的 {Count} 首曲目", normalized, ids.Count);
     }
 
     private static List<string> ExpandToAudioFiles(IEnumerable<string> paths)

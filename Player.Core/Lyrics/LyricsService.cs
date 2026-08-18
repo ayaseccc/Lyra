@@ -97,6 +97,8 @@ public sealed class LyricsService : IDisposable
     private DateTime _quotaExhaustedUntil;
     private int _loadVersion;
     private bool _disposed;
+    private readonly object _lrcWriteGate = new();
+    private readonly HashSet<Task> _lrcWrites = new();
 
     public LyricsService(ChkszClient client, GdSource? gdSource = null)
     {
@@ -335,22 +337,75 @@ public sealed class LyricsService : IDisposable
     /// 把在线获取到的歌词落盘为同目录同名 .lrc（UI-R2 反馈）：之后切歌直接读本地文件，
     /// 不再等在线加载；已有本地 .lrc 不覆盖（本地来源本来就优先）。
     /// </summary>
-    private static void SaveLrcToDisk(string audioPath, string lrc)
+    private void SaveLrcToDisk(string audioPath, string lrc)
     {
-        _ = Task.Run(() =>
+        Task task;
+        lock (_lrcWriteGate)
         {
-            try
+            if (_disposed) return;
+
+            task = Task.Run(() =>
             {
-                var lrcPath = Path.ChangeExtension(audioPath, ".lrc");
-                if (File.Exists(lrcPath)) return;
-                File.WriteAllText(lrcPath, lrc, new System.Text.UTF8Encoding(false));
-                Log.Information("已把在线歌词落盘：{Path}", lrcPath);
-            }
-            catch (Exception ex)
+                try
+                {
+                    if (TryWriteLrcAtomically(audioPath, lrc))
+                        Log.Information("已把在线歌词落盘：{Path}", Path.ChangeExtension(audioPath, ".lrc"));
+                }
+                catch (Exception ex)
+                {
+                    Log.Debug(ex, "在线歌词落盘失败：{Path}", audioPath);
+                }
+            });
+
+            _lrcWrites.Add(task);
+            _ = task.ContinueWith(
+                static (completed, state) =>
+                {
+                    var service = (LyricsService)state!;
+                    _ = completed.Exception;
+                    lock (service._lrcWriteGate) service._lrcWrites.Remove(completed);
+                },
+                this,
+                CancellationToken.None,
+                TaskContinuationOptions.ExecuteSynchronously,
+                TaskScheduler.Default);
+        }
+    }
+
+    internal static bool TryWriteLrcAtomically(string audioPath, string lrc)
+    {
+        var target = Path.ChangeExtension(audioPath, ".lrc");
+        if (File.Exists(target)) return false;
+
+        var directory = Path.GetDirectoryName(target);
+        if (string.IsNullOrWhiteSpace(directory)) return false;
+
+        var temp = Path.Combine(directory,
+            $".{Path.GetFileName(target)}.{Guid.NewGuid():N}.tmp");
+        try
+        {
+            using (var stream = new FileStream(temp, FileMode.CreateNew, FileAccess.Write,
+                       FileShare.None, 4096, FileOptions.SequentialScan))
+            using (var writer = new StreamWriter(stream, new System.Text.UTF8Encoding(false)))
             {
-                Log.Debug(ex, "在线歌词落盘失败：{Path}", audioPath);
+                writer.Write(lrc);
+                writer.Flush();
             }
-        });
+
+            // Move without overwrite is the atomic CreateNew step. If a user or
+            // editor created the target after our initial check, their file wins.
+            File.Move(temp, target, overwrite: false);
+            return true;
+        }
+        catch (IOException) when (File.Exists(target))
+        {
+            return false;
+        }
+        finally
+        {
+            try { if (File.Exists(temp)) File.Delete(temp); }
+            catch (Exception ex) { Log.Debug(ex, "清理歌词临时文件失败：{Path}", temp); }
+        }
     }
 
     /// <summary>歌词 + 翻译 + 罗马音并轨，应用手动偏移。</summary>
@@ -490,8 +545,25 @@ public sealed class LyricsService : IDisposable
 
     public void Dispose()
     {
-        if (_disposed) return;
-        _disposed = true;
+        Task[] pending;
+        lock (_lrcWriteGate)
+        {
+            if (_disposed) return;
+            _disposed = true;
+            pending = _lrcWrites.ToArray();
+        }
+
         _client.Quota.Changed -= OnQuotaChanged;
+
+        // File I/O on a disconnected network volume can block beyond process
+        // shutdown. Give normal local writes a short grace period, then let the
+        // background task finish independently instead of keeping the player
+        // process alive indefinitely.
+        try
+        {
+            if (!Task.WhenAll(pending).Wait(TimeSpan.FromSeconds(2)))
+                Log.Warning("歌词落盘任务超过退出等待期限，后台继续完成");
+        }
+        catch (Exception ex) { Log.Debug(ex, "等待歌词落盘任务失败"); }
     }
 }

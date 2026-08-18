@@ -38,6 +38,9 @@ public sealed class PlaybackEngine : IPlaybackEngine
     /// <summary>所有后台预载都在这里单飞并跟踪；BASS 退出前必须先排空。</summary>
     private readonly PreloadWorkTracker _preloadWork = new();
 
+    /// <summary>所有可能调用 BASS 的 Open 操作；全局 BASS 关闭前必须排空。</summary>
+    private readonly OpenOperationGate _openOperations = new();
+
     /// <summary>共享委托由引擎终身持有；每次注册用 user generation 区分。</summary>
     private readonly SyncProcedure _endSyncProcedure;
 
@@ -63,6 +66,7 @@ public sealed class PlaybackEngine : IPlaybackEngine
     private int _spectrumDspGeneration;
 
     private int _current;
+    private int _disposeStarted;
     // Track identity and control intent are deliberately separate. A seamless
     // transition must still reach the UI when Pause/Seek/Stop or an output
     // rebuild happens while its notification is queued; a natural-end
@@ -536,16 +540,30 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
         if (string.IsNullOrWhiteSpace(source)) return false;
 
+        // Stream creation can block on disk/network and therefore stays outside
+        // _control. The gate tracks the native call and serializes the short
+        // commit/publish phase so an older request cannot publish after a newer one.
+        using var operation = _openOperations.TryBegin()
+            ?? throw new ObjectDisposedException(nameof(PlaybackEngine));
+
         if (!isUrl && !File.Exists(source))
         {
-            Log.Warning("文件不存在：{File}", source);
-            ErrorOccurred?.Invoke(this, $"文件不存在：{Path.GetFileName(source)}");
+            _openOperations.TryCommit(operation.Generation, () =>
+            {
+                Log.Warning("文件不存在：{File}", source);
+                operation.Dispose();
+                ErrorOccurred?.Invoke(this, $"文件不存在：{Path.GetFileName(source)}");
+            });
             return false;
         }
 
         if (!BassRuntime.IsInitialized)
         {
-            ErrorOccurred?.Invoke(this, "音频引擎尚未初始化");
+            _openOperations.TryCommit(operation.Generation, () =>
+            {
+                operation.Dispose();
+                ErrorOccurred?.Invoke(this, "音频引擎尚未初始化");
+            });
             return false;
         }
 
@@ -554,63 +572,80 @@ public sealed class PlaybackEngine : IPlaybackEngine
         if (handle == 0)
         {
             var error = Bass.LastError;
-            Log.Error("打开" + (isUrl ? "网络流" : "文件") + "失败 {Source}：{Error}", source, error);
-            ErrorOccurred?.Invoke(this,
-                $"无法播放 {(isUrl ? "音频流" : Path.GetFileName(source))}（BASS 错误：{error}）");
+            _openOperations.TryCommit(operation.Generation, () =>
+            {
+                Log.Error("打开" + (isUrl ? "网络流" : "文件") + "失败 {Source}：{Error}", source, error);
+                operation.Dispose();
+                ErrorOccurred?.Invoke(this,
+                    $"无法播放 {(isUrl ? "音频流" : Path.GetFileName(source))}（BASS 错误：{error}）");
+            });
 
-            ReleaseCurrent();
-            SetState(PlayerState.Stopped, force: true);
+            // A failed replacement must not tear down the track that is already
+            // playing. The caller may report/skip the bad item independently.
             return false;
         }
 
         var path = isUrl ? source : source;
         var track = BuildTrackInfo(path, handle);
 
-        lock (_control)
+        var adopted = _openOperations.TryCommit(operation.Generation, () =>
         {
-            // 指针搬运在 _swap 里做，旧句柄收集出来到锁外释放
-            List<int> toFree;
-            lock (_swap)
+            lock (_control)
             {
-                toFree = new List<int>();
-                if (_current != 0) toFree.Add(_current);
-                if (_next != 0) toFree.Add(_next);
+                // 指针搬运在 _swap 里做，旧句柄收集出来到锁外释放
+                List<int> toFree;
+                lock (_swap)
+                {
+                    toFree = new List<int>();
+                    if (_current != 0) toFree.Add(_current);
+                    if (_next != 0) toFree.Add(_next);
 
-                _preloadGeneration++;
-                _current = handle;
-                CurrentTrack = track;
-                AdvanceTrackIdentityLocked();
-                _next = 0;
-                _nextPath = null;
-                _nextInfo = null;
-                _rejectedPreloadPath = null;
+                    _preloadGeneration++;
+                    _current = handle;
+                    CurrentTrack = track;
+                    AdvanceTrackIdentityLocked();
+                    _next = 0;
+                    _nextPath = null;
+                    _nextInfo = null;
+                    _rejectedPreloadPath = null;
+                }
+
+                DetachAndFree(toFree);
+
+                var targetRate = ResolveTargetRate(track.SampleRate);
+                if (_mixer == 0 || _mixerRate != targetRate || !_backend.IsRunning)
+                {
+                    BuildChain(targetRate);   // 内部会挂源与 sync
+                }
+                else
+                {
+                    AttachSource(_current, paused: true);
+                    SetEndSync(_current);
+                }
+
+                UpdateResamplingFlag();
+                FreePendingHandles();
+                operation.Dispose();
+
+                Log.Information("已打开 {File}（{Info}，{Duration}），输出 {Output}",
+                    Path.GetFileName(path), track.TechnicalSummary, track.Duration, _backend.Description);
+                SetState(PlayerState.Stopped, force: true);
+                TrackOpened?.Invoke(this, track);
             }
+        });
 
-            DetachAndFree(toFree);
-
-            var targetRate = ResolveTargetRate(track.SampleRate);
-            if (_mixer == 0 || _mixerRate != targetRate || !_backend.IsRunning)
-            {
-                BuildChain(targetRate);   // 内部会挂源与 sync
-            }
-            else
-            {
-                AttachSource(_current, paused: true);
-                SetEndSync(_current);
-            }
-
-            UpdateResamplingFlag();
+        if (!adopted)
+        {
+            try { Bass.StreamFree(handle); }
+            catch (Exception ex) { Log.Debug(ex, "释放过期打开流失败"); }
+            return false;
         }
 
-        FreePendingHandles();
-
-        Log.Information("已打开 {File}（{Info}，{Duration}），输出 {Output}",
-            Path.GetFileName(path), track.TechnicalSummary, track.Duration, _backend.Description);
-
-        TrackOpened?.Invoke(this, track);
-        SetState(PlayerState.Stopped, force: true);
         return true;
     }
+
+    internal static bool IsOpenRequestCurrent(int requestGeneration, int currentGeneration, bool disposed) =>
+        !disposed && requestGeneration == currentGeneration;
 
     private static int CreateDecodeStream(string path)
     {
@@ -1300,8 +1335,12 @@ public sealed class PlaybackEngine : IPlaybackEngine
 
     public void Dispose()
     {
-        if (_disposed) return;
+        if (Interlocked.Exchange(ref _disposeStarted, 1) != 0) return;
         _disposed = true;
+
+        // Close first: an Open that is already creating a native stream is
+        // allowed to finish and free its handle, but no new Open can enter.
+        _openOperations.CloseAndWait();
 
         // 先封住新请求，并在任何音频锁之外等待 Prescan / 建流工作结束。
         // App 会在本方法返回后立刻 BassRuntime.Shutdown，不能留下后台 BASS 调用。
@@ -1633,4 +1672,80 @@ internal sealed class PreloadWorkTracker
     }
 
     private readonly record struct Completion(PreloadWorkTracker Owner, WorkKey Key);
+}
+
+/// <summary>
+/// Tracks synchronous native Open calls and gives them latest-request-wins commit
+/// semantics. The commit callback runs under the same gate as generation changes,
+/// so a stale request cannot publish a late TrackOpened/Stopped pair.
+/// </summary>
+internal sealed class OpenOperationGate
+{
+    private readonly object _gate = new();
+    private int _generation;
+    private int _active;
+    private bool _closed;
+
+    internal int ActiveCount
+    {
+        get { lock (_gate) return _active; }
+    }
+
+    internal OpenOperation? TryBegin()
+    {
+        lock (_gate)
+        {
+            if (_closed) return null;
+            var generation = ++_generation;
+            _active++;
+            return new OpenOperation(this, generation);
+        }
+    }
+
+    internal bool TryCommit(int generation, Action commit)
+    {
+        ArgumentNullException.ThrowIfNull(commit);
+
+        lock (_gate)
+        {
+            if (_closed || generation != _generation) return false;
+            commit();
+            return true;
+        }
+    }
+
+    internal void CloseAndWait()
+    {
+        lock (_gate)
+        {
+            _closed = true;
+            ++_generation;
+            while (_active != 0)
+                Monitor.Wait(_gate);
+        }
+    }
+
+    private void Exit()
+    {
+        lock (_gate)
+        {
+            if (_active > 0) _active--;
+            if (_active == 0) Monitor.PulseAll(_gate);
+        }
+    }
+
+    internal sealed class OpenOperation : IDisposable
+    {
+        private OpenOperationGate? _owner;
+
+        internal OpenOperation(OpenOperationGate owner, int generation)
+        {
+            _owner = owner;
+            Generation = generation;
+        }
+
+        internal int Generation { get; }
+
+        public void Dispose() => Interlocked.Exchange(ref _owner, null)?.Exit();
+    }
 }

@@ -148,7 +148,7 @@ public sealed class GdSource : IOnlineSource
         var query = $"types=url&source={Uri.EscapeDataString(track.Source)}&id={Uri.EscapeDataString(track.Id)}&br={br}";
         var result = await GetJsonAsync<GdModels.Url>(query, ct).ConfigureAwait(false);
         if (!result.Success)
-            return OnlineResult<OnlineStream>.Fail(result.Error);
+            return Failure<GdModels.Url, OnlineStream>(result);
 
         var url = result.Data!;
         if (string.IsNullOrWhiteSpace(url.Address) || url.Br <= 0)
@@ -199,7 +199,7 @@ public sealed class GdSource : IOnlineSource
         var query = $"types=lyric&source={Uri.EscapeDataString(track.Source)}&id={Uri.EscapeDataString(track.LyricId)}";
         var result = await GetJsonAsync<GdModels.Lyric>(query, ct).ConfigureAwait(false);
         if (!result.Success)
-            return OnlineResult<OnlineLyric>.Fail(result.Error);
+            return Failure<GdModels.Lyric, OnlineLyric>(result);
 
         var lyric = result.Data!;
         if (string.IsNullOrWhiteSpace(lyric.Text))
@@ -215,7 +215,7 @@ public sealed class GdSource : IOnlineSource
         var query = $"types=lyric&source=netease&id={neteaseId}";
         var result = await GetJsonCoreAsync<GdModels.Lyric>(query, ct).ConfigureAwait(false);
         if (!result.Success)
-            return OnlineResult<OnlineLyric>.Fail(result.Error);
+            return Failure<GdModels.Lyric, OnlineLyric>(result);
 
         var lyric = result.Data!;
         if (string.IsNullOrWhiteSpace(lyric.Text))
@@ -229,7 +229,7 @@ public sealed class GdSource : IOnlineSource
         var query = $"types=pic&source={Uri.EscapeDataString(track.Source)}&id={Uri.EscapeDataString(track.PicId)}&size={(size is 300 or 500 ? size : 300)}";
         var result = await GetJsonAsync<GdModels.Pic>(query, ct).ConfigureAwait(false);
         if (!result.Success)
-            return OnlineResult<string>.Fail(result.Error);
+            return Failure<GdModels.Pic, string>(result);
 
         return string.IsNullOrWhiteSpace(result.Data!.Url)
             ? OnlineResult<string>.Fail("没有封面", notFound: true)
@@ -270,7 +270,7 @@ public sealed class GdSource : IOnlineSource
         var query = $"types={type}&source={Uri.EscapeDataString(src)}&name={Uri.EscapeDataString(keyword)}&count={limit}&pages={page}";
         var result = await GetJsonAsync<List<GdModels.Track>>(query, ct).ConfigureAwait(false);
         if (!result.Success)
-            return OnlineResult<IReadOnlyList<OnlineTrack>>.Fail(result.Error);
+            return Failure<List<GdModels.Track>, IReadOnlyList<OnlineTrack>>(result);
 
         var list = result.Data ?? new List<GdModels.Track>();
         return OnlineResult<IReadOnlyList<OnlineTrack>>.Ok(list
@@ -304,13 +304,8 @@ public sealed class GdSource : IOnlineSource
 
                 if (!response.IsSuccessStatusCode)
                 {
-                    if (attempt < 3)
-                    {
-                        await Task.Delay(delay, ct).ConfigureAwait(false);
-                        delay *= 2;
-                        continue;
-                    }
-                    return OnlineResult<T>.Fail($"请求失败（HTTP {(int)response.StatusCode}）");
+                    var status = (int)response.StatusCode;
+                    return OnlineResult<T>.Fail($"请求失败（HTTP {status}）", statusCode: status);
                 }
 
                 // 打样：detail 字段 = 源不支持/参数错误（200 但不是数据）
@@ -350,6 +345,14 @@ public sealed class GdSource : IOnlineSource
     private static string RedactQuery(string query) =>
         // GD 无 Key；query 里没有敏感字段，原样返回（只防未来加参时误打日志）
         query;
+
+    private static OnlineResult<TOut> Failure<TIn, TOut>(OnlineResult<TIn> result)
+        => OnlineResult<TOut>.Fail(
+            result.Error,
+            notFound: result.NotFound,
+            statusCode: result.StatusCode,
+            authFailed: result.AuthFailed,
+            quotaExhausted: result.QuotaExhausted);
 
     private void Mark(string source, bool available, string? reason)
     {

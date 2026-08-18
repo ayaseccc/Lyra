@@ -28,6 +28,7 @@ public partial class App : Application
     private readonly SemaphoreSlim _incomingFilesSerial = new(1, 1);
     private bool _startupReady;
     private bool _incomingDrainScheduled;
+    private bool _startupCompleted;
 
     protected override async void OnStartup(StartupEventArgs e)
     {
@@ -38,21 +39,36 @@ public partial class App : Application
         AppDomain.CurrentDomain.UnhandledException += OnDomainUnhandledException;
         TaskScheduler.UnobservedTaskException += OnUnobservedTaskException;
 
-        // P6 单实例：第二实例把文件（双击/多选/拖到 exe）转交运行实例后退出
-        if (!SingleInstance.TryAcquire(out _instanceMutex))
+        var startupFiles = e.Args
+            .Select(a => a.Trim('"'))
+            .Where(a => File.Exists(a) && AudioFormats.IsSupported(a))
+            .ToList();
+
+        // P6 单实例：第二实例把文件（双击/多选/拖到 exe）转交运行实例后退出。
+        // 这一段发生在主窗建立前，任何异常都必须主动退出，不能交给通用 UI
+        // 异常处理器吞掉后留下一个没有窗口的进程。
+        try
         {
-            var files = e.Args.Select(a => a.Trim('"')).Where(a => File.Exists(a)).ToList();
-            var forwarded = SingleInstance.ForwardFiles(files);
-            if (files.Count > 0 && !forwarded)
+            if (!SingleInstance.TryAcquire(out _instanceMutex))
             {
-                MessageBox.Show(
-                    "Lyra 已在运行，但未能把所选音频文件交给现有窗口。\n\n请关闭正在运行的旧版 Player 或 Lyra 后重试。",
-                    "Lyra", MessageBoxButton.OK, MessageBoxImage.Warning);
+                var forwarded = SingleInstance.ForwardFiles(startupFiles);
+                if (startupFiles.Count > 0 && !forwarded)
+                {
+                    MessageBox.Show(
+                        "Lyra 已在运行，但未能把所选音频文件交给现有窗口。\n\n请关闭正在运行的旧版 Player 或 Lyra 后重试。",
+                        "Lyra", MessageBoxButton.OK, MessageBoxImage.Warning);
+                }
+                Shutdown(startupFiles.Count == 0 || forwarded ? 0 : 2);
+                return;
             }
-            Shutdown(files.Count == 0 || forwarded ? 0 : 2);
+
+            SingleInstance.StartServer(HandleIncomingFiles);
+        }
+        catch (Exception ex)
+        {
+            ShowFatalStartupError("单实例服务初始化失败", ex);
             return;
         }
-        SingleInstance.StartServer(HandleIncomingFiles);
 
         try
         {
@@ -100,46 +116,54 @@ public partial class App : Application
             return;
         }
 
-        _engine = new PlaybackEngine();
-        _library = new LibraryService();
-        _playlists = new PlaylistService(_library);
+        try
+        {
+            _engine = new PlaybackEngine();
+            _library = new LibraryService();
+            _playlists = new PlaylistService(_library);
 
-        // Apply the fixed mini-surface palette before any window is shown. This keeps a
-        // no-track startup from briefly exposing the XAML fallback resources.
-        Theming.ThemeService.Initialize();
+            // Apply the fixed mini-surface palette before any window is shown. This keeps a
+            // no-track startup from briefly exposing the XAML fallback resources.
+            Theming.ThemeService.Initialize();
 
-        // L3.1 个性化：行高/全局字体/字号缩放写入 Application 资源（XAML DynamicResource 引用）
-        Theming.ThemeService.ApplyUiPersonalization();
+            // L3.1 个性化：行高/全局字体/字号缩放写入 Application 资源（XAML DynamicResource 引用）
+            Theming.ThemeService.ApplyUiPersonalization();
 
-        // P3：ChKSz 客户端与歌词服务。Key 只在 ConfigService 里读，任何在线失败都不影响本地播放
-        _client = new ChkszClient();
+            // P3：ChKSz 客户端与歌词服务。Key 只在 ConfigService 里读，任何在线失败都不影响本地播放
+            _client = new ChkszClient();
 
-        // P4：在线源注册表（GD 默认零 Key + 网易云兜底）。可用性探测延迟到
-        // 首次进入在线搜索页，避免每次启动都产生与本地播放无关的网络请求。
-        _onlineSources = new Player.Core.Online.OnlineSources(_client);
+            // P4：在线源注册表（GD 默认零 Key + 网易云兜底）。可用性探测延迟到
+            // 首次进入在线搜索页，避免每次启动都产生与本地播放无关的网络请求。
+            _onlineSources = new Player.Core.Online.OnlineSources(_client);
 
-        // P4-6：歌词链插入 GD（零额度优先；未注入时保持原链）
-        _lyrics = new LyricsService(_client, _onlineSources.Default as Player.Core.Online.GdSource);
+            // P4-6：歌词链插入 GD（零额度优先；未注入时保持原链）
+            _lyrics = new LyricsService(_client, _onlineSources.Default as Player.Core.Online.GdSource);
 
-        // P4-5：下载服务（串行队列）；下载完成后触发媒体库增量扫描自动入库
-        _downloads = new Player.Core.Downloads.DownloadService(_onlineSources, _library);
-        _downloads.BatchCompleted += OnDownloadBatchCompleted;
+            // P4-5：下载服务（串行队列）；下载完成后触发媒体库增量扫描自动入库
+            _downloads = new Player.Core.Downloads.DownloadService(_onlineSources, _library);
+            _downloads.BatchCompleted += OnDownloadBatchCompleted;
 
-        _player = new PlayerViewModel(_engine, _lyrics, _client);
-        _player.SetOnlineSources(_onlineSources);
-        _shell = new ShellViewModel(_library, _playlists, _player, _engine, _client, _onlineSources, _downloads);
+            _player = new PlayerViewModel(_engine, _lyrics, _client);
+            _player.SetOnlineSources(_onlineSources);
+            _shell = new ShellViewModel(_library, _playlists, _player, _engine, _client, _onlineSources, _downloads);
 
-        var window = new MainWindow { DataContext = _shell };
-        MainWindow = window;
-        window.Show();
+            var window = new MainWindow { DataContext = _shell };
+            MainWindow = window;
+            window.Show();
+        }
+        catch (Exception ex)
+        {
+            ShowFatalStartupError("播放器界面初始化失败", ex);
+            return;
+        }
 
         try
         {
             // 载入曲库 + 启动增量扫描，全程不阻塞 UI
-            await _shell.InitializeAsync();
+            await _shell.InitializeAsync(restoreLastTrack: startupFiles.Count == 0);
 
-            if (e.Args.Length > 0)
-                await _shell.HandleDroppedPathsAsync(e.Args);
+            if (startupFiles.Count > 0)
+                await _shell.OpenExternalFilesAsync(startupFiles);
         }
         catch (Exception ex)
         {
@@ -149,38 +173,48 @@ public partial class App : Application
         // 管道从进程一开始就监听，避免第二次双击在初始化窗口期丢失；
         // 这里才放行并按到达顺序处理积压文件。
         MarkStartupReady();
+        _startupCompleted = true;
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
         // 顺序很重要：先停 UI 侧的订阅与计时器，再停监听与扫描，最后放流与 BASS
-        SingleInstance.StopServer();
         try
         {
-            _shell?.Dispose();
-            _player?.Dispose();
-            _lyrics?.Dispose();
-            _downloads?.Dispose();
-            _onlineSources?.Dispose();
-            _client?.Dispose();
-            _library?.StopWatching();
-            _library?.Dispose();
-            _engine?.Dispose();
-            BassRuntime.Shutdown();
-            ConfigService.Save();
-            LogSetup.Shutdown();
+            RunExitStep("停止单实例服务", SingleInstance.StopServer);
+            if (_downloads is not null)
+                _downloads.BatchCompleted -= OnDownloadBatchCompleted;
+            RunExitStep("释放主界面模型", () => _shell?.Dispose());
+            RunExitStep("释放播放界面模型", () => _player?.Dispose());
+            RunExitStep("释放歌词服务", () => _lyrics?.Dispose());
+            RunExitStep("释放下载服务", () => _downloads?.Dispose());
+            RunExitStep("释放在线源", () => _onlineSources?.Dispose());
+            RunExitStep("释放在线客户端", () => _client?.Dispose());
+            RunExitStep("停止曲库监听", () => _library?.StopWatching());
+            RunExitStep("释放曲库", () => _library?.Dispose());
+            RunExitStep("释放播放引擎", () => _engine?.Dispose());
+            RunExitStep("关闭 BASS", BassRuntime.Shutdown);
+            RunExitStep("保存配置", ConfigService.Save);
         }
         finally
         {
-            SingleInstance.ReleaseLegacyMutex();
+            RunExitStep("释放旧版兼容锁", SingleInstance.ReleaseLegacyMutex);
             if (_instanceMutex is not null)
             {
-                try { _instanceMutex.ReleaseMutex(); }
-                catch (ApplicationException) { }
-                _instanceMutex.Dispose();
+                var mutex = _instanceMutex;
+                RunExitStep("释放 Lyra 实例锁", () =>
+                {
+                    try { mutex.ReleaseMutex(); }
+                    catch (ApplicationException) { }
+                    finally { mutex.Dispose(); }
+                });
                 _instanceMutex = null;
             }
 
+            RunExitStep("关闭日志", LogSetup.Shutdown, logFailure: false);
+            DispatcherUnhandledException -= OnDispatcherUnhandledException;
+            AppDomain.CurrentDomain.UnhandledException -= OnDomainUnhandledException;
+            TaskScheduler.UnobservedTaskException -= OnUnobservedTaskException;
             base.OnExit(e);
         }
     }
@@ -188,7 +222,11 @@ public partial class App : Application
     /// <summary>P4-5：一批下载完成后触发增量扫描自动入库。</summary>
     private void OnDownloadBatchCompleted()
     {
-        _ = _shell?.ScanAsync(fullRescan: false);
+        var shell = _shell;
+        if (shell is null || Dispatcher.HasShutdownStarted || Dispatcher.HasShutdownFinished) return;
+        _ = Dispatcher.BeginInvoke(
+            () => _ = shell.ScanAsync(fullRescan: false),
+            DispatcherPriority.Background);
     }
 
     /// <summary>异常弹窗节流：同一条异常在 10 秒内反复出现时不重复弹窗（只记日志），
@@ -201,6 +239,13 @@ public partial class App : Application
     private void OnDispatcherUnhandledException(object sender, DispatcherUnhandledExceptionEventArgs e)
     {
         Log.Error("UI 线程未处理异常：{Exception}", ChkszClient.Redact(e.Exception.ToString()));
+
+        if (!_startupCompleted && MainWindow is null)
+        {
+            e.Handled = true;
+            ShowFatalStartupError("播放器启动失败", e.Exception);
+            return;
+        }
 
         var now = DateTime.UtcNow;
         var message = e.Exception.Message ?? string.Empty;
@@ -255,30 +300,16 @@ public partial class App : Application
         }
     }
 
-    /// <summary>P6：外部打开文件（双击/多选/拖到 exe）→ 导入曲库并播放；主窗从任意表面恢复。</summary>
+    /// <summary>P6：外部打开文件（双击/多选/拖到 exe）→ 临时入队播放；主窗从任意表面恢复。</summary>
     private async Task HandleIncomingFilesAsync(IReadOnlyList<string> files)
     {
         try
         {
-            if (_library is null) return;
-            var tracks = await _library.ImportFilesAsync(files);
-            Log.Information("外部文件导入完成 {Count} 首", tracks.Count);
-            if (tracks.Count == 0) return;
-
             if (Application.Current.MainWindow is MainWindow main && main.Shell is { } shell)
             {
-                if (shell.Player.HasTrack)
-                {
-                    // 已有播放时遵循“入队”语义，不打断当前曲目；没有当前曲目
-                    // （冷启动/停止态）才直接起播这一批文件。
-                    shell.Player.PlayNextTracks(tracks, "文件打开");
-                }
-                else
-                {
-                    shell.Player.PlayTracks(tracks, 0, "文件打开");
-                }
+                await shell.OpenExternalFilesAsync(files);
                 main.ShowFromExternalOpen();
-                Log.Information("外部文件已加入播放队列（{Count} 首）", tracks.Count);
+                Log.Information("外部文件已交给播放队列（{Count} 个）", files.Count);
             }
         }
         catch (Exception ex)
@@ -403,6 +434,40 @@ public partial class App : Application
         catch
         {
             Interlocked.Exchange(ref _backgroundExceptionDialogPending, 0);
+        }
+    }
+
+    private void ShowFatalStartupError(string title, Exception exception)
+    {
+        Log.Fatal(exception, "{Title}", title);
+        try
+        {
+            var logHint = Directory.Exists(AppPaths.LogsDir)
+                ? "\n\n日志：" + AppPaths.LogsDir
+                : string.Empty;
+            MessageBox.Show(
+                title + "：\n" + ChkszClient.Redact(exception.Message)
+                + "\n\nLyra 将退出。" + logHint,
+                "Lyra", MessageBoxButton.OK, MessageBoxImage.Error);
+        }
+        catch
+        {
+        }
+
+        if (!Dispatcher.HasShutdownStarted && !Dispatcher.HasShutdownFinished)
+            Shutdown(1);
+    }
+
+    private static void RunExitStep(string name, Action action, bool logFailure = true)
+    {
+        try
+        {
+            action();
+        }
+        catch (Exception ex)
+        {
+            if (logFailure)
+                Log.Warning(ex, "退出清理失败：{Step}", name);
         }
     }
 }

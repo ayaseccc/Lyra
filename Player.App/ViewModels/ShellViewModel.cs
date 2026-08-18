@@ -154,7 +154,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     // ---------------- 启动 ----------------
 
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(bool restoreLastTrack = true)
     {
         // 万级曲库的载入与聚合放后台线程，别卡住第一帧
         await Task.Run(() =>
@@ -169,7 +169,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         SelectFirstPage();
 
         // 恢复上次播放的曲目：只显示信息与歌词，不自动播放（UI-R1.5 反馈；L2 行为页可关）
-        var lastTrackPath = ConfigService.Current.Ui.RestoreLastTrack
+        var lastTrackPath = restoreLastTrack && ConfigService.Current.Ui.RestoreLastTrack
             ? ConfigService.Current.Ui.LastTrackPath
             : string.Empty;
         if (!string.IsNullOrEmpty(lastTrackPath))
@@ -182,8 +182,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         if (HasRoots)
         {
             _library.StartWatching();
-            // 启动即跑一次增量扫描，把上次退出后新增/删除的文件补上
-            await ScanAsync(fullRescan: false);
+            // 基础曲库载入后应用已经可播放。增量扫描留在后台，不能让慢盘或
+            // 离线网络目录阻塞命令行文件与单实例管道的“打开即播”。
+            _ = ScanAsync(fullRescan: false);
         }
         else
         {
@@ -1038,6 +1039,32 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         }
 
         Player.PlayTracks(records, 0, "拖入的文件");
+    }
+
+    /// <summary>
+    /// Windows 文件关联/第二实例统一入口。外部打开只临时播放，不把曲库根目录外的
+    /// 文件永久写入媒体库；已有当前曲目时插到下一首，否则直接起播。
+    /// </summary>
+    public async Task OpenExternalFilesAsync(IReadOnlyList<string> paths)
+    {
+        var files = paths
+            .Where(p => File.Exists(p) && AudioFormats.IsSupported(p))
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .ToList();
+        if (files.Count == 0) return;
+
+        var records = await Task.Run(() => files
+            .Select(f => _library.GetByPath(f) ?? TagReader.Read(f))
+            .Where(r => r is not null)
+            .Select(r => r!)
+            .ToList());
+
+        if (_disposed || records.Count == 0) return;
+
+        if (Player.HasTrack)
+            Player.PlayNextTracks(records, "文件打开");
+        else
+            Player.PlayTracks(records, 0, "文件打开");
     }
 
     public void Dispose()

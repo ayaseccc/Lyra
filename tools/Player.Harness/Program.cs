@@ -167,6 +167,32 @@ public static class Program
         Check("随机：预测到的下一曲与真正切过去的一致",
             peeked is null || (actual is not null && peeked.Id == actual.Id));
 
+        var deterministicShuffle = new PlaybackList(new Random(20260818));
+        deterministicShuffle.Replace(tracks, "确定性随机", 2);
+        deterministicShuffle.Mode = PlayMode.Shuffle;
+        var shuffleCycle = new List<long> { deterministicShuffle.Current!.Id };
+        for (var i = 1; i < tracks.Count; i++)
+            shuffleCycle.Add(deterministicShuffle.MoveNext(userInitiated: false)!.Id);
+        Check("随机：首轮不跳过任何曲目",
+            shuffleCycle.Count == tracks.Count && shuffleCycle.Distinct().Count() == tracks.Count);
+        var previousShuffleId = deterministicShuffle.Current!.Id;
+        var nextCycleFirst = deterministicShuffle.MoveNext(userInitiated: false);
+        Check("随机：多曲列表换轮不立即重复当前曲",
+            nextCycleFirst is not null && nextCycleFirst.Id != previousShuffleId);
+
+        var shuffleSnapshot = deterministicShuffle.CaptureSnapshot();
+        var snapshotCurrent = deterministicShuffle.Current?.Id;
+        var snapshotNext = deterministicShuffle.PeekNext()?.Id;
+        deterministicShuffle.Replace(tracks.Take(2), "临时列表", 0);
+        deterministicShuffle.Mode = PlayMode.Sequential;
+        deterministicShuffle.RestoreSnapshot(shuffleSnapshot);
+        Check("列表快照：恢复来源、模式和当前曲",
+            deterministicShuffle.SourceName == "确定性随机" &&
+            deterministicShuffle.Mode == PlayMode.Shuffle &&
+            deterministicShuffle.Current?.Id == snapshotCurrent);
+        Check("列表快照：恢复随机播放顺序",
+            deterministicShuffle.PeekNext()?.Id == snapshotNext);
+
         list.Mode = PlayMode.Sequential;
         list.Replace(tracks, "测试", 0);
         Check("换列表后预测重新生效", list.PeekNext()?.Id == 2);
@@ -303,6 +329,7 @@ public static class Program
         RunMatcherChecks();
         RunClientPureFunctionChecks();
         RunLyricLayoutChecks();
+        RunAtomicLrcWriteChecks();
 
         // 存储层需要临时库
         // 内嵌歌词（P3.1-③）：用 format-test 的 FLAC 样本 + TagLibSharp 写入后读回
@@ -510,6 +537,55 @@ public static class Program
         Check("URL/裸 Key 脱敏", redacted.Contains("apikey=***")
             && !redacted.Contains(fakeKey) && !rawRedacted.Contains(fakeKey));
 
+        var mappedEcho = ChkszClient.MapError<int>(401, "invalid key " + fakeKey);
+        Check("上游错误消息中的 Key 也脱敏",
+            mappedEcho.AuthFailed && !mappedEcho.Error.Contains(fakeKey, StringComparison.Ordinal));
+
+        const string successBody = "{\"code\":200,\"msg\":\"success\",\"data\":{\"songs\":[],\"total\":0}}";
+        var success = ChkszClient.InterpretResponse<SearchResult>(200, successBody);
+        Check("HTTP+code+msg 成功才接收 data", success.Success && success.Data is not null);
+
+        var envelopeAuth = ChkszClient.InterpretResponse<SearchResult>(200,
+            "{\"code\":401,\"msg\":\"invalid " + fakeKey + "\",\"data\":null}");
+        Check("HTTP 200 内层 401 正确传播并脱敏",
+            envelopeAuth.AuthFailed && envelopeAuth.StatusCode == 401
+            && !envelopeAuth.Error.Contains(fakeKey, StringComparison.Ordinal));
+
+        const string failedMessageBody = "{\"code\":200,\"msg\":\"failed\",\"data\":{\"songs\":[],\"total\":0}}";
+        Check("code 200 但 msg 失败不能误判成功",
+            !ChkszClient.InterpretResponse<SearchResult>(200, failedMessageBody).Success);
+        Check("成功 envelope 缺 data 明确失败",
+            !ChkszClient.InterpretResponse<SearchResult>(200, "{\"code\":200,\"msg\":\"success\",\"data\":null}").Success);
+
+        Check("ChKSz 端点只接受 HTTPS",
+            OnlineUrl.IsHttps("https://api.chksz.com")
+            && !OnlineUrl.IsHttps("http://api.chksz.com")
+            && !OnlineUrl.IsHttp("https:// bad host"));
+        Check("歌单请求独立 60 秒超时",
+            ChkszClient.DefaultRequestTimeout == TimeSpan.FromSeconds(20)
+            && ChkszClient.PlaylistRequestTimeout == TimeSpan.FromSeconds(60));
+
+        var legacyConfig = new AppConfig { ApiKey = fakeKey, Online = new OnlineConfig() };
+        ConfigService.MigrateLegacyOnlineFields(legacyConfig);
+        Check("旧 ApiKey 迁入端点后从旧字段清空",
+            legacyConfig.ApiKey.Length == 0
+            && legacyConfig.Online.ApiEndpoints.Any(e => e.Kind == "chksz" && e.Key == fakeKey));
+
+        var migratedConfig = new AppConfig
+        {
+            ApiKey = fakeKey,
+            Online = new OnlineConfig
+            {
+                ApiEndpoints = new List<ApiEndpointConfig>
+                {
+                    new() { Kind = "chksz", Url = "https://api.chksz.com", Key = "current-key" }
+                }
+            }
+        };
+        ConfigService.MigrateLegacyOnlineFields(migratedConfig);
+        Check("已迁移配置清旧 Key 且不覆盖当前端点",
+            migratedConfig.ApiKey.Length == 0 && migratedConfig.Online.ApiEndpoints[0].Key == "current-key");
+
         Check("400 → 参数错误", ChkszClient.MapError<int>(400, null).Error.Contains("参数"));
         Check("401 → Key 无效", ChkszClient.MapError<int>(401, null).AuthFailed);
         Check("402 → 额度用尽", ChkszClient.MapError<int>(402, null).QuotaExhausted);
@@ -517,6 +593,14 @@ public static class Program
         Check("429 → 频繁", ChkszClient.MapError<int>(429, null).Error.Contains("频繁"));
         Check("503 → 稍后再试", ChkszClient.MapError<int>(503, null).Error.Contains("稍后"));
         Check("200 未映射 → 通用错误", ChkszClient.MapError<int>(500, null).Error.Contains("500"));
+        var rateLimited = OnlineResult<int>.Fail("限流", statusCode: 429);
+        Check("统一结果保留 429 状态", rateLimited.RateLimited && rateLimited.StatusCode == 429);
+        Check("短 Key 隐藏态不泄露原值",
+            SecretMask.ForDisplay("abc") == "********"
+            && !SecretMask.ForDisplay("abc").Contains("abc", StringComparison.Ordinal));
+        Check("长 Key 隐藏态仅显示尾四位",
+            SecretMask.ForDisplay("123456789").EndsWith("6789", StringComparison.Ordinal)
+            && !SecretMask.ForDisplay("123456789").Contains("12345", StringComparison.Ordinal));
 
         Console.WriteLine();
     }
@@ -813,6 +897,36 @@ public static class Program
         Console.WriteLine($"  {(ok ? "✓" : "✗ 失败")}  {what}");
     }
 
+    private static void RunAtomicLrcWriteChecks()
+    {
+        Console.WriteLine("=== 在线歌词原子落盘 ===");
+        var directory = Path.Combine(Path.GetTempPath(), "lyra-lrc-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(directory);
+        var audioPath = Path.Combine(directory, "song.flac");
+        var lrcPath = Path.ChangeExtension(audioPath, ".lrc");
+
+        try
+        {
+            var first = LyricsService.TryWriteLrcAtomically(audioPath, "[00:01.00]在线歌词");
+            Check("在线歌词首次落盘成功",
+                first && File.ReadAllText(lrcPath) == "[00:01.00]在线歌词");
+
+            File.WriteAllText(lrcPath, "用户歌词");
+            var second = LyricsService.TryWriteLrcAtomically(audioPath, "不应覆盖");
+            Check("已有用户 .lrc 绝不覆盖",
+                !second && File.ReadAllText(lrcPath) == "用户歌词");
+            Check("原子落盘不遗留临时文件",
+                Directory.EnumerateFiles(directory, "*.tmp").Any() == false);
+        }
+        finally
+        {
+            try { Directory.Delete(directory, recursive: true); }
+            catch { /* 临时夹清理失败不覆盖测试结论 */ }
+        }
+
+        Console.WriteLine();
+    }
+
     private static void RunAudioConcurrencyChecks()
     {
         Console.WriteLine("=== 音频回调代际与后端恢复合并 ===");
@@ -947,6 +1061,7 @@ public static class Program
         RunPreloadWorkTrackerChecks();
         RunLibrarySnapshotConcurrencyChecks();
         RunLibraryRescanQueueChecks();
+        RunLibrarySafetyPolicyChecks();
         RunCancellationSemanticsChecks();
 
         Console.WriteLine();
@@ -1088,6 +1203,74 @@ public static class Program
         queue.Close();
         Check("退出后丢弃待办且拒绝新补扫",
             !queue.TryTake() && !queue.Request(out var shutdownSchedule) && !shutdownSchedule);
+    }
+
+    private static void RunLibrarySafetyPolicyChecks()
+    {
+        Console.WriteLine();
+        Console.WriteLine("=== 曲库删除与监听保守策略 ===");
+
+        var tracks = new[]
+        {
+            new TrackRecord { Id = 1, Path = @"D:\Music\Drop\one.flac" },
+            new TrackRecord { Id = 2, Path = @"D:\Music\Keep\two.flac" },
+            new TrackRecord { Id = 3, Path = @"E:\Manual\three.flac" }
+        };
+        var selected = LibraryService.SelectTrackIdsForRemovedRoot(
+            tracks, @"D:\Music", new[] { @"D:\Music\Keep" });
+        Check("移除父 root 不删仍保留的嵌套 root",
+            selected.SequenceEqual(new long[] { 1 }));
+
+        var index = new Dictionary<string, (long Id, long Mtime, long FileSize)>(
+            StringComparer.OrdinalIgnoreCase)
+        {
+            [@"D:\Complete\gone.flac"] = (11, 1, 1),
+            [@"D:\Incomplete\hidden.flac"] = (12, 1, 1)
+        };
+        var missing = LibraryScanner.FindMissingTrackIds(
+            index,
+            new HashSet<string>(StringComparer.OrdinalIgnoreCase),
+            new[] { @"D:\Complete" });
+        Check("只从完整枚举的 root 删除缺失曲目",
+            missing.SequenceEqual(new long[] { 11 }));
+        Check("枚举遇到无权限子目录会整根降级为不完整",
+            !LibraryScanner.CreateEnumerationOptions().IgnoreInaccessible);
+
+        var firstWrite = new DateTime(2026, 8, 18, 12, 0, 0, 100, DateTimeKind.Utc);
+        var secondWrite = firstWrite.AddTicks(1);
+        Check("mtime 保留同一毫秒内的文件变化",
+            LibraryScanner.ToMtimeStamp(firstWrite) != LibraryScanner.ToMtimeStamp(secondWrite));
+
+        Check("删除带点目录事件不会被扩展名过滤",
+            LibraryWatcher.ShouldSchedule(WatcherChangeTypes.Deleted,
+                @"D:\Music\Album.v2", pathIsDirectory: false));
+        Check("普通非音频 Changed 事件仍被过滤",
+            !LibraryWatcher.ShouldSchedule(WatcherChangeTypes.Changed,
+                @"D:\Music\notes.txt", pathIsDirectory: false));
+
+        Check("最新 Open 请求代际可提交",
+            PlaybackEngine.IsOpenRequestCurrent(9, 9, disposed: false));
+        Check("旧 Open 请求在慢建流后被拒绝",
+            !PlaybackEngine.IsOpenRequestCurrent(8, 9, disposed: false));
+        Check("引擎退出后 Open 请求被拒绝",
+            !PlaybackEngine.IsOpenRequestCurrent(9, 9, disposed: true));
+
+        var openGate = new OpenOperationGate();
+        var firstOpen = openGate.TryBegin();
+        var latestOpen = openGate.TryBegin();
+        var published = new List<int>();
+        var staleCommit = firstOpen is not null && openGate.TryCommit(
+            firstOpen.Generation, () => published.Add(firstOpen.Generation));
+        var latestCommit = latestOpen is not null && openGate.TryCommit(
+            latestOpen.Generation, () => published.Add(latestOpen.Generation));
+        Check("Open 旧请求不能迟到发布事件", !staleCommit && latestCommit &&
+            published.SequenceEqual(new[] { latestOpen!.Generation }));
+
+        firstOpen?.Dispose();
+        latestOpen?.Dispose();
+        var close = Task.Run(openGate.CloseAndWait);
+        Check("Open 退出屏障排空在途操作", close.Wait(TimeSpan.FromSeconds(1)) &&
+            openGate.ActiveCount == 0 && openGate.TryBegin() is null);
     }
 
     private static List<TrackRecord> BuildLibraryGeneration(string marker)
@@ -1379,12 +1562,85 @@ public static class Program
         Check("非法文件名字符替换为下划线", sanitized == "a_b_c_d__f_g_h_i");   // ? 与 " 各一个下划线
         Console.WriteLine($"  debug CON.='{DownloadTemplater.SanitizeComponent("CON.")}'");
         Check("保留名与尾点处理", DownloadTemplater.SanitizeComponent("CON.") == "CON_");
+        Check("Windows 设备保留名处理", DownloadTemplater.SanitizeComponent("CON") == "_CON");
         Console.WriteLine($"  debug blank='{DownloadTemplater.SanitizeComponent("   ")}'");
         Check("空白组件回退下划线", DownloadTemplater.SanitizeComponent("   ") == "_");
 
         Check("扩展名从 URL 推断", DownloadTemplater.ExtensionFromUrl("https://x.com/a/b.flac?v=1") == ".flac");
         Check("未知扩展名回退 bin", DownloadTemplater.ExtensionFromUrl("https://x.com/a") == ".bin");
         Check("URL 带路径保留最后扩展", DownloadTemplater.ExtensionFromUrl("http://host/abc.MP3?k=1") == ".mp3");
+
+        var safetyRoot = Path.Combine(Path.GetTempPath(), "lyra-download-safety-" + Guid.NewGuid().ToString("N"));
+        Directory.CreateDirectory(safetyRoot);
+        try
+        {
+            var desired = DownloadTemplater.ResolveTargetPath(safetyRoot, "Artist/Album/Title", ".flac");
+            Check("下载目标规范化后仍在根目录",
+                desired.StartsWith(Path.TrimEndingDirectorySeparator(Path.GetFullPath(safetyRoot)) + Path.DirectorySeparatorChar,
+                    StringComparison.OrdinalIgnoreCase));
+
+            var escapeRejected = false;
+            try
+            {
+                _ = DownloadTemplater.ResolveTargetPath(safetyRoot, Path.Combine("..", "outside"), ".flac");
+            }
+            catch (InvalidOperationException)
+            {
+                escapeRejected = true;
+            }
+            Check("下载模板越出根目录被拒绝", escapeRejected);
+
+            Directory.CreateDirectory(Path.GetDirectoryName(desired)!);
+            File.WriteAllText(desired, "original");
+            var source2 = Path.Combine(safetyRoot, "incoming-2.tmp");
+            File.WriteAllText(source2, "second");
+            var moved2 = DownloadService.MoveToAvailablePath(source2, desired);
+            var source3 = Path.Combine(safetyRoot, "incoming-3.tmp");
+            File.WriteAllText(source3, "third");
+            var moved3 = DownloadService.MoveToAvailablePath(source3, desired);
+            Check("已有文件不覆盖并使用确定性递增名称",
+                File.ReadAllText(desired) == "original"
+                && moved2 == DownloadTemplater.CollisionPath(desired, 2)
+                && moved3 == DownloadTemplater.CollisionPath(desired, 3)
+                && File.ReadAllText(moved2) == "second"
+                && File.ReadAllText(moved3) == "third");
+
+            var lyricTrack = new OnlineTrack("lyric", "歌词测试", new[] { "测试" }, "专辑", "", "lyric", "test");
+            var lyricTarget = Path.Combine(safetyRoot, "lyric-test.flac");
+            var lyricSource = new LyricStubSource(_ => Task.FromResult(
+                OnlineResult<OnlineLyric>.Ok(new OnlineLyric("[00:01.00]新歌词", null))));
+            var lyricWritten = DownloadService.WriteLyricIfAnyAsync(
+                lyricTarget, lyricTrack, lyricSource, CancellationToken.None).GetAwaiter().GetResult();
+            Check("下载歌词首次原子落盘",
+                lyricWritten && File.ReadAllText(Path.ChangeExtension(lyricTarget, ".lrc")) == "[00:01.00]新歌词");
+
+            var collisionTarget = DownloadTemplater.CollisionPath(lyricTarget, 2);
+            var collisionLyricPath = Path.ChangeExtension(collisionTarget, ".lrc");
+            File.WriteAllText(collisionLyricPath, "用户歌词");
+            var collisionWritten = DownloadService.WriteLyricIfAnyAsync(
+                collisionTarget, lyricTrack, lyricSource, CancellationToken.None).GetAwaiter().GetResult();
+            Check("下载歌词不覆盖用户文件",
+                !collisionWritten && File.ReadAllText(collisionLyricPath) == "用户歌词");
+
+            var failingLyrics = new LyricStubSource(_ =>
+                Task.FromException<OnlineResult<OnlineLyric>>(new IOException("模拟歌词失败")));
+            var lyricFailure = DownloadService.WriteLyricIfAnyAsync(
+                Path.Combine(safetyRoot, "lyric-failure.flac"), lyricTrack, failingLyrics,
+                CancellationToken.None).GetAwaiter().GetResult();
+            Check("歌词失败不影响已落盘音频", !lyricFailure);
+        }
+        finally
+        {
+            Directory.Delete(safetyRoot, recursive: true);
+        }
+
+        Check("网络层无状态失败允许下载层重试",
+            DownloadService.ShouldRetryStreamFailure(OnlineResult<OnlineStream>.Fail("network")));
+        Check("401/402/429/503 不在下载层重复请求",
+            !DownloadService.ShouldRetryStreamFailure(OnlineResult<OnlineStream>.Fail("auth", statusCode: 401, authFailed: true))
+            && !DownloadService.ShouldRetryStreamFailure(OnlineResult<OnlineStream>.Fail("quota", statusCode: 402, quotaExhausted: true))
+            && !DownloadService.ShouldRetryStreamFailure(OnlineResult<OnlineStream>.Fail("rate", statusCode: 429))
+            && !DownloadService.ShouldRetryStreamFailure(OnlineResult<OnlineStream>.Fail("service", statusCode: 503)));
 
         using (var client = new ChkszClient())
         using (var sources = new OnlineSources(client))
@@ -1482,6 +1738,14 @@ public static class Program
         var stream = gd.GetStreamAsync(track, 999, CancellationToken.None).GetAwaiter().GetResult();
         Check("取流网络失败 → Fail 不抛异常", !stream.Success);
 
+        var statusHandler = new CountingStatusHandler(System.Net.HttpStatusCode.TooManyRequests);
+        using var statusGd = new GdSource(statusHandler);
+        var statusStream = statusGd.GetStreamAsync(track, 999, CancellationToken.None).GetAwaiter().GetResult();
+        Check("GD HTTP 429 保留状态且不放大请求",
+            !statusStream.Success && statusStream.StatusCode == 429
+            && !DownloadService.ShouldRetryStreamFailure(statusStream)
+            && statusHandler.Count == 1);
+
         var lyric = gd.GetLyricByNeteaseIdAsync(1, CancellationToken.None).GetAwaiter().GetResult();
         Check("GD 歌词网络失败 → Fail 不抛异常", !lyric.Success);
 
@@ -1494,6 +1758,60 @@ public static class Program
         protected override Task<HttpResponseMessage> SendAsync(
             System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
             => throw new System.Net.Http.HttpRequestException("模拟断网：网络不可达");
+    }
+
+    private sealed class CountingStatusHandler : System.Net.Http.HttpMessageHandler
+    {
+        private readonly System.Net.HttpStatusCode _status;
+        private int _count;
+
+        public CountingStatusHandler(System.Net.HttpStatusCode status) => _status = status;
+
+        public int Count => Volatile.Read(ref _count);
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            System.Net.Http.HttpRequestMessage request, CancellationToken cancellationToken)
+        {
+            Interlocked.Increment(ref _count);
+            return Task.FromResult(new HttpResponseMessage(_status)
+            {
+                Content = new StringContent("{}")
+            });
+        }
+    }
+
+    private sealed class LyricStubSource : IOnlineSource
+    {
+        private readonly Func<CancellationToken, Task<OnlineResult<OnlineLyric>>> _getLyric;
+
+        public LyricStubSource(Func<CancellationToken, Task<OnlineResult<OnlineLyric>>> getLyric)
+            => _getLyric = getLyric;
+
+        public string Key => "test";
+        public string DisplayName => "test";
+        public bool IsFree => true;
+        public bool IsAvailable => true;
+
+        public Task<OnlineResult<IReadOnlyList<OnlineTrack>>> SearchAsync(
+            string keyword, int limit, int page, CancellationToken ct)
+            => Task.FromResult(OnlineResult<IReadOnlyList<OnlineTrack>>.Fail("unsupported"));
+
+        public Task<OnlineResult<IReadOnlyList<OnlineTrack>>> SearchAlbumAsync(
+            string keyword, int limit, int page, CancellationToken ct)
+            => Task.FromResult(OnlineResult<IReadOnlyList<OnlineTrack>>.Fail("unsupported"));
+
+        public Task<OnlineResult<OnlineStream>> GetStreamAsync(
+            OnlineTrack track, int preferredBr, CancellationToken ct)
+            => Task.FromResult(OnlineResult<OnlineStream>.Fail("unsupported"));
+
+        public Task<OnlineResult<OnlineLyric>> GetLyricAsync(OnlineTrack track, CancellationToken ct)
+            => _getLyric(ct);
+
+        public Task<OnlineResult<string>> GetPicUrlAsync(OnlineTrack track, int size, CancellationToken ct)
+            => Task.FromResult(OnlineResult<string>.Fail("unsupported"));
+
+        public Task ProbeAsync(CancellationToken ct) => Task.CompletedTask;
+        public void Dispose() { }
     }
 
     private sealed class BlockingUntilCancelledHandler : System.Net.Http.HttpMessageHandler
@@ -2219,6 +2537,21 @@ public static class Program
                 engine.SpectrumDspHandle == firstDsp);
 
             engine.Play();
+            var retainedTrack = engine.CurrentTrack;
+            var invalidWave = Path.Combine(Path.GetTempPath(), $"player-invalid-{Guid.NewGuid():N}.wav");
+            try
+            {
+                File.WriteAllText(invalidWave, "not a wave");
+                Check("打开损坏文件失败不释放当前播放",
+                    !engine.Open(invalidWave) && ReferenceEquals(engine.CurrentTrack, retainedTrack) &&
+                    engine.State == PlayerState.Playing);
+            }
+            finally
+            {
+                try { File.Delete(invalidWave); }
+                catch { /* 临时探针文件清理失败不覆盖测试结论 */ }
+            }
+
             var levels = new float[engine.SpectrumBinCount];
             Check("PlaybackEngine 的后台分析器收到真实 mixer PCM",
                 SpinWait.SpinUntil(

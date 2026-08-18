@@ -97,11 +97,21 @@ public sealed class LibraryWatcher : IDisposable
 
     private void OnFileEvent(object sender, FileSystemEventArgs e)
     {
-        // 目录事件没有扩展名，也要放行（新建/删除整个专辑目录）
-        var isDirectoryEvent = string.IsNullOrEmpty(Path.GetExtension(e.FullPath));
-        if (!isDirectoryEvent && !Audio.AudioFormats.IsSupported(e.FullPath)) return;
+        if (!ShouldSchedule(e.ChangeType, e.FullPath, Directory.Exists(e.FullPath))) return;
 
         Schedule();
+    }
+
+    internal static bool ShouldSchedule(WatcherChangeTypes changeType, string fullPath, bool pathIsDirectory)
+    {
+        // A deleted/renamed path no longer reliably reveals whether it was a
+        // directory. Always rescan those debounced events; this covers dotted
+        // directory names such as "Album.v2" without scanning for ordinary
+        // non-audio Changed events.
+        if ((changeType & (WatcherChangeTypes.Deleted | WatcherChangeTypes.Renamed)) != 0)
+            return true;
+
+        return pathIsDirectory || Audio.AudioFormats.IsSupported(fullPath);
     }
 
     private void OnError(object sender, ErrorEventArgs e)

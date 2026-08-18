@@ -911,8 +911,29 @@
                                                           SelectedItem="{Binding Kind}" />
                                                 <ui:TextBox Grid.Column="1" Margin="8,0,0,0" PlaceholderText="API 地址"
                                                             Text="{Binding Url, UpdateSourceTrigger=PropertyChanged}" />
-                                                <ui:TextBox Grid.Column="2" Margin="8,0,0,0" PlaceholderText="Key（可选）"
-                                                            Text="{Binding Key, UpdateSourceTrigger=PropertyChanged}" />
+                                                <Grid Grid.Column="2" Margin="8,0,0,0">
+                                                    <Grid.ColumnDefinitions>
+                                                        <ColumnDefinition Width="*" />
+                                                        <ColumnDefinition Width="34" />
+                                                    </Grid.ColumnDefinitions>
+                                                    <ui:TextBox PlaceholderText="Key（可选）" IsReadOnly="True"
+                                                                Text="{Binding MaskedKey, Mode=OneWay}"
+                                                                Visibility="{Binding IsKeyRevealed, Converter={StaticResource InverseBoolToVisibility}}" />
+                                                    <ui:TextBox PlaceholderText="Key（可选）"
+                                                                Text="{Binding Key, UpdateSourceTrigger=PropertyChanged}"
+                                                                Visibility="{Binding IsKeyRevealed, Converter={StaticResource BoolToVis}}" />
+                                                    <Button Grid.Column="1" Margin="4,0,0,0" Padding="0"
+                                                            Style="{StaticResource ModeButtonStyle}"
+                                                            ToolTip="显示或隐藏 Key"
+                                                            Command="{Binding ToggleKeyRevealCommand}">
+                                                        <Grid>
+                                                            <ui:SymbolIcon Symbol="Eye24" FontSize="15"
+                                                                           Visibility="{Binding IsKeyRevealed, Converter={StaticResource InverseBoolToVisibility}}" />
+                                                            <ui:SymbolIcon Symbol="EyeOff24" FontSize="15"
+                                                                           Visibility="{Binding IsKeyRevealed, Converter={StaticResource BoolToVis}}" />
+                                                        </Grid>
+                                                    </Button>
+                                                </Grid>
                                                 <Button Grid.Column="3" Margin="8,0,0,0" Style="{StaticResource ModeButtonStyle}"
                                                         ToolTip="删除"
                                                         Command="{Binding DataContext.RemoveApiEndpointCommand, RelativeSource={RelativeSource AncestorType=ItemsControl}}"

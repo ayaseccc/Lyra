@@ -10,6 +10,11 @@ namespace Player.Core.Downloads;
 /// </summary>
 public static class DownloadTemplater
 {
+    private static readonly HashSet<string> ReservedDeviceNames = new(
+        new[] { "CON", "PRN", "AUX", "NUL", "COM1", "COM2", "COM3", "COM4", "COM5", "COM6", "COM7", "COM8", "COM9",
+            "LPT1", "LPT2", "LPT3", "LPT4", "LPT5", "LPT6", "LPT7", "LPT8", "LPT9" },
+        StringComparer.OrdinalIgnoreCase);
+
     /// <summary>
     /// 渲染模板为相对路径（如 "周杰伦/叶惠美/01 - 晴天"），不处理后缀。
     /// 空值占位符（如在线曲目无 TrackNo）连同相邻的 " - " 分隔段一起清理，避免 "_ - 晴天" 之类残留。
@@ -52,7 +57,42 @@ public static class DownloadTemplater
         // 不能是 Windows 保留名（CON/PRN/AUX/NUL/COM1..）与末尾点
         if (cleaned.Length > 0 && cleaned[^1] == '.') cleaned = cleaned[..^1] + "_";
         if (cleaned.Length == 0) cleaned = "_";
+        var deviceStem = cleaned.Split('.', 2)[0];
+        if (ReservedDeviceNames.Contains(deviceStem)) cleaned = "_" + cleaned;
         return cleaned;
+    }
+
+    /// <summary>规范化下载目标，并保证最终路径严格位于下载根目录中。</summary>
+    public static string ResolveTargetPath(string downloadRoot, string renderedRelativePath, string extension)
+    {
+        if (string.IsNullOrWhiteSpace(downloadRoot))
+            throw new ArgumentException("下载目录为空", nameof(downloadRoot));
+        if (Path.IsPathRooted(renderedRelativePath))
+            throw new InvalidOperationException("下载命名模板不能生成绝对路径");
+        if (string.IsNullOrWhiteSpace(extension)
+            || extension[0] != '.'
+            || !string.Equals(Path.GetFileName(extension), extension, StringComparison.Ordinal))
+            throw new InvalidOperationException("下载文件扩展名无效");
+
+        var root = Path.GetFullPath(downloadRoot);
+        var relative = string.IsNullOrWhiteSpace(renderedRelativePath) ? "_" : renderedRelativePath;
+        var target = Path.GetFullPath(Path.Combine(root, relative + extension));
+        var rootPrefix = Path.TrimEndingDirectorySeparator(root) + Path.DirectorySeparatorChar;
+        if (!target.StartsWith(rootPrefix, StringComparison.OrdinalIgnoreCase))
+            throw new InvalidOperationException("下载命名模板生成的路径越出了下载目录");
+
+        return target;
+    }
+
+    /// <summary>为冲突文件生成稳定名称：原名、原名 (2)、原名 (3)…</summary>
+    public static string CollisionPath(string desiredPath, int ordinal)
+    {
+        if (ordinal <= 1) return desiredPath;
+        var directory = Path.GetDirectoryName(desiredPath)
+            ?? throw new InvalidOperationException("下载目标缺少目录");
+        var stem = Path.GetFileNameWithoutExtension(desiredPath);
+        var extension = Path.GetExtension(desiredPath);
+        return Path.Combine(directory, $"{stem} ({ordinal}){extension}");
     }
 
     /// <summary>从直链推断扩展名（.flac/.mp3/.m4a/.wav 等）；带参数去掉 query。</summary>

@@ -34,6 +34,10 @@ public partial class DesktopLyricsWindow : Window
     private HwndSource? _source;
     private bool _hookAdded;
     private bool _handleHot;
+    private bool _initialPlacementApplied;
+    private bool _resizing;
+    private Point _resizeStart;
+    private double _resizeStartWidth;
 
     [StructLayout(LayoutKind.Sequential)]
     private struct NativePoint
@@ -200,6 +204,22 @@ public partial class DesktopLyricsWindow : Window
             _source = source;
             source.AddHook(WndProc);
         }
+
+        PlaceInPrimaryWorkingArea();
+    }
+
+    private void PlaceInPrimaryWorkingArea()
+    {
+        if (_initialPlacementApplied) return;
+        _initialPlacementApplied = true;
+
+        var work = SystemParameters.WorkArea;
+        var width = double.IsFinite(Width) && Width > 0 ? Width : 560;
+        var height = double.IsFinite(Height) && Height > 0 ? Height : 120;
+        var maxLeft = Math.Max(work.Left, work.Right - width);
+        var maxTop = Math.Max(work.Top, work.Bottom - height);
+        Left = Math.Clamp(work.Left + (work.Width - width) / 2, work.Left, maxLeft);
+        Top = Math.Clamp(work.Bottom - height - 24, work.Top, maxTop);
     }
 
     /// <summary>
@@ -310,6 +330,11 @@ public partial class DesktopLyricsWindow : Window
     {
         base.OnMouseMove(e);
         if (!_dragging) return;
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            FinishWindowDrag();
+            return;
+        }
         var pos = e.GetPosition(this);
         Left += pos.X - _dragStart.X;
         Top += pos.Y - _dragStart.Y;
@@ -319,34 +344,74 @@ public partial class DesktopLyricsWindow : Window
     {
         base.OnMouseLeftButtonUp(e);
         if (_dragging)
-        {
-            _dragging = false;
-            ReleaseMouseCapture();
-        }
+            FinishWindowDrag();
+    }
+
+    protected override void OnLostMouseCapture(MouseEventArgs e)
+    {
+        base.OnLostMouseCapture(e);
+        _dragging = false;
+        if (_resizing) FinishResize(saveWidth: true, releaseCapture: false);
+    }
+
+    private void FinishWindowDrag()
+    {
+        _dragging = false;
+        if (IsMouseCaptured) ReleaseMouseCapture();
     }
 
     private void OnResizeHandleDown(object sender, MouseButtonEventArgs e)
     {
         if (_locked) return;
-        var start = e.GetPosition(this);
-        var startWidth = Width;
+        if (_resizing) FinishResize(saveWidth: true);
+        _resizing = true;
+        _resizeStart = e.GetPosition(this);
+        _resizeStartWidth = Width;
+        ResizeHandle.MouseMove += OnResizeHandleMove;
+        ResizeHandle.MouseLeftButtonUp += OnResizeHandleUp;
+        ResizeHandle.LostMouseCapture += OnResizeHandleLostCapture;
         Mouse.Capture(ResizeHandle);   // 显式捕获：拖动跨窗口边缘也不丢事件（用户反馈拖不动）
-        void OnMove(object? s, MouseEventArgs args)
-        {
-            var delta = args.GetPosition(this).X - start.X;
-            Width = Math.Clamp(startWidth + delta, 320, 1600);
-        }
-        void OnUp(object? s, MouseButtonEventArgs args)
-        {
-            Mouse.Capture(null);
-            Mouse.RemoveMouseMoveHandler(ResizeHandle, OnMove);
-            Mouse.RemoveMouseUpHandler(ResizeHandle, OnUp);
-            ConfigService.Current.Ui.DesktopLyricsWidth = Width;
-            ConfigService.Save();
-        }
-        Mouse.AddMouseMoveHandler(ResizeHandle, OnMove);
-        Mouse.AddMouseUpHandler(ResizeHandle, OnUp);
         e.Handled = true;
+    }
+
+    private void OnResizeHandleMove(object sender, MouseEventArgs e)
+    {
+        if (!_resizing) return;
+        if (e.LeftButton != MouseButtonState.Pressed)
+        {
+            FinishResize(saveWidth: true);
+            return;
+        }
+
+        var delta = e.GetPosition(this).X - _resizeStart.X;
+        Width = Math.Clamp(_resizeStartWidth + delta, 320, 1600);
+    }
+
+    private void OnResizeHandleUp(object sender, MouseButtonEventArgs e)
+    {
+        if (!_resizing) return;
+        FinishResize(saveWidth: true);
+        e.Handled = true;
+    }
+
+    private void OnResizeHandleLostCapture(object sender, MouseEventArgs e)
+    {
+        if (_resizing) FinishResize(saveWidth: true, releaseCapture: false);
+    }
+
+    private void FinishResize(bool saveWidth, bool releaseCapture = true)
+    {
+        if (!_resizing) return;
+        _resizing = false;
+        ResizeHandle.MouseMove -= OnResizeHandleMove;
+        ResizeHandle.MouseLeftButtonUp -= OnResizeHandleUp;
+        ResizeHandle.LostMouseCapture -= OnResizeHandleLostCapture;
+        if (releaseCapture && ReferenceEquals(Mouse.Captured, ResizeHandle))
+            Mouse.Capture(null);
+        if (!saveWidth) return;
+
+        ConfigService.Current.Ui.DesktopLyricsWidth = Width;
+        ConfigService.Save();
     }
 
     // ================= 悬停迷你工具条（解锁态） =================

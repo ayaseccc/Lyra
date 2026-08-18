@@ -4,9 +4,10 @@ using Serilog;
 
 namespace Player.Core.Infra;
 
-/// <summary>data/config.json 的结构（PLAN 第 9 节）。apiKey 到 P3 才用，但字段先占好位。</summary>
+/// <summary>data/config.json 的结构（PLAN 第 9 节）。ApiKey 仅保留用于旧配置迁移。</summary>
 public sealed class AppConfig
 {
+    /// <summary>已废弃；加载后迁移到 Online.ApiEndpoints 并立即清空。</summary>
     public string ApiKey { get; set; } = string.Empty;
 
     public OutputConfig Output { get; set; } = new();
@@ -350,10 +351,42 @@ public static class ConfigService
     }
 
     /// <summary>把旧的 gdApiUrl / chkszApiUrl / apiKey 配置迁移进通用 API 列表（2026-08-15 实机反馈）。</summary>
-    private static void MigrateLegacyOnlineFields(AppConfig config)
+    internal static void MigrateLegacyOnlineFields(AppConfig config)
     {
         var online = config.Online;
-        if (online.ApiEndpoints is { Count: > 0 }) return;
+        online.ApiEndpoints ??= new List<ApiEndpointConfig>();
+        var legacyApiKey = config.ApiKey?.Trim() ?? string.Empty;
+
+        if (online.ApiEndpoints.Count > 0)
+        {
+            // 混合版本配置可能已经有部分新端点，但仍残留旧 ApiKey。
+            // 只在没有现存 ChKSz Key 时补入，绝不覆盖用户当前端点。
+            if (legacyApiKey.Length > 0
+                && !online.ApiEndpoints.Any(e =>
+                    string.Equals(e.Kind, "chksz", StringComparison.OrdinalIgnoreCase)
+                    && !string.IsNullOrWhiteSpace(e.Key)))
+            {
+                var chksz = online.ApiEndpoints.FirstOrDefault(e =>
+                    string.Equals(e.Kind, "chksz", StringComparison.OrdinalIgnoreCase));
+                if (chksz is null)
+                {
+                    online.ApiEndpoints.Add(new ApiEndpointConfig
+                    {
+                        Kind = "chksz",
+                        Url = "https://api.chksz.com",
+                        Key = legacyApiKey
+                    });
+                }
+                else
+                {
+                    chksz.Key = legacyApiKey;
+                }
+            }
+
+            // 已迁移过的配置不能继续保存旧 Key 的第二份副本。
+            config.ApiKey = string.Empty;
+            return;
+        }
 
         const string defaultGd = "https://music-api.gdstudio.xyz/api.php";
         const string defaultChksz = "https://api.chksz.com";
@@ -370,8 +403,10 @@ public static class ConfigService
             && !string.Equals(online.ChkszApiUrl.Trim(), defaultChksz, StringComparison.OrdinalIgnoreCase))
             online.ApiEndpoints[1].Url = online.ChkszApiUrl.Trim();
 
-        if (!string.IsNullOrWhiteSpace(config.ApiKey))
-            online.ApiEndpoints[1].Key = config.ApiKey.Trim();
+        if (legacyApiKey.Length > 0)
+            online.ApiEndpoints[1].Key = legacyApiKey;
+
+        config.ApiKey = string.Empty;
     }
 
     /// <summary>GD 源端点：Kind=gd 的第一条合法 http 地址，没有则官方默认。</summary>

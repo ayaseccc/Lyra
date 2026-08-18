@@ -27,9 +27,12 @@ internal static class SingleInstance
     private static readonly Queue<Guid> CompletedRequestOrder = new();
     private static Mutex? _legacyMutex;
     private static string? _forwardPipeName;
+    private static CancellationTokenSource? _serverCancellation;
+    private static bool _serverStarted;
     private static volatile bool _stopping;
     private const int GuidByteCount = 16;
     private const int MaxPayloadBytes = 1024 * 1024;
+    private static readonly TimeSpan ReadTimeout = TimeSpan.FromSeconds(5);
 
     private static string BuildInstanceScope()
     {
@@ -155,22 +158,31 @@ internal static class SingleInstance
     /// <summary>运行实例：后台线程循环监听管道，收到文件后切到 UI 线程回调。</summary>
     public static void StartServer(Action<IReadOnlyList<string>> onFiles)
     {
+        CancellationToken cancellationToken;
+        lock (ServerGate)
+        {
+            if (_serverStarted) return;
+            _serverCancellation = new CancellationTokenSource();
+            cancellationToken = _serverCancellation.Token;
+            _serverStarted = true;
+        }
         lock (DeliveryGate)
         {
             _stopping = false;
             PendingDeliveries.Clear();
         }
-        StartServer(PipeName, "Lyra 单实例管道服务器", usesAcknowledgement: true, onFiles);
-        StartServer(LegacyPipeName, "旧 Player 单实例兼容管道", usesAcknowledgement: false, onFiles);
+        StartServer(PipeName, "Lyra 单实例管道服务器", usesAcknowledgement: true, onFiles, cancellationToken);
+        StartServer(LegacyPipeName, "旧 Player 单实例兼容管道", usesAcknowledgement: false, onFiles, cancellationToken);
     }
 
     private static void StartServer(
         string pipeName,
         string threadName,
         bool usesAcknowledgement,
-        Action<IReadOnlyList<string>> onFiles)
+        Action<IReadOnlyList<string>> onFiles,
+        CancellationToken cancellationToken)
     {
-        var thread = new Thread(() => ServerLoop(pipeName, usesAcknowledgement, onFiles))
+        var thread = new Thread(() => ServerLoop(pipeName, usesAcknowledgement, onFiles, cancellationToken))
         {
             IsBackground = true,
             Name = threadName
@@ -183,7 +195,8 @@ internal static class SingleInstance
     private static void ServerLoop(
         string pipeName,
         bool usesAcknowledgement,
-        Action<IReadOnlyList<string>> onFiles)
+        Action<IReadOnlyList<string>> onFiles,
+        CancellationToken cancellationToken)
     {
         while (!_stopping)
         {
@@ -194,11 +207,11 @@ internal static class SingleInstance
                     usesAcknowledgement ? PipeDirection.InOut : PipeDirection.In,
                     1,
                     PipeTransmissionMode.Byte,
-                    PipeOptions.Asynchronous);
+                    PipeOptions.Asynchronous | PipeOptions.CurrentUserOnly);
                 server.WaitForConnection();
                 (Guid RequestId, string Payload) frame = usesAcknowledgement
-                    ? ReadFramedPayload(server)
-                    : (Guid.Empty, ReadLegacyPayload(server));
+                    ? ReadFramedPayloadAsync(server, cancellationToken).GetAwaiter().GetResult()
+                    : (Guid.Empty, ReadLegacyPayloadAsync(server, cancellationToken).GetAwaiter().GetResult());
                 var payload = frame.Payload;
 
                 if (_stopping)
@@ -232,6 +245,10 @@ internal static class SingleInstance
                 if (usesAcknowledgement) RememberCompletedRequest(frame.RequestId, accepted);
                 if (usesAcknowledgement) WriteAcknowledgement(server, accepted);
                 if (_stopping) break;
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested || _stopping)
+            {
+                break;
             }
             catch
             {
@@ -273,27 +290,48 @@ internal static class SingleInstance
         }
     }
 
-    private static (Guid RequestId, string Payload) ReadFramedPayload(Stream stream)
+    private static async Task<(Guid RequestId, string Payload)> ReadFramedPayloadAsync(
+        Stream stream,
+        CancellationToken serverCancellation)
     {
-        Span<byte> lengthBytes = stackalloc byte[sizeof(int)];
-        stream.ReadExactly(lengthBytes);
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(serverCancellation);
+        timeout.CancelAfter(ReadTimeout);
+        var cancellationToken = timeout.Token;
+
+        var lengthBytes = new byte[sizeof(int)];
+        await stream.ReadExactlyAsync(lengthBytes, cancellationToken).ConfigureAwait(false);
         var length = System.Buffers.Binary.BinaryPrimitives.ReadInt32LittleEndian(lengthBytes);
         if (length <= 0) return (Guid.Empty, string.Empty);
         if (length < GuidByteCount || length > GuidByteCount + MaxPayloadBytes)
             throw new InvalidDataException("单实例管道消息长度无效");
 
-        Span<byte> idBytes = stackalloc byte[GuidByteCount];
-        stream.ReadExactly(idBytes);
+        var idBytes = new byte[GuidByteCount];
+        await stream.ReadExactlyAsync(idBytes, cancellationToken).ConfigureAwait(false);
         var requestId = new Guid(idBytes);
         var payload = new byte[length - GuidByteCount];
-        stream.ReadExactly(payload);
+        await stream.ReadExactlyAsync(payload, cancellationToken).ConfigureAwait(false);
         return (requestId, Encoding.UTF8.GetString(payload));
     }
 
-    private static string ReadLegacyPayload(Stream stream)
+    private static async Task<string> ReadLegacyPayloadAsync(
+        Stream stream,
+        CancellationToken serverCancellation)
     {
-        using var reader = new StreamReader(stream, Encoding.UTF8, leaveOpen: true);
-        return reader.ReadToEnd();
+        using var timeout = CancellationTokenSource.CreateLinkedTokenSource(serverCancellation);
+        timeout.CancelAfter(ReadTimeout);
+        var cancellationToken = timeout.Token;
+        using var payload = new MemoryStream();
+        var buffer = new byte[8192];
+        while (true)
+        {
+            var read = await stream.ReadAsync(buffer, cancellationToken).ConfigureAwait(false);
+            if (read == 0) break;
+            if (payload.Length + read > MaxPayloadBytes)
+                throw new InvalidDataException("旧版单实例管道消息过大");
+            payload.Write(buffer, 0, read);
+        }
+
+        return Encoding.UTF8.GetString(payload.GetBuffer(), 0, checked((int)payload.Length));
     }
 
     private static void WriteAcknowledgement(Stream stream, bool accepted)
@@ -334,6 +372,15 @@ internal static class SingleInstance
     /// <summary>退出前停止两个监听入口，避免清理服务期间仍接受无法处理的新文件。</summary>
     public static void StopServer()
     {
+        CancellationTokenSource? cancellation;
+        lock (ServerGate)
+        {
+            if (!_serverStarted) return;
+            _serverStarted = false;
+            cancellation = _serverCancellation;
+            _serverCancellation = null;
+        }
+
         DispatcherOperation[] pending;
         lock (DeliveryGate)
         {
@@ -342,6 +389,9 @@ internal static class SingleInstance
         }
         foreach (var operation in pending)
             operation.Abort();
+
+        try { cancellation?.Cancel(); }
+        catch (ObjectDisposedException) { }
 
         WakeServer(PipeName);
         WakeServer(LegacyPipeName);
@@ -355,6 +405,8 @@ internal static class SingleInstance
 
         lock (ServerGate)
             ServerThreads.Clear();
+
+        cancellation?.Dispose();
     }
 
     private static void WakeServer(string pipeName)

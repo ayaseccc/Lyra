@@ -6,7 +6,7 @@
         Title="Lyra 桌面歌词" Icon="pack://application:,,,/Assets/lyra.ico" Width="560" Height="120"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
         Background="Transparent" Topmost="True" ShowInTaskbar="False"
-        WindowStartupLocation="Manual" Top="860" Left="680"
+        WindowStartupLocation="Manual"
         Loaded="OnLoaded" MouseLeftButtonDown="OnWindowMouseDown">
     <Window.Resources>
         <!-- 悬浮设置面板的行样式（目验三修复：弃用系统子菜单，平铺按钮行，悬停高亮） -->

@@ -164,9 +164,9 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
 
         // 立即绑定新曲目并刷新菜单勾选（否则切歌后菜单还显示上一首的来源偏好）
         _track = track;
-        NotifyPreferenceChanged();
-
         StatusText = "加载歌词…";
+        ClearDocumentForTrackChange();
+        NotifyPreferenceChanged();
 
         try
         {
@@ -227,6 +227,25 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         OnPropertyChanged(nameof(RenderLines));
         OnPropertyChanged(nameof(IsStatic));
         OnPropertyChanged(nameof(HasLyrics));
+        OnPropertyChanged(nameof(LyricCreditsText));
+    }
+
+    private void ClearDocumentForTrackChange()
+    {
+        _document = LyricDocument.Empty;
+        _effectiveOffset = TimeSpan.Zero;
+        _lastSource = LyricSource.None;
+        _flowCredits.Clear();
+        RenderLines = Array.Empty<LyricRenderLine>();
+        CurrentIndex = -1;
+        SourceText = string.Empty;
+        OffsetText = "偏移 0.0 秒";
+        OnPropertyChanged(nameof(RenderLines));
+        OnPropertyChanged(nameof(IsStatic));
+        OnPropertyChanged(nameof(HasLyrics));
+        OnPropertyChanged(nameof(CurrentPrimary));
+        OnPropertyChanged(nameof(CurrentSecondary));
+        OnPropertyChanged(nameof(SourceDisplayText));
         OnPropertyChanged(nameof(LyricCreditsText));
     }
 

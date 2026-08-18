@@ -19,6 +19,36 @@ public enum PlayMode
 }
 
 /// <summary>
+/// 播放列表的事务快照。调用方可在尝试切歌前保存，并在整批候选都无法打开时
+/// 原样恢复列表、游标和随机播放顺序。
+/// </summary>
+public sealed class PlaybackListSnapshot
+{
+    internal PlaybackListSnapshot(
+        TrackRecord[] items,
+        string sourceName,
+        int currentIndex,
+        PlayMode mode,
+        int[] shuffleOrder,
+        int shufflePosition)
+    {
+        Items = items;
+        SourceName = sourceName;
+        CurrentIndex = currentIndex;
+        Mode = mode;
+        ShuffleOrder = shuffleOrder;
+        ShufflePosition = shufflePosition;
+    }
+
+    internal TrackRecord[] Items { get; }
+    internal string SourceName { get; }
+    internal int CurrentIndex { get; }
+    internal PlayMode Mode { get; }
+    internal int[] ShuffleOrder { get; }
+    internal int ShufflePosition { get; }
+}
+
+/// <summary>
 /// 当前播放列表。取代 P0 的 PlaybackQueue：内容由 PlaylistService / LibraryService
 /// 提供（全部歌曲、某个歌单、某张专辑、某个文件夹虚拟歌单……），本类只管顺序与模式。
 /// </summary>
@@ -26,10 +56,19 @@ public sealed class PlaybackList
 {
     private readonly List<TrackRecord> _items = new();
     private readonly List<int> _shuffleOrder = new();
-    private readonly Random _random = new();
+    private readonly Random _random;
 
     private int _shufflePosition = -1;
     private PlayMode _mode = PlayMode.RepeatAll;
+
+    public PlaybackList() : this(new Random())
+    {
+    }
+
+    internal PlaybackList(Random random)
+    {
+        _random = random ?? throw new ArgumentNullException(nameof(random));
+    }
 
     /// <summary>列表来源的显示名，例如「全部歌曲」「文件夹：OST」。</summary>
     public string SourceName { get; private set; } = string.Empty;
@@ -65,6 +104,28 @@ public sealed class PlaybackList
             : Math.Clamp(startIndex, 0, _items.Count - 1);
 
         RebuildShuffleOrder();
+    }
+
+    public PlaybackListSnapshot CaptureSnapshot() => new(
+        _items.ToArray(),
+        SourceName,
+        CurrentIndex,
+        _mode,
+        _shuffleOrder.ToArray(),
+        _shufflePosition);
+
+    public void RestoreSnapshot(PlaybackListSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+
+        _items.Clear();
+        _items.AddRange(snapshot.Items);
+        SourceName = snapshot.SourceName;
+        CurrentIndex = snapshot.CurrentIndex;
+        _mode = snapshot.Mode;
+        _shuffleOrder.Clear();
+        _shuffleOrder.AddRange(snapshot.ShuffleOrder);
+        _shufflePosition = snapshot.ShufflePosition;
     }
 
     /// <summary>「下一首播放」：把曲目插到当前曲目之后（队列空则成为唯一曲目）。
@@ -105,7 +166,10 @@ public sealed class PlaybackList
         if (index < 0 || index >= _items.Count) return null;
 
         CurrentIndex = index;
-        SyncShufflePosition();
+        if (_mode == PlayMode.Shuffle)
+            RebuildShuffleOrder();
+        else
+            SyncShufflePosition();
         return Current;
     }
 
@@ -207,7 +271,9 @@ public sealed class PlaybackList
         }
 
         for (var i = 0; i < _items.Count; i++)
-            _shuffleOrder.Add(i);
+        {
+            if (i != CurrentIndex) _shuffleOrder.Add(i);
+        }
 
         // Fisher-Yates
         for (var i = _shuffleOrder.Count - 1; i > 0; i--)
@@ -216,7 +282,12 @@ public sealed class PlaybackList
             (_shuffleOrder[i], _shuffleOrder[j]) = (_shuffleOrder[j], _shuffleOrder[i]);
         }
 
-        SyncShufflePosition();
+        // A newly selected/current track is the start of a fresh shuffle cycle.
+        // Keeping it at position 0 guarantees every other track is visited once
+        // before reshuffling and gives the next cycle an explicit no-repeat anchor.
+        if (CurrentIndex >= 0)
+            _shuffleOrder.Insert(0, CurrentIndex);
+        _shufflePosition = CurrentIndex >= 0 ? 0 : -1;
     }
 
     private void SyncShufflePosition()
@@ -233,7 +304,7 @@ public sealed class PlaybackList
         if (next >= _shuffleOrder.Count)
         {
             RebuildShuffleOrder();   // 一轮放完，重新洗牌
-            next = 0;
+            next = _shuffleOrder.Count > 1 ? 1 : 0;
         }
 
         _shufflePosition = next;

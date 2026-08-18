@@ -42,8 +42,10 @@ public sealed class ChkszResult<T>
 /// </summary>
 public sealed partial class ChkszClient : IDisposable
 {
-    /// <summary>官方默认地址；设置页可改（空/非法回落默认）。</summary>
+    /// <summary>官方默认地址；设置页留空时回落默认，显式地址必须是 HTTPS。</summary>
     private const string DefaultBaseAddress = "https://api.chksz.com";
+    internal static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(20);
+    internal static readonly TimeSpan PlaylistRequestTimeout = TimeSpan.FromSeconds(60);
     private static readonly Regex RawApiKeyPattern = new(
         Regex.Escape("chksz" + "_") + @"[^\s&""']+",
         RegexOptions.IgnoreCase | RegexOptions.CultureInvariant | RegexOptions.Compiled);
@@ -55,7 +57,9 @@ public sealed partial class ChkszClient : IDisposable
     public ChkszClient(HttpMessageHandler? handler = null)
     {
         _http = handler is null ? new HttpClient() : new HttpClient(handler);
-        _http.Timeout = TimeSpan.FromSeconds(20);
+        // 每个端点用自己的 linked CTS 控制超时；HttpClient 的全局 20 秒超时
+        // 会抢先取消歌单端点声明的 60 秒窗口。
+        _http.Timeout = Timeout.InfiniteTimeSpan;
         _http.DefaultRequestHeaders.UserAgent.ParseAdd("Lyra/1.0");
     }
 
@@ -64,7 +68,15 @@ public sealed partial class ChkszClient : IDisposable
     public TokenBucket Bucket => _bucket;
 
     /// <summary>API 列表里有没有带 Key 的条目。没有时在线功能整体降级，不发任何请求。</summary>
-    public static bool HasApiKey => ConfigService.ChkszEndpoint() is not null;
+    public static bool HasApiKey
+    {
+        get
+        {
+            var endpoint = ConfigService.ChkszEndpoint();
+            return endpoint is not null
+                && (string.IsNullOrWhiteSpace(endpoint.Url) || OnlineUrl.IsHttps(endpoint.Url));
+        }
+    }
 
     // ================= 四个端点 =================
 
@@ -94,7 +106,7 @@ public sealed partial class ChkszClient : IDisposable
     /// <summary>取歌单详情。大歌单慢，单独给长超时（PLAN 第 6 节）。</summary>
     public Task<ChkszResult<PlaylistResult>> GetPlaylistAsync(long playlistId, CancellationToken cancellationToken = default)
         => SendAsync<PlaylistResult>("/api/163_playlist", $"id={playlistId}", cancellationToken,
-            timeout: TimeSpan.FromSeconds(60));
+            timeout: PlaylistRequestTimeout);
 
     // ================= 发送与错误映射 =================
 
@@ -107,8 +119,10 @@ public sealed partial class ChkszClient : IDisposable
         if (endpoint is null)
             return ChkszResult<T>.Fail("还没有填 API Key，请到设置页的在线功能里填写", auth: true);
 
-        var baseUrl = endpoint.Url;
-        if (!OnlineUrl.IsHttp(baseUrl)) baseUrl = DefaultBaseAddress;
+        var baseUrl = string.IsNullOrWhiteSpace(endpoint.Url) ? DefaultBaseAddress : endpoint.Url.Trim();
+        if (!OnlineUrl.IsHttps(baseUrl))
+            return ChkszResult<T>.Fail("网易云 API 地址必须使用 HTTPS", status: 400);
+
         var url = $"{baseUrl.Trim().TrimEnd('/')}{path}?apikey={Uri.EscapeDataString(endpoint.Key)}&{query}";
         var safeUrl = Redact(url);
 
@@ -155,7 +169,7 @@ public sealed partial class ChkszClient : IDisposable
         string url, string safeUrl, TimeSpan? timeout, CancellationToken cancellationToken)
     {
         using var request = new HttpRequestMessage(HttpMethod.Get, url);
-        using var timeoutCts = new CancellationTokenSource(timeout ?? _http.Timeout);
+        using var timeoutCts = new CancellationTokenSource(timeout ?? DefaultRequestTimeout);
         using var linked = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken, timeoutCts.Token);
 
         using var response = await _http.SendAsync(request, HttpCompletionOption.ResponseContentRead, linked.Token)
@@ -171,40 +185,73 @@ public sealed partial class ChkszClient : IDisposable
 
         TimeSpan? retryAfter = null;
         if (status == 429)
-        {
-            retryAfter = response.Headers.RetryAfter?.Delta
+            retryAfter = ReadRetryAfter(response);
+
+        var result = InterpretResponse<T>(status, body);
+        if (result.StatusCode == 429 && retryAfter is null)
+            retryAfter = ReadRetryAfter(response);
+        if (!result.Success && result.StatusCode == status && result.Error.Contains("无法解析", StringComparison.Ordinal))
+            Log.Warning("响应不是预期的 JSON：{Url}", safeUrl);
+
+        return (result, result.StatusCode == 0 ? status : result.StatusCode, retryAfter);
+    }
+
+    private static TimeSpan ReadRetryAfter(HttpResponseMessage response)
+    {
+        var retryAfter = response.Headers.RetryAfter?.Delta
                          ?? (response.Headers.RetryAfter?.Date is { } date
                              ? date - DateTimeOffset.Now
                              : TimeSpan.FromSeconds(5));
+        return retryAfter < TimeSpan.Zero ? TimeSpan.FromSeconds(1) : retryAfter;
+    }
 
-            if (retryAfter < TimeSpan.Zero) retryAfter = TimeSpan.FromSeconds(1);
-        }
-
-        string? msg = null;
+    /// <summary>按 HTTP 状态与统一 envelope 的 code/msg/data 解释响应。纯函数，供离线回归。</summary>
+    internal static ChkszResult<T> InterpretResponse<T>(int httpStatus, string body)
+    {
+        ChkszEnvelope<T>? envelope;
         try
         {
-            var envelope = JsonSerializer.Deserialize<ChkszEnvelope<T>>(body);
-            msg = envelope?.Msg;
-
-            // 判断成功以 HTTP 状态 + msg 为准，不能只看有没有 data
-            if (response.IsSuccessStatusCode && envelope is not null && envelope.Data is not null)
-                return (ChkszResult<T>.Ok(envelope.Data), status, retryAfter);
+            envelope = JsonSerializer.Deserialize<ChkszEnvelope<T>>(body);
         }
-        catch (JsonException ex)
+        catch (JsonException)
         {
-            Log.Warning("响应不是预期的 JSON：{Url}，{Message}", safeUrl, ex.Message);
-
-            if (response.IsSuccessStatusCode)
-                return (ChkszResult<T>.Fail("服务端返回了无法解析的内容"), status, retryAfter);
+            return httpStatus is >= 200 and < 300
+                ? ChkszResult<T>.Fail("服务端返回了无法解析的内容", httpStatus)
+                : MapError<T>(httpStatus, null);
         }
 
-        return (MapError<T>(status, msg), status, retryAfter);
+        if (envelope is null)
+            return ChkszResult<T>.Fail("服务端返回了空响应", httpStatus);
+
+        var envelopeStatus = envelope.Code == 0 ? httpStatus : envelope.Code;
+        if (httpStatus is < 200 or >= 300 || envelopeStatus is < 200 or >= 300)
+        {
+            var errorStatus = envelopeStatus is < 200 or >= 300 ? envelopeStatus : httpStatus;
+            return MapError<T>(errorStatus, envelope.Msg);
+        }
+
+        if (!IsSuccessMessage(envelope.Msg))
+            return ChkszResult<T>.Fail("服务端返回失败" + ErrorDetail(envelope.Msg), envelopeStatus);
+
+        if (envelope.Data is null)
+            return ChkszResult<T>.Fail("服务端返回成功但缺少数据", envelopeStatus);
+
+        return ChkszResult<T>.Ok(envelope.Data);
+    }
+
+    private static bool IsSuccessMessage(string? message)
+    {
+        var normalized = message?.Trim();
+        return string.Equals(normalized, "success", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "ok", StringComparison.OrdinalIgnoreCase)
+            || string.Equals(normalized, "成功", StringComparison.Ordinal)
+            || string.Equals(normalized, "请求成功", StringComparison.Ordinal);
     }
 
     /// <summary>把 HTTP 状态映射成用户能看懂的话（PLAN 第 6 节的错误处理表）。纯函数，可离线断言。</summary>
     public static ChkszResult<T> MapError<T>(int status, string? msg)
     {
-        var detail = string.IsNullOrWhiteSpace(msg) ? string.Empty : $"（{msg.Trim()}）";
+        var detail = ErrorDetail(msg);
 
         return status switch
         {
@@ -218,6 +265,9 @@ public sealed partial class ChkszClient : IDisposable
             _ => ChkszResult<T>.Fail($"请求失败（HTTP {status}）{detail}", status)
         };
     }
+
+    private static string ErrorDetail(string? message)
+        => string.IsNullOrWhiteSpace(message) ? string.Empty : $"（{Redact(message.Trim())}）";
 
     /// <summary>日志/异常里出现的 URL 一律脱敏 apikey。纯函数，可离线断言。</summary>
     public static string Redact(string text)

@@ -53,7 +53,7 @@ public static class LibraryScanner
 
         // ---- 1. 枚举文件 ----
         progress?.Report(new ScanProgress("正在枚举文件", 0, 0));
-        var (files, reachableRoots) = EnumerateAudioFiles(roots, cancellationToken);
+        var (files, completeRoots) = EnumerateAudioFiles(roots, cancellationToken);
         Log.Information("枚举到音频文件 {Count} 个", files.Count);
 
         if (cancellationToken.IsCancellationRequested)
@@ -62,7 +62,7 @@ public static class LibraryScanner
         // ---- 2. 与库内现状比对 ----
         var index = LibraryDb.GetPathIndex();
         var present = new HashSet<string>(files.Count, StringComparer.OrdinalIgnoreCase);
-        var needRead = new List<string>();
+        var needRead = new List<FileEntry>();
 
         foreach (var file in files)
         {
@@ -76,14 +76,14 @@ public static class LibraryScanner
                 continue; // 没变，跳过
             }
 
-            needRead.Add(file.Path);
+            needRead.Add(file);
         }
 
         // 只清理"位于本次成功扫描过的根目录之下、但文件已经不在了"的曲目。
         // 两类曲目因此被保护：① 根目录本次不可访问（U 盘拔了、网络盘断了）——误删会连带
         // 清空 playlist_items，盘回来后 id 变化导致歌单永久丢失；② 用户手动拖进歌单、
         // 位于任何根目录之外的曲目——它们不归扫描管。
-        var normalizedReachable = reachableRoots
+        var normalizedReachable = completeRoots
             .Select(r => r.TrimEnd(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar))
             .ToList();
 
@@ -91,10 +91,7 @@ public static class LibraryScanner
         if (unreachableCount > 0)
             Log.Warning("有 {Count} 个根目录本次不可访问，其下曲目一律保留", unreachableCount);
 
-        var removedIds = index
-            .Where(kv => !present.Contains(kv.Key) && IsUnderAnyRoot(kv.Key, normalizedReachable))
-            .Select(kv => kv.Value.Id)
-            .ToList();
+        var removedIds = FindMissingTrackIds(index, present, normalizedReachable);
 
         Log.Information("需读取标签 {Read} 个，需移除 {Removed} 个", needRead.Count, removedIds.Count);
 
@@ -115,10 +112,17 @@ public static class LibraryScanner
 
             try
             {
-                Parallel.ForEach(needRead, options, path =>
+                Parallel.ForEach(needRead, options, file =>
                 {
-                    var record = TagReader.Read(path);
-                    if (record is not null) records.Add(record);
+                    var record = TagReader.Read(file.Path);
+                    if (record is not null)
+                    {
+                        // TagReader is also used by manual imports. Scans overwrite
+                        // its legacy seconds stamp with the precise enumeration stamp.
+                        record.Mtime = file.Mtime;
+                        record.FileSize = file.Size;
+                        records.Add(record);
+                    }
 
                     var done = Interlocked.Increment(ref processed);
                     if (done % 25 != 0 && done != needRead.Count) return;
@@ -171,6 +175,20 @@ public static class LibraryScanner
 
     private readonly record struct FileEntry(string Path, long Mtime, long Size);
 
+    internal static long ToMtimeStamp(DateTime lastWriteTimeUtc) =>
+        lastWriteTimeUtc.ToUniversalTime().Ticks;
+
+    internal static List<long> FindMissingTrackIds(
+        IReadOnlyDictionary<string, (long Id, long Mtime, long FileSize)> index,
+        IReadOnlySet<string> present,
+        IReadOnlyList<string> completeRoots)
+    {
+        return index
+            .Where(kv => !present.Contains(kv.Key) && IsUnderAnyRoot(kv.Key, completeRoots))
+            .Select(kv => kv.Value.Id)
+            .ToList();
+    }
+
     /// <summary>路径是否位于给定的某个根目录之下（按目录分隔符对齐，避免 D:\Music 命中 D:\MusicVideos）。</summary>
     public static bool IsUnderAnyRoot(string path, IReadOnlyList<string> roots)
     {
@@ -188,7 +206,16 @@ public static class LibraryScanner
         return false;
     }
 
-    /// <returns>枚举到的文件，以及本次**成功访问**的根目录列表。</returns>
+    internal static EnumerationOptions CreateEnumerationOptions() => new()
+    {
+        RecurseSubdirectories = true,
+        // Deletion is allowed only after a complete traversal. Silently skipping
+        // an inaccessible child would make its existing tracks look deleted.
+        IgnoreInaccessible = false,
+        AttributesToSkip = FileAttributes.System
+    };
+
+    /// <returns>枚举到的文件，以及本次**完整枚举**的根目录列表。</returns>
     private static (List<FileEntry> Files, List<string> ReachableRoots) EnumerateAudioFiles(
         IReadOnlyList<string> roots, CancellationToken cancellationToken)
     {
@@ -196,12 +223,7 @@ public static class LibraryScanner
         var reachable = new List<string>();
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
 
-        var options = new EnumerationOptions
-        {
-            RecurseSubdirectories = true,
-            IgnoreInaccessible = true,   // 系统卷信息、回收站等无权限目录不能让整次扫描炸掉
-            AttributesToSkip = FileAttributes.System
-        };
+        var options = CreateEnumerationOptions();
 
         foreach (var root in roots)
         {
@@ -222,7 +244,7 @@ public static class LibraryScanner
 
                     list.Add(new FileEntry(
                         info.FullName,
-                        new DateTimeOffset(info.LastWriteTimeUtc).ToUnixTimeSeconds(),
+                        ToMtimeStamp(info.LastWriteTimeUtc),
                         info.Length));
                 }
 

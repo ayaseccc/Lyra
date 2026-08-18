@@ -63,7 +63,8 @@ function Test-ForbiddenPackagePath {
     $leaf = [IO.Path]::GetFileName($path)
     return (
         $path -match '(?i)(^|/)(data|format-test)(/|$)' -or
-        $leaf -match '(?i)^Player\.(exe|dll|deps\.json|runtimeconfig\.json|pdb)$' -or
+        $leaf -match '(?i)^Player\.(exe|dll|deps\.json|runtimeconfig\.json)$' -or
+        $leaf -match '(?i)\.pdb$' -or
         $leaf -match '(?i)^app\.ico$' -or
         $leaf -match '(?i)^config.*\.json$' -or
         $leaf -match '(?i)-bak\.json$' -or
@@ -230,7 +231,9 @@ try {
         '-r', 'win-x64',
         '--self-contained', 'true',
         '-o', $staging,
-        "-p:Version=$Version"
+        "-p:Version=$Version",
+        '-p:DebugSymbols=false',
+        '-p:DebugType=None'
     )
     & dotnet @publishArguments
     if ($LASTEXITCODE -ne 0) { throw "dotnet publish 失败（退出码 $LASTEXITCODE）" }
