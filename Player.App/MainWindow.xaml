@@ -6,7 +6,7 @@
                  xmlns:lyr="clr-namespace:Player.Core.Lyrics;assembly=Player.Core"
                  xmlns:p="clr-namespace:Player.Core.Audio;assembly=Player.Core"
                  xmlns:ctrl="clr-namespace:Player.App.Controls"
-                 Title="Player" Height="900" Width="1400" MinHeight="540" MinWidth="920"
+                 Title="Lyra" Icon="pack://application:,,,/Assets/lyra.ico" Height="900" Width="1400" MinHeight="540" MinWidth="920"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
                  WindowCornerPreference="Round"
@@ -1109,6 +1109,17 @@
                                         <ColumnDefinition Width="110" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
+                                    <TextBlock Text="产品" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <StackPanel Grid.Column="1" Orientation="Horizontal">
+                                        <Image Source="pack://application:,,,/Assets/lyra.ico" Width="24" Height="24" Margin="0,0,8,0" />
+                                        <TextBlock Text="Lyra" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    </StackPanel>
+                                </Grid>
+                                <Grid Margin="0,0,0,10">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
                                     <TextBlock Text="版本" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <TextBlock Grid.Column="1" Text="{Binding AppVersion}" VerticalAlignment="Center"
                                                Style="{StaticResource TitleTextStyle}" />
@@ -1389,7 +1400,7 @@
             <RowDefinition Height="Auto" />
         </Grid.RowDefinitions>
 
-        <ui:TitleBar Grid.Row="0" Title="{Binding Player.WindowTitle}" Icon="{ui:SymbolIcon MusicNote224}"
+        <ui:TitleBar Grid.Row="0" Title="{Binding Player.WindowTitle}" Icon="{ui:ImageIcon 'pack://application:,,,/Assets/lyra.ico'}"
                      Background="{DynamicResource SurfaceStrongBrush}" />
 
         <!-- ============ 三栏主体：左侧栏 + 内容 ============ -->

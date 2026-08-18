@@ -253,7 +253,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
     /// <summary>窗口标题栏（UI-R1）：「标题 - 艺术家 | 格式 | 位深 | 码率 | 采样率」。</summary>
     [ObservableProperty]
-    private string _windowTitle = "Player";
+    private string _windowTitle = "Lyra";
 
     public string OutputHint => IsBitPerfect
         ? "位完美输出（音量 100%，未重采样）"
@@ -908,7 +908,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     {
         if (!HasTrack)
         {
-            WindowTitle = "Player";
+            WindowTitle = "Lyra";
             return;
         }
 

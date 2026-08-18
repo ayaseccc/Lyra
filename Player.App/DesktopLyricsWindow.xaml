@@ -3,7 +3,7 @@
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
-        Title="桌面歌词" Width="560" Height="120"
+        Title="Lyra 桌面歌词" Icon="pack://application:,,,/Assets/lyra.ico" Width="560" Height="120"
         WindowStyle="None" ResizeMode="NoResize" AllowsTransparency="True"
         Background="Transparent" Topmost="True" ShowInTaskbar="False"
         WindowStartupLocation="Manual" Top="860" Left="680"

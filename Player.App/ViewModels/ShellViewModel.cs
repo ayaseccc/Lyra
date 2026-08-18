@@ -866,7 +866,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             Log.Error(ex, "导出 m3u8 失败");
-            System.Windows.MessageBox.Show("导出失败：" + ex.Message, "Player",
+            System.Windows.MessageBox.Show("导出失败：" + ex.Message, "Lyra",
                 System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
@@ -883,7 +883,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     {
         var confirm = System.Windows.MessageBox.Show(
             $"确定删除歌单「{name}」吗？（只删歌单，不动音频文件）",
-            "Player", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Question);
+            "Lyra", System.Windows.MessageBoxButton.OKCancel, System.Windows.MessageBoxImage.Question);
 
         if (confirm != System.Windows.MessageBoxResult.OK) return;
 
@@ -956,7 +956,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         catch (Exception ex)
         {
             Log.Error(ex, "导入 m3u8 失败");
-            System.Windows.MessageBox.Show("导入失败：" + ex.Message, "Player", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
+            System.Windows.MessageBox.Show("导入失败：" + ex.Message, "Lyra", System.Windows.MessageBoxButton.OK, System.Windows.MessageBoxImage.Warning);
         }
     }
 

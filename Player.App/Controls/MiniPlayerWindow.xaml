@@ -5,7 +5,7 @@
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:Player.App.Controls"
         xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
-        Title="迷你播放器"
+        Title="Lyra 迷你播放器" Icon="pack://application:,,,/Assets/lyra.ico"
         Width="340" Height="104" MinWidth="272" MaxWidth="680" MinHeight="83.2" MaxHeight="208"
         WindowStyle="None" ResizeMode="CanResize" Topmost="True" ShowInTaskbar="False"
         WindowStartupLocation="Manual" AllowsTransparency="False"
@@ -185,7 +185,7 @@
                             ClipToBounds="True">
                         <Grid>
                             <Image Width="48" Height="48"
-                                   Source="pack://application:,,,/Assets/app.ico"
+                                   Source="pack://application:,,,/Assets/lyra.ico"
                                    Stretch="Uniform"
                                    RenderOptions.BitmapScalingMode="HighQuality" />
                             <Image Width="64" Height="64"

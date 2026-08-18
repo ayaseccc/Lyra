@@ -92,7 +92,7 @@ public sealed class DownloadService : IDisposable
         _sources = sources;
         _library = library;
         _http = new HttpClient { Timeout = TimeSpan.FromMinutes(10) };
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Player/1.0");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Lyra/1.0");
     }
 
     /// <summary>任一任务状态/进度变化（UI 绑定用）。</summary>

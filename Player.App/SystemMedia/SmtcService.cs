@@ -144,7 +144,7 @@ public sealed class SmtcService : IDisposable
             // The commit below is guarded by the same generation, so a slow old
             // cover can never update SMTC after a newer track has arrived.
             var title = string.IsNullOrWhiteSpace(_player.Title) || _player.Title == "未在播放"
-                ? "Player"
+                ? "Lyra"
                 : _player.Title;
             var artist = _player.Artist ?? string.Empty;
             var album = _player.Album ?? string.Empty;

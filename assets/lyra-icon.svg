@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!--
+  Lyra 播放器图标 · 透明底紫粉版（2026-08-18）
+  构成：保留几何 L 字标与右上 Vega 星点，去掉背景方块；
+        笔画使用淡紫到淡粉渐变，适配桌面、托盘和深色/浅色主题。
+  用法：转出多尺寸 ICO（256/64/48/32/24/16，16px 建议手动微调笔画对齐像素网格），
+        接入 csproj ApplicationIcon、窗口/托盘/迷你窗 Icon、文件关联 DefaultIcon。
+  背景保持完全透明，没有额外底色或阴影。
+-->
+<svg width="256" height="256" viewBox="0 0 256 256" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="lyraStroke" x1="64" y1="56" x2="184" y2="192" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#B9A2EF"/>
+      <stop offset="0.52" stop-color="#D7A9E7"/>
+      <stop offset="1" stop-color="#F0A9C9"/>
+    </linearGradient>
+  </defs>
+  <!-- L 字标：竖笔 + 底横，圆头圆角，保持透明底 -->
+  <path d="M 89 62 L 89 178 L 167 178"
+        fill="none" stroke="url(#lyraStroke)" stroke-width="30"
+        stroke-linecap="round" stroke-linejoin="round"/>
+  <!-- Vega：天琴座主星 -->
+  <circle cx="167" cy="92" r="17" fill="#F0A9C9"/>
+</svg>

@@ -1,6 +1,6 @@
 # Third-Party Notices
 
-Player redistributes the components listed below. Copyright remains with each
+Lyra redistributes the components listed below. Copyright remains with each
 upstream author. This file is informational and does not replace the complete
 license texts in `licenses/`.
 
@@ -32,7 +32,7 @@ under `licenses/`.
 TagLibSharp remains a separate dynamically linked DLL in the distribution. A
 recipient may replace that DLL with a compatible modified build. The upstream
 source for the exact distributed version is available at
-https://github.com/mono/taglib-sharp/tree/2.3.0. Player itself is not covered by
+https://github.com/mono/taglib-sharp/tree/2.3.0. Lyra itself is not covered by
 the LGPL merely because it uses this separately distributed library; any
 modification to TagLibSharp remains subject to LGPL-2.1-only.
 
@@ -62,7 +62,7 @@ appropriate un4seen licence. The other listed add-ons are free to use with
 BASS. Complete relevant upstream terms are included in `licenses/BASS.txt`,
 `licenses/BASSASIO.txt`, and `licenses/BASS-ADDONS.txt`.
 
-Player intentionally does **not** redistribute the third-party
+Lyra intentionally does **not** redistribute the third-party
 `bass_aac.dll`, whose upstream distribution is GPLv2. On Windows 10 and later,
 AAC and M4A playback uses the codecs exposed to BASS by Windows.
 
@@ -72,7 +72,7 @@ The portable zip contains a self-contained Microsoft .NET and Windows Desktop
 runtime. `tools/publish.ps1` copies the official `LICENSE.txt` and
 `ThirdPartyNotices.txt` from the exact `dotnet` installation used to build the
 archive into `licenses/dotnet/`. The runtime-pack version can be verified in
-`Player.deps.json`. Additional details and official links are recorded in
+`Lyra.deps.json`. Additional details and official links are recorded in
 `licenses/DOTNET-RUNTIME.md`.
 
 ## Online services
@@ -80,5 +80,5 @@ archive into `licenses/dotnet/`. The runtime-pack version can be verified in
 GD Studio and ChKSz are network services, not code redistributed in the zip.
 GD Studio describes its API as CC BY-NC; use is limited to personal,
 non-commercial scenarios and must preserve attribution. ChKSz users provide
-their own Key and remain responsible for the provider's current terms. Player
+their own Key and remain responsible for the provider's current terms. Lyra
 does not grant any licence to third-party audio or metadata.

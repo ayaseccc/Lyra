@@ -42,7 +42,7 @@ public partial class SetupWizard : Window
         if (string.IsNullOrEmpty(folder) || !Directory.Exists(folder))
         {
             System.Windows.MessageBox.Show("请选择一个存在的曲库目录（或直接关闭窗口跳过，之后在设置页添加）。",
-                "Player", MessageBoxButton.OK, MessageBoxImage.Information);
+                "Lyra", MessageBoxButton.OK, MessageBoxImage.Information);
             return;
         }
 

@@ -607,6 +607,10 @@ ChkszClient（四端点封装、令牌桶 18 次/分、额度响应头解析、�
 ⏸ 本轮未能独立复算（沙盒网络受限）：Release 0 警告、348 项 harness——记入规划方终审必办项。
 📦 用户迁移提醒：旧 publish/ 运行目录（含 data/ 曲库、歌单、Key、设置）已被隔离至 `Documents\Codex\2026-08-17\musicplayer-publish-quarantine-*`；新版使用方式=解压 Player-v1.0.0-win-x64.zip 到自选目录后，**把隔离目录里的 data/ 整体拷入新目录**，否则一切从头配置。
 
+**产品定名（2026-08-18，用户拍板）：Lyra**——天琴座/里拉琴，与 Lyric 同源呼应歌词体验；图标=透明底极简字标（淡紫→淡粉几何 L + 右上圆点为天琴座主星织女星 Vega），SVG 源稿在 `assets/lyra-icon.svg`（用户于 2026-08-18 更新配色）。**改名红线：只改产品呈现层，命名空间/项目文件/Player.Core 等工程命名一律不动**。改名触点清单：AssemblyName（exe=Lyra）与版本产品元数据、窗口/托盘/迷你窗/桌面歌词标题、关于页、Mutex 与命名管道名、文件关联 ProgId（含旧 ProgId 清理与重注册）+DefaultIcon、SMTC 显示名、publish.ps1（zip 名 Lyra-v1.0.0-win-x64.zip 与白名单）、README/用户指南；**data/ 目录与格式不动（与 exe 名无耦合，用户数据零迁移）**；日志文件名可选改 lyra-*.log。图标接线：SVG→多尺寸 ICO（256/64/48/32/24/16，16px 对齐像素网格）。完成后重新发布，规划方对最终产物做全量终审 → v1.0。
+
+**P6 三缺口闭环核验（2026-08-18，规划方）**：① pre-commit 钩子实存（.githooks + core.hooksPath），规划方 Linux 亲手触发确认 **fail-closed** 设计（无 PowerShell 时拒绝放行而非静默跳过，退出码 1），Windows 侧内容扫描有 sol 自测输出为证；② ChKSz 新 Key 链路自测成功（Free=399/Paid=0，全程脱敏）；③ README 与 docs/用户指南.md 刷新到 v1.0 终态（新功能 10 处命中、废弃描述 0 残留、含 data/ 迁移说明）；新 zip（77,744,079 字节）SHA-256 与报告一致。**P6 代码侧关闭**。待办：规划方终审时补做独立编译与 348 项 harness 复算（本轮沙盒网络受限）；建议 README 构建节补一行"克隆后执行 git config core.hooksPath .githooks"（hooksPath 是每克隆配置，不随仓库自动生效）。剩余=用户实机六项 → 规划方全量终审 → v1.0 定版。
+
 **P6 首轮审计三缺口闭环（2026-08-18）**：①仓库既有 `.githooks/pre-commit` 已确认启用，检查完整暂存区且仅放行 PLAN 规则文本与 Harness 脱敏夹具；隔离索引自测再次证明合法内容退出码 `0`、故意暂存的 `hook-probe.txt` 被拦截退出码 `1`，拦截原文已收入当前交付报告。②使用用户当天保存的新 Key 完成一次真实 ChKSz 搜索链路：**成功**，额度头 `Free=399 / Paid=0`；命令、输出、报告和日志均未记录 Key 本体。③根 `README.md` 与实际进入 ZIP 的 `docs/用户指南.md` 已同步刷新为 v1.0 用户文档，删除 P3 旧描述，补全 GD Studio + ChKSz 双源、四级歌词链、大歌词页/桌面歌词/迷你窗、快捷键、主题、`data/` 迁移、ASIO 摘要与完整许可署名。
 
 **P6 实施记录（2026-08-16，代码侧已完成；用户实机验收进行中）**：

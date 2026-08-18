@@ -63,6 +63,8 @@ function Test-ForbiddenPackagePath {
     $leaf = [IO.Path]::GetFileName($path)
     return (
         $path -match '(?i)(^|/)(data|format-test)(/|$)' -or
+        $leaf -match '(?i)^Player\.(exe|dll|deps\.json|runtimeconfig\.json|pdb)$' -or
+        $leaf -match '(?i)^app\.ico$' -or
         $leaf -match '(?i)^config.*\.json$' -or
         $leaf -match '(?i)-bak\.json$' -or
         $leaf -match '(?i)\.(db|log|bak)$')
@@ -161,7 +163,7 @@ $licenseSource = Resolve-ChildPath $root 'licenses'
 $stagingRoot = Resolve-ChildPath $root 'publish-staging'
 $runId = [Guid]::NewGuid().ToString('N')
 $staging = Resolve-ChildPath $stagingRoot $runId
-$zipName = "Player-v$Version-win-x64.zip"
+$zipName = "Lyra-v$Version-win-x64.zip"
 $zipPath = Resolve-ChildPath $root $zipName
 $temporaryZip = Resolve-ChildPath $stagingRoot "$runId.tmp.zip"
 $backupZip = Resolve-ChildPath $stagingRoot "$runId.previous"
@@ -197,10 +199,10 @@ $nativeDlls = @(
     'basswv.dll'
 )
 $requiredEntries = @(
-    'Player.exe',
-    'Player.dll',
-    'Player.deps.json',
-    'Player.runtimeconfig.json',
+    'Lyra.exe',
+    'Lyra.dll',
+    'Lyra.deps.json',
+    'Lyra.runtimeconfig.json',
     'Player.Core.dll',
     'README.md',
     'THIRD-PARTY-NOTICES.md',

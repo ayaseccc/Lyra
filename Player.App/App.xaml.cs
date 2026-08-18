@@ -42,8 +42,14 @@ public partial class App : Application
         if (!SingleInstance.TryAcquire(out _instanceMutex))
         {
             var files = e.Args.Select(a => a.Trim('"')).Where(a => File.Exists(a)).ToList();
-            SingleInstance.ForwardFiles(files);
-            Shutdown(0);
+            var forwarded = SingleInstance.ForwardFiles(files);
+            if (files.Count > 0 && !forwarded)
+            {
+                MessageBox.Show(
+                    "Lyra 已在运行，但未能把所选音频文件交给现有窗口。\n\n请关闭正在运行的旧版 Player 或 Lyra 后重试。",
+                    "Lyra", MessageBoxButton.OK, MessageBoxImage.Warning);
+            }
+            Shutdown(files.Count == 0 || forwarded ? 0 : 2);
             return;
         }
         SingleInstance.StartServer(HandleIncomingFiles);
@@ -57,7 +63,7 @@ public partial class App : Application
             MessageBox.Show(
                 "无法创建 data 目录或日志文件：\n" + ex.Message +
                 "\n\n请把程序放在有写入权限的目录（例如不要放在 Program Files 下）。",
-                "Player", MessageBoxButton.OK, MessageBoxImage.Error);
+                "Lyra", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
             return;
         }
@@ -74,7 +80,7 @@ public partial class App : Application
         {
             Log.Fatal(ex, "媒体库数据库初始化失败");
             MessageBox.Show("媒体库数据库打开失败：\n" + ex.Message + "\n\n详见 data/logs 下的日志。",
-                "Player", MessageBoxButton.OK, MessageBoxImage.Error);
+                "Lyra", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
             return;
         }
@@ -88,8 +94,8 @@ public partial class App : Application
             Log.Fatal(ex, "BASS 初始化失败，程序退出");
             MessageBox.Show(
                 "音频引擎初始化失败：\n" + ex.Message +
-                "\n\n请确认 bass.dll（x64）与 Player.exe 在同一目录。详细信息见 data/logs 下的日志文件。",
-                "Player", MessageBoxButton.OK, MessageBoxImage.Error);
+                "\n\n请确认 bass.dll（x64）与 Lyra.exe 在同一目录。详细信息见 data/logs 下的日志文件。",
+                "Lyra", MessageBoxButton.OK, MessageBoxImage.Error);
             Shutdown(1);
             return;
         }
@@ -148,20 +154,35 @@ public partial class App : Application
     protected override void OnExit(ExitEventArgs e)
     {
         // 顺序很重要：先停 UI 侧的订阅与计时器，再停监听与扫描，最后放流与 BASS
-        _shell?.Dispose();
-        _player?.Dispose();
-        _lyrics?.Dispose();
-        _downloads?.Dispose();
-        _onlineSources?.Dispose();
-        _client?.Dispose();
-        _library?.StopWatching();
-        _library?.Dispose();
-        _engine?.Dispose();
-        BassRuntime.Shutdown();
-        ConfigService.Save();
-        LogSetup.Shutdown();
+        SingleInstance.StopServer();
+        try
+        {
+            _shell?.Dispose();
+            _player?.Dispose();
+            _lyrics?.Dispose();
+            _downloads?.Dispose();
+            _onlineSources?.Dispose();
+            _client?.Dispose();
+            _library?.StopWatching();
+            _library?.Dispose();
+            _engine?.Dispose();
+            BassRuntime.Shutdown();
+            ConfigService.Save();
+            LogSetup.Shutdown();
+        }
+        finally
+        {
+            SingleInstance.ReleaseLegacyMutex();
+            if (_instanceMutex is not null)
+            {
+                try { _instanceMutex.ReleaseMutex(); }
+                catch (ApplicationException) { }
+                _instanceMutex.Dispose();
+                _instanceMutex = null;
+            }
 
-        base.OnExit(e);
+            base.OnExit(e);
+        }
     }
 
     /// <summary>P4-5：一批下载完成后触发增量扫描自动入库。</summary>
@@ -202,7 +223,7 @@ public partial class App : Application
 
         MessageBox.Show("发生了一个错误：\n" + ChkszClient.Redact(e.Exception.Message ?? string.Empty)
                         + "\n\n日志：" + AppPaths.LogsDir,
-            "Player", MessageBoxButton.OK, MessageBoxImage.Warning);
+            "Lyra", MessageBoxButton.OK, MessageBoxImage.Warning);
         e.Handled = true;
     }
 
@@ -226,7 +247,7 @@ public partial class App : Application
             MessageBox.Show(
                 "播放器发生了无法恢复的后台错误，即将退出：\n" + detail
                 + "\n\n日志：" + AppPaths.LogsDir,
-                "Player", MessageBoxButton.OK, MessageBoxImage.Error);
+                "Lyra", MessageBoxButton.OK, MessageBoxImage.Error);
         }
         catch
         {
@@ -361,7 +382,7 @@ public partial class App : Application
                 MessageBox.Show(
                     "后台任务发生了一个错误，播放器已继续运行：\n"
                     + ChkszClient.Redact(message) + "\n\n日志：" + AppPaths.LogsDir,
-                    "Player", MessageBoxButton.OK, MessageBoxImage.Warning);
+                    "Lyra", MessageBoxButton.OK, MessageBoxImage.Warning);
             }
             finally
             {

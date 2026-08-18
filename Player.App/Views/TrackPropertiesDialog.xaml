@@ -1,7 +1,7 @@
 <Window x:Class="Player.App.Views.TrackPropertiesDialog"
         xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
-        Title="曲目属性" Width="460" SizeToContent="Height"
+        Title="曲目属性" Icon="pack://application:,,,/Assets/lyra.ico" Width="460" SizeToContent="Height"
         WindowStartupLocation="CenterOwner" ResizeMode="NoResize" ShowInTaskbar="False"
         Background="{DynamicResource ApplicationBackgroundBrush}">
     <StackPanel Margin="18,14">

@@ -56,7 +56,7 @@ public sealed partial class ChkszClient : IDisposable
     {
         _http = handler is null ? new HttpClient() : new HttpClient(handler);
         _http.Timeout = TimeSpan.FromSeconds(20);
-        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Player/1.0");
+        _http.DefaultRequestHeaders.UserAgent.ParseAdd("Lyra/1.0");
     }
 
     public QuotaTracker Quota { get; } = new();

@@ -7,11 +7,11 @@
     <UseWPF>true</UseWPF>
     <!-- L2 托盘：WinForms NotifyIcon（随 SDK 自带，无新增 NuGet 依赖） -->
     <UseWindowsForms>true</UseWindowsForms>
-    <!-- L2 托盘：程序图标（多尺寸 ico，托盘/任务栏/文件管理器共用） -->
-    <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+    <!-- Lyra 产品图标：托盘、任务栏、文件管理器和文件关联共用多尺寸 ICO。 -->
+    <ApplicationIcon>Assets\lyra.ico</ApplicationIcon>
     <RootNamespace>Player.App</RootNamespace>
-    <!-- 产物即 PLAN 第 9 节的 Player.exe -->
-    <AssemblyName>Player</AssemblyName>
+    <!-- 只改产品呈现层；RootNamespace 和工程文件名保持 Player。 -->
+    <AssemblyName>Lyra</AssemblyName>
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <LangVersion>latest</LangVersion>
@@ -21,9 +21,11 @@
     <!-- P6：exe 版本/产品元数据（文件关联"打开方式"与资源管理器详情共用） -->
     <Version>1.0.0</Version>
     <FileVersion>1.0.0.0</FileVersion>
-    <Product>Player</Product>
-    <Description>本地音乐播放器（Player）</Description>
-    <Copyright>Copyright © 2026</Copyright>
+    <Product>Lyra</Product>
+    <Company>Lyra</Company>
+    <Authors>Lyra</Authors>
+    <Description>本地音乐播放器（Lyra）</Description>
+    <Copyright>Copyright © 2026 Lyra</Copyright>
   </PropertyGroup>
 
   <ItemGroup>
@@ -32,7 +34,7 @@
   </ItemGroup>
 
   <ItemGroup>
-    <Resource Include="Assets\app.ico" />
+    <Resource Include="Assets\lyra.ico" />
   </ItemGroup>
 
   <!-- UseWindowsForms 会给全工程注入 System.Windows.Forms/System.Drawing 隐式 using，与 WPF 的 Point/事件类型冲突；去掉隐式、按需显式 using（TrayService） -->

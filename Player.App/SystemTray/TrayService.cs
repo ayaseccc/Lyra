@@ -71,7 +71,7 @@ public sealed class TrayService : IDisposable
         _ownsIcon = owns;
         _icon = new NotifyIcon
         {
-            Text = "Player",
+            Text = "Lyra",
             Icon = _iconResource,
             Visible = true,
             ContextMenuStrip = menu
@@ -106,7 +106,7 @@ public sealed class TrayService : IDisposable
         try
         {
             using var stream = System.Windows.Application.GetResourceStream(
-                new Uri("pack://application:,,,/Assets/app.ico"))?.Stream;
+                new Uri("pack://application:,,,/Assets/lyra.ico"))?.Stream;
             if (stream is not null)
             {
                 owns = true;
@@ -146,7 +146,7 @@ public sealed class TrayService : IDisposable
         if (_disposed) return;
         _playPauseItem.Text = _player.IsPlaying ? "暂停" : "播放";
 
-        var title = string.IsNullOrWhiteSpace(_player.Title) ? "Player" : _player.Title.Trim();
+        var title = string.IsNullOrWhiteSpace(_player.Title) ? "Lyra" : _player.Title.Trim();
         if (!string.IsNullOrWhiteSpace(_player.Artist)) title += " - " + _player.Artist.Trim();
         // NotifyIcon.Text 上限 63 字符，超长截断
         if (title.Length > 60) title = title[..60] + "…";

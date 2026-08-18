@@ -19,7 +19,7 @@ public static class LogSetup
         Log.Logger = new LoggerConfiguration()
             .MinimumLevel.Debug()
             .WriteTo.File(
-                path: Path.Combine(AppPaths.LogsDir, "player-.log"),
+                path: Path.Combine(AppPaths.LogsDir, "lyra-.log"),
                 rollingInterval: RollingInterval.Day,
                 retainedFileCountLimit: 14,
                 shared: true,
@@ -27,13 +27,13 @@ public static class LogSetup
             .CreateLogger();
 
         _initialized = true;
-        Log.Information("================ Player 启动 ================");
+        Log.Information("================ Lyra 启动 ================");
     }
 
     public static void Shutdown()
     {
         if (!_initialized) return;
-        Log.Information("================ Player 退出 ================");
+        Log.Information("================ Lyra 退出 ================");
         Log.CloseAndFlush();
         _initialized = false;
     }

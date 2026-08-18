@@ -80,7 +80,7 @@ internal sealed class SpectrumAnalyzer : IDisposable
             _worker = new Thread(WorkerLoop)
             {
                 IsBackground = true,
-                Name = "Player spectrum analyzer",
+                Name = "Lyra spectrum analyzer",
                 Priority = ThreadPriority.BelowNormal
             };
             _worker.Start();
