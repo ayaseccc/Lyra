@@ -6,7 +6,7 @@ Lyra 是一款面向 Windows 10 / 11 x64 的本地优先音乐播放器：以媒
 
 ### 安装与首次运行
 
-1. 解压 `Lyra-v1.0.0-win-x64.zip` 到一个可长期使用且有写入权限的目录。
+1. 解压 `Lyra-v1.0.2-win-x64.zip` 到一个可长期使用且有写入权限的目录。
 2. 双击 `Lyra.exe`。首次运行按引导选择媒体库目录和输出设备；在线 API 可以跳过，之后再到“设置 → 在线”填写。
 3. 扫描完成后，从“全部歌曲 / 专辑 / 艺术家 / 文件夹”进入曲库，双击曲目播放。
 4. Lyra 会为当前用户注册 MP3、FLAC、M4A、APE、WV、OGG、OPUS、WAV、AIFF 打开方式。播放器已运行时再次双击音频，只会把文件交给现有窗口，不会启动第二个常驻实例。
@@ -46,10 +46,10 @@ Lyra 的运行数据全部位于 `Lyra.exe` 同级的 `data/`：
 ```powershell
 dotnet build Player.sln -c Release
 dotnet run --project Player.App
-pwsh tools/publish.ps1 -Version 1.0.0
+pwsh tools/publish.ps1 -Version 1.0.2
 ```
 
-最后一条命令生成审计过的 self-contained `Lyra-v1.0.0-win-x64.zip`。
+最后一条命令生成审计过的 self-contained `Lyra-v1.0.2-win-x64.zip`。
 
 ## 功能总览
 

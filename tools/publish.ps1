@@ -1,8 +1,8 @@
 # P6 发布脚本：生成并审计 self-contained win-x64 便携 zip。
-# 用法：pwsh tools/publish.ps1 [-Version 1.0.0]
+# 用法：pwsh tools/publish.ps1 [-Version 1.0.2]
 param(
     [ValidatePattern('^(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)(?:-[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?(?:\+[0-9A-Za-z-]+(?:\.[0-9A-Za-z-]+)*)?$')]
-    [string]$Version = '1.0.0'
+    [string]$Version = '1.0.2'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -232,6 +232,9 @@ try {
         '--self-contained', 'true',
         '-o', $staging,
         "-p:Version=$Version",
+        "-p:FileVersion=$Version.0",
+        '-p:NuGetAudit=false',
+        '-p:NoWarn=NU1900',
         '-p:DebugSymbols=false',
         '-p:DebugType=None'
     )
