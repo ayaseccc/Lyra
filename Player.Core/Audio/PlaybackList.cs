@@ -29,23 +29,23 @@ public sealed class PlaybackListSnapshot
         string sourceName,
         int currentIndex,
         PlayMode mode,
-        int[] shuffleOrder,
-        int shufflePosition)
+        int[] forcedNextIndices,
+        int? randomPreviewIndex)
     {
         Items = items;
         SourceName = sourceName;
         CurrentIndex = currentIndex;
         Mode = mode;
-        ShuffleOrder = shuffleOrder;
-        ShufflePosition = shufflePosition;
+        ForcedNextIndices = forcedNextIndices;
+        RandomPreviewIndex = randomPreviewIndex;
     }
 
     internal TrackRecord[] Items { get; }
     internal string SourceName { get; }
     internal int CurrentIndex { get; }
     internal PlayMode Mode { get; }
-    internal int[] ShuffleOrder { get; }
-    internal int ShufflePosition { get; }
+    internal int[] ForcedNextIndices { get; }
+    internal int? RandomPreviewIndex { get; }
 }
 
 /// <summary>
@@ -55,10 +55,10 @@ public sealed class PlaybackListSnapshot
 public sealed class PlaybackList
 {
     private readonly List<TrackRecord> _items = new();
-    private readonly List<int> _shuffleOrder = new();
+    private readonly List<int> _forcedNextIndices = new();
     private readonly Random _random;
 
-    private int _shufflePosition = -1;
+    private int? _randomPreviewIndex;
     private PlayMode _mode = PlayMode.RepeatAll;
 
     public PlaybackList() : this(new Random())
@@ -89,7 +89,7 @@ public sealed class PlaybackList
         {
             if (_mode == value) return;
             _mode = value;
-            if (_mode == PlayMode.Shuffle) RebuildShuffleOrder();
+            ResetRandomState();
         }
     }
 
@@ -103,7 +103,7 @@ public sealed class PlaybackList
             ? -1
             : Math.Clamp(startIndex, 0, _items.Count - 1);
 
-        RebuildShuffleOrder();
+        ResetRandomState();
     }
 
     public PlaybackListSnapshot CaptureSnapshot() => new(
@@ -111,8 +111,8 @@ public sealed class PlaybackList
         SourceName,
         CurrentIndex,
         _mode,
-        _shuffleOrder.ToArray(),
-        _shufflePosition);
+        _forcedNextIndices.ToArray(),
+        _randomPreviewIndex);
 
     public void RestoreSnapshot(PlaybackListSnapshot snapshot)
     {
@@ -123,9 +123,9 @@ public sealed class PlaybackList
         SourceName = snapshot.SourceName;
         CurrentIndex = snapshot.CurrentIndex;
         _mode = snapshot.Mode;
-        _shuffleOrder.Clear();
-        _shuffleOrder.AddRange(snapshot.ShuffleOrder);
-        _shufflePosition = snapshot.ShufflePosition;
+        _forcedNextIndices.Clear();
+        _forcedNextIndices.AddRange(snapshot.ForcedNextIndices);
+        _randomPreviewIndex = snapshot.RandomPreviewIndex;
     }
 
     /// <summary>「下一首播放」：把曲目插到当前曲目之后（队列空则成为唯一曲目）。
@@ -134,28 +134,23 @@ public sealed class PlaybackList
     {
         if (tracks.Count == 0) return -1;
 
-        if (_mode == PlayMode.Shuffle && _shuffleOrder.Count != _items.Count)
-            RebuildShuffleOrder();
-
         var at = CurrentIndex < 0 ? 0 : CurrentIndex + 1;
+
+        if (_mode == PlayMode.Shuffle)
+        {
+            ShiftRandomIndicesForInsert(at, tracks.Count);
+        }
         _items.InsertRange(at, tracks);
 
         if (_mode == PlayMode.Shuffle)
         {
-            // InsertAfterCurrent 的契约在随机模式下也必须成立：插入批次先按
-            // 原顺序播放，再回到插队前尚未播放的随机序列。
-            for (var i = 0; i < _shuffleOrder.Count; i++)
-            {
-                if (_shuffleOrder[i] >= at)
-                    _shuffleOrder[i] += tracks.Count;
-            }
-
-            var orderPosition = Math.Clamp(_shufflePosition + 1, 0, _shuffleOrder.Count);
-            _shuffleOrder.InsertRange(orderPosition, Enumerable.Range(at, tracks.Count));
+            // 随机模式仍要兑现“下一首播放”：插入批次优先且保持原顺序，
+            // 消费完后再回到插入前已经锁定的随机预载候选。
+            _forcedNextIndices.InsertRange(0, Enumerable.Range(at, tracks.Count));
         }
         else
         {
-            RebuildShuffleOrder();
+            ResetRandomState();
         }
 
         return at;
@@ -166,10 +161,7 @@ public sealed class PlaybackList
         if (index < 0 || index >= _items.Count) return null;
 
         CurrentIndex = index;
-        if (_mode == PlayMode.Shuffle)
-            RebuildShuffleOrder();
-        else
-            SyncShufflePosition();
+        ResetRandomState();
         return Current;
     }
 
@@ -213,7 +205,7 @@ public sealed class PlaybackList
         if (_items.Count == 0) return null;
 
         if (_mode == PlayMode.Shuffle)
-            return MovePreviousShuffle();
+            return null;
 
         var previous = CurrentIndex - 1;
         if (previous < 0)
@@ -237,10 +229,11 @@ public sealed class PlaybackList
 
         if (_mode == PlayMode.Shuffle)
         {
-            if (_shuffleOrder.Count != _items.Count) return null;   // 洗牌表还没建好
-            var next = _shufflePosition + 1;
-            if (next >= _shuffleOrder.Count) return null;           // 一轮放完要重洗，无法预知
-            return _items[_shuffleOrder[next]];
+            if (_forcedNextIndices.Count > 0)
+                return ItemAt(_forcedNextIndices[0]);
+
+            _randomPreviewIndex ??= ChooseRandomNextIndex();
+            return _randomPreviewIndex is { } randomIndex ? ItemAt(randomIndex) : null;
         }
 
         var index = CurrentIndex + 1;
@@ -253,74 +246,61 @@ public sealed class PlaybackList
     public void Clear()
     {
         _items.Clear();
-        _shuffleOrder.Clear();
-        _shufflePosition = -1;
+        ResetRandomState();
         CurrentIndex = -1;
         SourceName = string.Empty;
     }
 
-    // ---------------- 随机 ----------------
+    // ---------------- Random（foobar 语义：每次独立抽取、没有历史） ----------------
 
-    private void RebuildShuffleOrder()
+    private void ResetRandomState()
     {
-        _shuffleOrder.Clear();
-        if (_items.Count == 0)
-        {
-            _shufflePosition = -1;
-            return;
-        }
-
-        for (var i = 0; i < _items.Count; i++)
-        {
-            if (i != CurrentIndex) _shuffleOrder.Add(i);
-        }
-
-        // Fisher-Yates
-        for (var i = _shuffleOrder.Count - 1; i > 0; i--)
-        {
-            var j = _random.Next(i + 1);
-            (_shuffleOrder[i], _shuffleOrder[j]) = (_shuffleOrder[j], _shuffleOrder[i]);
-        }
-
-        // A newly selected/current track is the start of a fresh shuffle cycle.
-        // Keeping it at position 0 guarantees every other track is visited once
-        // before reshuffling and gives the next cycle an explicit no-repeat anchor.
-        if (CurrentIndex >= 0)
-            _shuffleOrder.Insert(0, CurrentIndex);
-        _shufflePosition = CurrentIndex >= 0 ? 0 : -1;
+        _forcedNextIndices.Clear();
+        _randomPreviewIndex = null;
     }
 
-    private void SyncShufflePosition()
+    private void ShiftRandomIndicesForInsert(int at, int count)
     {
-        _shufflePosition = _shuffleOrder.IndexOf(CurrentIndex);
+        for (var i = 0; i < _forcedNextIndices.Count; i++)
+        {
+            if (_forcedNextIndices[i] >= at)
+                _forcedNextIndices[i] += count;
+        }
+
+        if (_randomPreviewIndex is { } preview && preview >= at)
+            _randomPreviewIndex = preview + count;
     }
 
     private TrackRecord? MoveNextShuffle()
     {
-        if (_shuffleOrder.Count != _items.Count) RebuildShuffleOrder();
-        if (_shuffleOrder.Count == 0) return null;
-
-        var next = _shufflePosition + 1;
-        if (next >= _shuffleOrder.Count)
+        int next;
+        if (_forcedNextIndices.Count > 0)
         {
-            RebuildShuffleOrder();   // 一轮放完，重新洗牌
-            next = _shuffleOrder.Count > 1 ? 1 : 0;
+            next = _forcedNextIndices[0];
+            _forcedNextIndices.RemoveAt(0);
+        }
+        else
+        {
+            next = _randomPreviewIndex ?? ChooseRandomNextIndex();
+            _randomPreviewIndex = null;
         }
 
-        _shufflePosition = next;
-        CurrentIndex = _shuffleOrder[next];
+        if (next < 0 || next >= _items.Count) return null;
+        CurrentIndex = next;
         return Current;
     }
 
-    private TrackRecord? MovePreviousShuffle()
+    private int ChooseRandomNextIndex()
     {
-        if (_shuffleOrder.Count == 0) return null;
+        if (_items.Count == 0) return -1;
 
-        var previous = _shufflePosition - 1;
-        if (previous < 0) previous = _shuffleOrder.Count - 1;
-
-        _shufflePosition = previous;
-        CurrentIndex = _shuffleOrder[previous];
-        return Current;
+        // foobar Random 是无历史、有放回抽取：每次都从完整列表独立选择，
+        // 因而理论上允许连续抽中同一首。PeekNext 会锁定本次结果，供预载
+        // 与真正切歌共用，但不会形成可返回的历史。
+        return _random.Next(_items.Count);
     }
+
+    private TrackRecord? ItemAt(int index)
+        => index >= 0 && index < _items.Count ? _items[index] : null;
+
 }

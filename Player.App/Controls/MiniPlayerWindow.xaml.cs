@@ -11,6 +11,7 @@ using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Media;
 using System.Windows.Media.Animation;
+using System.Windows.Media.Effects;
 using System.Windows.Threading;
 using Player.App.ViewModels;
 using Player.Core.Infra;
@@ -34,6 +35,7 @@ public partial class MiniPlayerWindow : Window
     private const double MaximumHeightDip = DefaultHeightDip * MaximumScale;
     private const double PrimaryLyricFontSize = 11.5;
     private const double SecondaryLyricFontSize = 9.5;
+    private const double LyricMarqueeStepDip = 0.8;
     private const double ResizeBorderDip = 5;
     private const uint MonitorDefaultToNearest = 2;
     private const uint SwpNoSize = 0x0001;
@@ -82,6 +84,13 @@ public partial class MiniPlayerWindow : Window
     private double _marqueeOffset;
     private bool _marqueeAtEnd;
     private bool _marqueeStarted;
+    private double _primaryLyricOffset;
+    private double _secondaryLyricOffset;
+    private bool _primaryLyricAtEnd;
+    private bool _secondaryLyricAtEnd;
+    private DateTime _primaryLyricPauseUntil;
+    private DateTime _secondaryLyricPauseUntil;
+    private DateTime _lyricLineShownAt;
     private bool _surfaceActive;
     private bool _positionRestored;
     private bool _restorePending;
@@ -106,6 +115,9 @@ public partial class MiniPlayerWindow : Window
     /// <summary>Raised for Esc, Alt+F4 and the restore button.</summary>
     public event Action? RestoreRequested;
 
+    /// <summary>Raised by the context menu and handled by the unified app lifecycle coordinator.</summary>
+    public event Action? ExitRequested;
+
     /// <summary>Compatibility switch for the previous MainWindow shutdown path.</summary>
     public bool AllowRealClose { get; set; }
 
@@ -116,6 +128,7 @@ public partial class MiniPlayerWindow : Window
         _player = player;
         _contentMode = MiniPlayerContentModePolicy.Resolve(ConfigService.Current.Ui);
         DataContext = player;
+        ApplyBackgroundMode();
 
         _marqueeTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -307,6 +320,12 @@ public partial class MiniPlayerWindow : Window
 
     private void ResetMarquee()
     {
+        ResetTitleMarquee();
+        ResetLyricMarquee();
+    }
+
+    private void ResetTitleMarquee()
+    {
         _marqueeOffset = 0;
         _marqueeAtEnd = false;
         _marqueeStarted = false;
@@ -316,17 +335,59 @@ public partial class MiniPlayerWindow : Window
         TitleMarqueeText.Opacity = 0;
     }
 
+    private void ResetLyricMarquee()
+    {
+        _primaryLyricOffset = 0;
+        _secondaryLyricOffset = 0;
+        _primaryLyricAtEnd = false;
+        _secondaryLyricAtEnd = false;
+        _primaryLyricPauseUntil = DateTime.UtcNow.AddMilliseconds(350);
+        _secondaryLyricPauseUntil = _primaryLyricPauseUntil;
+        PrimaryLyricTranslate.X = 0;
+        SecondaryLyricTranslate.X = 0;
+    }
+
     private void OnMarqueeTick(object? sender, EventArgs e)
+    {
+        var now = DateTime.UtcNow;
+        UpdateTitleMarquee(now);
+
+        if (_contentMode != MiniPlayerContentMode.Lyrics
+            || MiniLyricCompactView.Visibility != Visibility.Visible)
+            return;
+
+        var remainingSeconds = GetLyricLineRemainingSeconds(now);
+
+        UpdateLyricMarquee(
+            MiniLyricPrimaryText,
+            PrimaryLyricViewport,
+            PrimaryLyricTranslate,
+            ref _primaryLyricOffset,
+            ref _primaryLyricAtEnd,
+            ref _primaryLyricPauseUntil,
+            now,
+            remainingSeconds);
+        UpdateLyricMarquee(
+            MiniLyricSecondaryText,
+            SecondaryLyricViewport,
+            SecondaryLyricTranslate,
+            ref _secondaryLyricOffset,
+            ref _secondaryLyricAtEnd,
+            ref _secondaryLyricPauseUntil,
+            now,
+            remainingSeconds);
+    }
+
+    private void UpdateTitleMarquee(DateTime now)
     {
         var viewportWidth = TitleViewport.ActualWidth;
         var titleWidth = TitleMarqueeText.ActualWidth;
         if (viewportWidth <= 0 || titleWidth <= viewportWidth + 1)
         {
-            if (_marqueeStarted) ResetMarquee();
+            if (_marqueeStarted) ResetTitleMarquee();
             return;
         }
 
-        var now = DateTime.UtcNow;
         if (now < _marqueePauseUntil) return;
 
         if (!_marqueeStarted)
@@ -357,6 +418,74 @@ public partial class MiniPlayerWindow : Window
         TitleTranslate.X = _marqueeOffset;
     }
 
+    private static void UpdateLyricMarquee(
+        TextBlock textBlock,
+        FrameworkElement viewport,
+        TranslateTransform translate,
+        ref double offset,
+        ref bool atEnd,
+        ref DateTime pauseUntil,
+        DateTime now,
+        double remainingSeconds)
+    {
+        var viewportWidth = viewport.ActualWidth;
+        var textWidth = Math.Max(textBlock.ActualWidth, MeasureLyricWidth(textBlock, textBlock.FontSize));
+        if (viewport.Visibility != Visibility.Visible
+            || viewportWidth <= 0
+            || textWidth <= viewportWidth + 1)
+        {
+            offset = 0;
+            atEnd = false;
+            translate.X = 0;
+            return;
+        }
+
+        // Keep the opening pause for normal lines. Very short timed lines start at
+        // once; otherwise no finite speed can reveal their tail before the next line.
+        if (now < pauseUntil && remainingSeconds > 1.2) return;
+        if (atEnd)
+        {
+            atEnd = false;
+            offset = 0;
+            translate.X = 0;
+            pauseUntil = now.AddMilliseconds(900);
+            return;
+        }
+
+        var minimumOffset = viewportWidth - textWidth;
+        var pauseSeconds = remainingSeconds > 1.2
+            ? Math.Max(0, (pauseUntil - now).TotalSeconds)
+            : 0;
+        var scrollingSeconds = Math.Max(0.05, remainingSeconds - pauseSeconds - 0.15);
+        var remainingDistance = Math.Max(0, offset - minimumOffset);
+        var requiredStep = remainingDistance * 0.05 / scrollingSeconds;
+        offset -= Math.Max(requiredStep, LyricMarqueeStepDip);
+        if (offset <= minimumOffset)
+        {
+            offset = minimumOffset;
+            atEnd = true;
+            pauseUntil = now.AddMilliseconds(900);
+        }
+
+        translate.X = offset;
+    }
+
+    private double GetLyricLineRemainingSeconds(DateTime now)
+    {
+        var lyrics = _player.Lyrics;
+        var index = lyrics.CurrentIndex;
+        if (!lyrics.IsStatic && index >= 0 && index + 1 < lyrics.RenderLines.Count)
+        {
+            var duration = (lyrics.RenderLines[index + 1].Time - lyrics.RenderLines[index].Time).TotalSeconds;
+            if (duration > 0)
+                return Math.Max(0.5, duration - (now - _lyricLineShownAt).TotalSeconds);
+        }
+
+        // Static lyrics and the final timed line have no next timestamp. Six
+        // seconds keeps long text readable while still revealing its tail.
+        return Math.Max(0.5, 6.0 - (now - _lyricLineShownAt).TotalSeconds);
+    }
+
     private void OnSpectrumTick(object? sender, EventArgs e)
     {
         if (_contentMode != MiniPlayerContentMode.Spectrum) return;
@@ -381,6 +510,9 @@ public partial class MiniPlayerWindow : Window
     }
 
     private void OnContentModeClick(object sender, RoutedEventArgs e)
+        => ToggleContentMode();
+
+    private void ToggleContentMode()
     {
         _contentMode = _contentMode == MiniPlayerContentMode.Lyrics
             ? MiniPlayerContentMode.Spectrum
@@ -409,6 +541,72 @@ public partial class MiniPlayerWindow : Window
         AutomationProperties.SetName(ContentModeButton, lyricsMode
             ? "当前为歌词模式，切换到频谱"
             : "当前为频谱模式，切换到歌词");
+        ContentModeMenuItem.Header = lyricsMode ? "切换到频谱" : "切换到歌词";
+    }
+
+    private void OnMiniContextMenuOpened(object sender, RoutedEventArgs e)
+    {
+        FinishCustomDrag();
+        _lastSurfaceClickTick = 0;
+        PlayPauseMenuItem.Header = _player.IsPlaying ? "暂停" : "播放";
+        TransparentBackgroundMenuItem.IsChecked = ConfigService.Current.Ui.MiniTransparentBackground;
+        UpdateContentModeButton();
+    }
+
+    private void OnContentModeMenuClick(object sender, RoutedEventArgs e) => ToggleContentMode();
+
+    private void OnTransparentBackgroundMenuClick(object sender, RoutedEventArgs e)
+    {
+        var ui = ConfigService.Current.Ui;
+        ui.MiniTransparentBackground = !ui.MiniTransparentBackground;
+        ConfigService.Save();
+        ApplyBackgroundMode();
+    }
+
+    private void ApplyBackgroundMode()
+    {
+        var transparent = ConfigService.Current.Ui.MiniTransparentBackground;
+        MiniBackdrop.Visibility = transparent ? Visibility.Collapsed : Visibility.Visible;
+        TransparentBackgroundMenuItem.IsChecked = transparent;
+
+        var shadow = transparent ? CreateTransparentTextShadow() : null;
+        TitleEllipsisText.Effect = shadow;
+        TitleMarqueeText.Effect = shadow;
+        ArtistText.Effect = shadow;
+        MiniLyricPrimaryText.Effect = shadow;
+        MiniLyricSecondaryText.Effect = shadow;
+        MiniLyricExpandedText.Effect = shadow;
+    }
+
+    private static DropShadowEffect CreateTransparentTextShadow()
+    {
+        var foreground = (Application.Current.TryFindResource("MiniPlayerTextBrush") as SolidColorBrush)?.Color
+                         ?? Colors.White;
+        var luminance = (0.2126 * foreground.R + 0.7152 * foreground.G + 0.0722 * foreground.B) / 255d;
+        var effect = new DropShadowEffect
+        {
+            BlurRadius = 2.5,
+            ShadowDepth = 0,
+            Opacity = 0.72,
+            Color = luminance < 0.5 ? Colors.White : Colors.Black
+        };
+        effect.Freeze();
+        return effect;
+    }
+
+    private void OnResetSizeMenuClick(object sender, RoutedEventArgs e)
+    {
+        _lastSurfaceClickTick = 0;
+        ResetDefaultSize();
+    }
+
+    private void OnRestoreMenuClick(object sender, RoutedEventArgs e) => RequestRestore();
+
+    private void OnExitMenuClick(object sender, RoutedEventArgs e)
+    {
+        if (AllowRealClose) return;
+        SavePlacement();
+        ExitRequested?.Invoke();
     }
 
     private void StartSpectrumIfNeeded()
@@ -476,7 +674,11 @@ public partial class MiniPlayerWindow : Window
             var line = lyrics.RenderLines[index];
             primary = line.Primary;
             secondary = line.Secondary;
-            if (string.IsNullOrWhiteSpace(secondary) && index + 1 < lyrics.RenderLines.Count)
+            // A long current line needs both rows to stay readable. Only use the
+            // next lyric as a secondary preview when the primary line is short.
+            if (string.IsNullOrWhiteSpace(secondary)
+                && primary.Length <= 22
+                && index + 1 < lyrics.RenderLines.Count)
                 secondary = lyrics.RenderLines[index + 1].Primary;
         }
         else
@@ -497,10 +699,14 @@ public partial class MiniPlayerWindow : Window
 
         _lastLyricPrimary = primary;
         _lastLyricSecondary = secondary;
+        _lyricLineShownAt = DateTime.UtcNow;
         MiniLyricPrimaryText.Text = primary;
         MiniLyricSecondaryText.Text = secondary;
-        MiniLyricPrimaryText.FontSize = PrimaryLyricFontSize;
-        MiniLyricSecondaryText.FontSize = SecondaryLyricFontSize;
+        MiniLyricExpandedText.Text = primary;
+        LyricsView.ToolTip = string.IsNullOrWhiteSpace(secondary)
+            ? primary
+            : primary + Environment.NewLine + secondary;
+        ResetLyricMarquee();
         QueueLyricFit();
 
         LyricsView.BeginAnimation(OpacityProperty, null);
@@ -536,36 +742,64 @@ public partial class MiniPlayerWindow : Window
         var availableWidth = LyricsView.ActualWidth;
         if (!double.IsFinite(availableWidth) || availableWidth <= 1) return;
 
-        FitLyricLine(MiniLyricPrimaryText, PrimaryLyricFontSize, availableWidth - 1);
-        FitLyricLine(MiniLyricSecondaryText, SecondaryLyricFontSize, availableWidth - 1);
+        var hasSecondary = !string.IsNullOrWhiteSpace(MiniLyricSecondaryText.Text);
+        var primaryFitsOneLine = MeasureLyricWidth(MiniLyricPrimaryText, PrimaryLyricFontSize)
+                                 <= availableWidth;
+        var useExpandedPrimary = !primaryFitsOneLine
+                                 && FitsExpandedLyric(MiniLyricExpandedText, availableWidth);
+
+        MiniLyricExpandedText.Visibility = useExpandedPrimary
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+        MiniLyricCompactView.Visibility = useExpandedPrimary
+            ? Visibility.Collapsed
+            : Visibility.Visible;
+        MiniLyricCompactView.Height = hasSecondary ? 27 : 14;
+        MiniLyricCompactView.VerticalAlignment = hasSecondary
+            ? VerticalAlignment.Bottom
+            : VerticalAlignment.Center;
+        SecondaryLyricViewport.Visibility = hasSecondary
+            ? Visibility.Visible
+            : Visibility.Collapsed;
+
+        // One line: original + translation/preview. Medium line: readable two-row
+        // primary. Extremely long line: fixed-size horizontal marquee, so the full
+        // text remains reachable instead of becoming tiny or being silently cut.
+        ResetLyricMarquee();
     }
 
-    private static void FitLyricLine(TextBlock textBlock, double preferredFontSize, double availableWidth)
+    private static bool FitsExpandedLyric(TextBlock textBlock, double availableWidth)
     {
-        var text = textBlock.Text;
-        if (string.IsNullOrEmpty(text) || availableWidth <= 0)
-        {
-            textBlock.FontSize = preferredFontSize;
-            return;
-        }
+        if (string.IsNullOrWhiteSpace(textBlock.Text) || availableWidth <= 0) return false;
 
+        var formatted = CreateFormattedLyric(textBlock, PrimaryLyricFontSize);
+        formatted.MaxTextWidth = availableWidth;
+        formatted.LineHeight = 13.5;
+        return formatted.Height <= 27.1;
+    }
+
+    private static double MeasureLyricWidth(TextBlock textBlock, double fontSize)
+    {
+        if (string.IsNullOrEmpty(textBlock.Text)) return 0;
+
+        return CreateFormattedLyric(textBlock, fontSize).WidthIncludingTrailingWhitespace;
+    }
+
+    private static FormattedText CreateFormattedLyric(TextBlock textBlock, double fontSize)
+    {
         var typeface = new Typeface(
             textBlock.FontFamily,
             textBlock.FontStyle,
             textBlock.FontWeight,
             textBlock.FontStretch);
-        var formatted = new FormattedText(
-            text,
+        return new FormattedText(
+            textBlock.Text,
             CultureInfo.CurrentUICulture,
             textBlock.FlowDirection,
             typeface,
-            preferredFontSize,
+            fontSize,
             Brushes.Black,
             VisualTreeHelper.GetDpi(textBlock).PixelsPerDip);
-        var measuredWidth = formatted.WidthIncludingTrailingWhitespace;
-        textBlock.FontSize = measuredWidth <= availableWidth
-            ? preferredFontSize
-            : Math.Max(1, preferredFontSize * availableWidth / measuredWidth * 0.98);
     }
 
     private void RestoreSizeFromConfig()
@@ -1051,9 +1285,15 @@ public partial class MiniPlayerWindow : Window
 
     private void OnSurfacePointerDown(object sender, MouseButtonEventArgs e)
     {
-        if (e.ChangedButton != MouseButton.Left
-            || IsInteractiveSource(e.OriginalSource as DependencyObject))
+        if (e.ChangedButton != MouseButton.Left)
             return;
+
+        if (IsInteractiveSource(e.OriginalSource as DependencyObject))
+        {
+            _lastSurfaceClickTick = 0;
+            FinishCustomDrag();
+            return;
+        }
 
         if (!GetCursorPos(out var cursor)) return;
 
@@ -1126,6 +1366,12 @@ public partial class MiniPlayerWindow : Window
 
         FinishCustomDrag();
         e.Handled = true;
+    }
+
+    private void OnSurfaceRightButtonDown(object sender, MouseButtonEventArgs e)
+    {
+        _lastSurfaceClickTick = 0;
+        FinishCustomDrag();
     }
 
     private void OnSurfaceLostMouseCapture(object sender, MouseEventArgs e)

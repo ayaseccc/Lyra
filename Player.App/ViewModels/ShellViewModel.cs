@@ -176,7 +176,30 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         {
             var lastTrack = _library.Tracks.FirstOrDefault(t =>
                 string.Equals(t.Path, lastTrackPath, StringComparison.OrdinalIgnoreCase));
-            if (lastTrack is not null) Player.RestoreTrack(lastTrack);
+            if (lastTrack is not null)
+            {
+                var persisted = PlaybackContextStore.Load();
+                var context = PlaybackContextStore.Resolve(persisted, _library.Tracks).ToList();
+                var containsLastTrack = context.Any(candidate =>
+                    (candidate.Id != 0 && candidate.Id == lastTrack.Id)
+                    || string.Equals(candidate.Path, lastTrack.Path, StringComparison.OrdinalIgnoreCase));
+
+                // 旧版本没有 playback-context.json，或队列中的文件已从曲库移除时，
+                // 退回全部歌曲以保证 Next 可用。不能借退出时正在看的 CurrentPage
+                // 猜播放来源，因为用户可能在播放后切到了设置或在线页面。
+                var sourceName = persisted?.SourceName ?? string.Empty;
+                if (!containsLastTrack)
+                {
+                    context = _library.Tracks.ToList();
+                    sourceName = "全部歌曲";
+                }
+
+                Player.RestoreTrack(
+                    lastTrack,
+                    context,
+                    sourceName,
+                    ConfigService.Current.Ui.LastPlaybackIndex);
+            }
         }
 
         if (HasRoots)

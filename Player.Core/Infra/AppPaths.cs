@@ -21,6 +21,9 @@ public static class AppPaths
     /// <summary>配置文件；P3 起承载 apikey，只能从这里读取。</summary>
     public static string ConfigFile => Path.Combine(DataDir, "config.json");
 
+    /// <summary>播放队列单独持久化，避免设置/音量保存时反复重写大量路径。</summary>
+    public static string PlaybackContextFile => Path.Combine(DataDir, "playback-context.json");
+
     /// <summary>媒体库数据库（P1 起使用）。</summary>
     public static string DatabaseFile => Path.Combine(DataDir, "library.db");
 

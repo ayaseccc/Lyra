@@ -186,6 +186,13 @@ public sealed partial class LyricsViewModel : ObservableObject, IDisposable
         }
     }
 
+    /// <summary>
+    /// 重新应用全局歌词来源设置到当前曲目。设置页改动后调用此入口，
+    /// 避免必须重启应用才能看到新的默认来源。
+    /// </summary>
+    public Task ReloadCurrentTrackAsync()
+        => _track is { } track ? LoadForTrackAsync(track) : Task.CompletedTask;
+
     /// <summary>手动「重新获取」：跳过缓存直接走 API（本地 .lrc 仍优先）。</summary>
     [RelayCommand]
     private async Task RefreshAsync()

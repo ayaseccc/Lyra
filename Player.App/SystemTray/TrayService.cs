@@ -23,6 +23,7 @@ public sealed class TrayService : IDisposable
     private readonly Func<bool> _isMiniVisible;
     private readonly NotifyIcon _icon;
     private readonly ToolStripMenuItem _playPauseItem;
+    private readonly ToolStripMenuItem _previousItem;
     private readonly ToolStripMenuItem _desktopLyricsItem;
     private readonly ToolStripMenuItem _miniPlayerItem;
     private readonly System.Drawing.Icon _iconResource;
@@ -49,7 +50,7 @@ public sealed class TrayService : IDisposable
         _isMiniVisible = isMiniVisible;
 
         _playPauseItem = new ToolStripMenuItem("播放 / 暂停");
-        var previousItem = new ToolStripMenuItem("上一曲");
+        _previousItem = new ToolStripMenuItem("上一曲");
         var nextItem = new ToolStripMenuItem("下一曲");
         _desktopLyricsItem = new ToolStripMenuItem("桌面歌词") { CheckOnClick = true };
         _miniPlayerItem = new ToolStripMenuItem("迷你悬浮窗") { CheckOnClick = false };
@@ -59,7 +60,7 @@ public sealed class TrayService : IDisposable
         var menu = new ContextMenuStrip();
         menu.Items.AddRange(new ToolStripItem[]
         {
-            _playPauseItem, previousItem, nextItem,
+            _playPauseItem, _previousItem, nextItem,
             new ToolStripSeparator(),
             _desktopLyricsItem,
             _miniPlayerItem,
@@ -78,7 +79,7 @@ public sealed class TrayService : IDisposable
         };
 
         _playPauseItem.Click += (_, _) => _player.PlayPauseCommand.Execute(null);
-        previousItem.Click += (_, _) => _player.PreviousCommand.Execute(null);
+        _previousItem.Click += (_, _) => _player.PreviousCommand.Execute(null);
         nextItem.Click += (_, _) => _player.NextCommand.Execute(null);
         _desktopLyricsItem.Click += (_, _) =>
         {
@@ -135,7 +136,8 @@ public sealed class TrayService : IDisposable
     private void OnPlayerPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
         if (e.PropertyName is nameof(PlayerViewModel.Title) or nameof(PlayerViewModel.Artist)
-            or nameof(PlayerViewModel.CurrentTrack) or nameof(PlayerViewModel.IsPlaying))
+            or nameof(PlayerViewModel.CurrentTrack) or nameof(PlayerViewModel.IsPlaying)
+            or nameof(PlayerViewModel.CanGoPrevious))
         {
             RefreshPlayerState();
         }
@@ -145,6 +147,7 @@ public sealed class TrayService : IDisposable
     {
         if (_disposed) return;
         _playPauseItem.Text = _player.IsPlaying ? "暂停" : "播放";
+        _previousItem.Enabled = _player.CanGoPrevious;
 
         var title = string.IsNullOrWhiteSpace(_player.Title) ? "Lyra" : _player.Title.Trim();
         if (!string.IsNullOrWhiteSpace(_player.Artist)) title += " - " + _player.Artist.Trim();

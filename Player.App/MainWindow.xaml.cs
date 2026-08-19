@@ -936,6 +936,12 @@ public partial class MainWindow : FluentWindow
                         _surfaces?.ApplyDesktopLyricsSettings();
                         break;
 
+                    // 全局默认来源改动后立即重载当前曲目；按曲目单独设置的偏好
+                    // 仍由 LyricsService 保留，不会被此处覆盖。
+                    case nameof(SettingsPageViewModel.SelectedLyricSource):
+                        _ = Player?.Lyrics.ReloadCurrentTrackAsync();
+                        break;
+
                     // 桌面歌词个性化（背景/透明度/文字颜色/字号/单双行）
                     case nameof(SettingsPageViewModel.SelectedLyricFontSize):
                     case nameof(SettingsPageViewModel.DesktopLyricsTwoLines):
@@ -1207,8 +1213,8 @@ public partial class MainWindow : FluentWindow
     private static void ApplyMenuStyle(System.Windows.Controls.ContextMenu menu)
     {
         menu.Style = ConfigService.Current.Ui.ClassicMenus
-            ? System.Windows.Application.Current.Resources["ClassicContextMenuStyle"] as Style
-            : null;
+            ? null
+            : System.Windows.Application.Current.Resources["ClassicContextMenuStyle"] as Style;
     }
 
     /// <summary>主列表右键菜单打开：填充「添加到歌单」子菜单、移出歌单可见性、挂 Click（只挂一次）。</summary>

@@ -44,6 +44,25 @@ public static class DownloadTemplater
         return result.Trim('/', ' ');
     }
 
+    /// <summary>
+    /// 将渲染结果压平为单个文件名。下载界面选择的是目标目录，
+    /// 因此默认不应再隐式创建歌手/专辑子目录；模板中的目录段只用于
+    /// 兼容旧配置，实际落盘统一直接放到用户选择的目录。
+    /// </summary>
+    public static string FlattenRelativePath(string renderedRelativePath)
+    {
+        if (string.IsNullOrWhiteSpace(renderedRelativePath)) return "_";
+
+        // Windows treats both separators as path delimiters. Normalize explicitly
+        // so the helper remains deterministic in harnesses running on other hosts.
+        var normalized = renderedRelativePath
+            .Replace('/', Path.DirectorySeparatorChar)
+            .Replace('\\', Path.DirectorySeparatorChar)
+            .Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, ' ');
+        var fileName = Path.GetFileName(normalized);
+        return string.IsNullOrWhiteSpace(fileName) ? "_" : fileName;
+    }
+
     /// <summary>路径段清洗：去掉 Windows 非法字符与首尾空白。</summary>
     public static string SanitizeComponent(string value)
     {

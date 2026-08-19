@@ -167,22 +167,27 @@ public static class Program
         Check("随机：预测到的下一曲与真正切过去的一致",
             peeked is null || (actual is not null && peeked.Id == actual.Id));
 
-        var deterministicShuffle = new PlaybackList(new Random(20260818));
-        deterministicShuffle.Replace(tracks, "确定性随机", 2);
+        var deterministicShuffle = new PlaybackList(new SequenceRandom(0, 0, 1, 1));
+        deterministicShuffle.Replace(tracks, "确定性随机", 2); // T3
         deterministicShuffle.Mode = PlayMode.Shuffle;
-        var shuffleCycle = new List<long> { deterministicShuffle.Current!.Id };
-        for (var i = 1; i < tracks.Count; i++)
-            shuffleCycle.Add(deterministicShuffle.MoveNext(userInitiated: false)!.Id);
-        Check("随机：首轮不跳过任何曲目",
-            shuffleCycle.Count == tracks.Count && shuffleCycle.Distinct().Count() == tracks.Count);
-        var previousShuffleId = deterministicShuffle.Current!.Id;
-        var nextCycleFirst = deterministicShuffle.MoveNext(userInitiated: false);
-        Check("随机：多曲列表换轮不立即重复当前曲",
-            nextCycleFirst is not null && nextCycleFirst.Id != previousShuffleId);
+        var firstPeek = deterministicShuffle.PeekNext();          // T1
+        var secondPeek = deterministicShuffle.PeekNext();
+        var firstActual = deterministicShuffle.MoveNext(userInitiated: false);
+        Check("随机：重复预测不重复抽取且与真正切歌一致",
+            firstPeek?.Id == 1 && secondPeek?.Id == 1 && firstActual?.Id == 1);
+        var secondActual = deterministicShuffle.MoveNext(userInitiated: false); // T1 again
+        var thirdActual = deterministicShuffle.MoveNext(userInitiated: false);  // T2
+        Check("随机：有放回抽取，允许连续抽中同一首",
+            firstActual?.Id == 1 && secondActual?.Id == 1);
+        Check("随机：每次重新抽取，不受上一结果的遍历顺序约束",
+            thirdActual?.Id == 2);
+        var randomCurrent = deterministicShuffle.Current?.Id;
+        Check("随机：不支持返回上一首",
+            deterministicShuffle.MovePrevious() is null && deterministicShuffle.Current?.Id == randomCurrent);
 
-        var shuffleSnapshot = deterministicShuffle.CaptureSnapshot();
         var snapshotCurrent = deterministicShuffle.Current?.Id;
         var snapshotNext = deterministicShuffle.PeekNext()?.Id;
+        var shuffleSnapshot = deterministicShuffle.CaptureSnapshot();
         deterministicShuffle.Replace(tracks.Take(2), "临时列表", 0);
         deterministicShuffle.Mode = PlayMode.Sequential;
         deterministicShuffle.RestoreSnapshot(shuffleSnapshot);
@@ -190,12 +195,49 @@ public static class Program
             deterministicShuffle.SourceName == "确定性随机" &&
             deterministicShuffle.Mode == PlayMode.Shuffle &&
             deterministicShuffle.Current?.Id == snapshotCurrent);
-        Check("列表快照：恢复随机播放顺序",
+        Check("列表快照：恢复已锁定的随机候选",
             deterministicShuffle.PeekNext()?.Id == snapshotNext);
+
+        Console.WriteLine();
+        Console.WriteLine("=== 播放上下文侧车 ===");
+        var contextFile = Path.Combine(Path.GetTempPath(), "lyra-context-" + Guid.NewGuid().ToString("N") + ".json");
+        try
+        {
+            var persisted = PlaybackContextStore.Capture("过滤后的歌单", new[] { tracks[1], tracks[0], tracks[1] });
+            Check("播放上下文：独立 JSON 原子保存", PlaybackContextStore.Save(persisted, contextFile));
+            var loaded = PlaybackContextStore.Load(contextFile);
+            var resolved = PlaybackContextStore.Resolve(loaded, new[] { tracks[0], tracks[1], tracks[3] });
+            Check("播放上下文：保留真实顺序与重复项",
+                loaded?.SourceName == "过滤后的歌单" && resolved.Select(track => track.Id).SequenceEqual(new long[] { 2, 1, 2 }));
+
+            var withMissing = new PersistedPlaybackContext
+            {
+                SourceName = "含失效文件",
+                TrackPaths = new List<string> { tracks[0].Path, "C:/m/missing.flac", tracks[2].Path }
+            };
+            var available = PlaybackContextStore.Resolve(withMissing, tracks);
+            Check("播放上下文：失效文件被过滤且其余顺序不变",
+                available.Select(track => track.Id).SequenceEqual(new long[] { 1, 3 }));
+        }
+        finally
+        {
+            try { File.Delete(contextFile); } catch { }
+            try { File.Delete(contextFile + ".tmp"); } catch { }
+        }
 
         list.Mode = PlayMode.Sequential;
         list.Replace(tracks, "测试", 0);
         Check("换列表后预测重新生效", list.PeekNext()?.Id == 2);
+
+        Console.WriteLine();
+        Console.WriteLine("=== 音量曲线 ===");
+        Check("音量：左端是静音", VolumeScale.PointerToLinear(0) == 0);
+        Check("音量：中点约 -18 dB",
+            Math.Abs(VolumeScale.LinearToDecibels(VolumeScale.PointerToLinear(0.5)) + 18.0618) < 0.01);
+        Check("音量：10% 位置约 -60 dB",
+            Math.Abs(VolumeScale.LinearToDecibels(VolumeScale.PointerToLinear(0.1)) + 60) < 0.01);
+        Check("音量：指针与线性增益可往返",
+            Math.Abs(VolumeScale.LinearToPointer(VolumeScale.PointerToLinear(0.37)) - 0.37) < 0.000001);
 
         // 「下一首播放」插队（2026-08-16 右键菜单）
         list.Replace(tracks, "测试", 0);   // 当前 T1
@@ -1444,6 +1486,7 @@ public static class Program
             MiniWidth = ui.MiniWidth,
             MiniHeight = ui.MiniHeight,
             MiniContentMode = ui.MiniContentMode,
+            MiniTransparentBackground = ui.MiniTransparentBackground,
             MiniSpectrum = ui.MiniSpectrum,
             Columns = new List<string>(ui.Columns),
             ColumnWidths = new Dictionary<string, double>(ui.ColumnWidths)
@@ -1451,6 +1494,8 @@ public static class Program
 
         try
         {
+            Check("迷你窗透明背景默认关闭",
+                !new Player.Core.Infra.UiConfig().MiniTransparentBackground);
             Check("迷你窗旧关闭值迁移为歌词",
                 MiniPlayerContentModePolicy.Resolve(new Player.Core.Infra.UiConfig()) == MiniPlayerContentMode.Lyrics);
             Check("迷你窗无显式模式时默认歌词",
@@ -1482,6 +1527,7 @@ public static class Program
             ui.MiniPos = "v2|VEVTVA==|24.5|18";
             ui.MiniWidth = 510;
             ui.MiniHeight = 156;
+            ui.MiniTransparentBackground = true;
             MiniPlayerContentModePolicy.Apply(ui, MiniPlayerContentMode.Lyrics);
             ui.Columns = new List<string> { "Title", "Duration", "Format" };
             ui.ColumnWidths["Title"] = 430;
@@ -1506,6 +1552,8 @@ public static class Program
             Check("迷你窗位置往返", reloaded?.Ui.MiniPos == "v2|VEVTVA==|24.5|18");
             Check("迷你窗等比宽度往返", reloaded is not null && Math.Abs(reloaded.Ui.MiniWidth - 510) < 0.001);
             Check("迷你窗等比高度往返", reloaded is not null && Math.Abs(reloaded.Ui.MiniHeight - 156) < 0.001);
+            Check("迷你窗透明背景往返", reloaded?.Ui.MiniTransparentBackground == true);
+            Check("迷你窗旧整体透明度字段已移除", !json.Contains("\"miniOpacity\"", StringComparison.OrdinalIgnoreCase));
             Check("迷你窗歌词模式往返", reloaded is not null
                 && MiniPlayerContentModePolicy.Resolve(reloaded.Ui) == MiniPlayerContentMode.Lyrics
                 && reloaded.Ui.MiniContentMode == MiniPlayerContentModePolicy.LyricsValue
@@ -1528,6 +1576,7 @@ public static class Program
             ui.MiniWidth = backup.MiniWidth;
             ui.MiniHeight = backup.MiniHeight;
             ui.MiniContentMode = backup.MiniContentMode;
+            ui.MiniTransparentBackground = backup.MiniTransparentBackground;
             ui.MiniSpectrum = backup.MiniSpectrum;
             ui.Columns = backup.Columns;
             ui.ColumnWidths = backup.ColumnWidths;
@@ -1551,6 +1600,8 @@ public static class Program
         };
         var path = DownloadTemplater.Render("{AlbumArtist}/{Album}/{TrackNo} - {Title}", values);
         Check("模板渲染替换占位符", path == "周杰伦/叶惠美/01 - 晴天_ 完整版_");
+        Check("下载落盘压平为所选目录下的文件",
+            DownloadTemplater.FlattenRelativePath(path) == "01 - 晴天_ 完整版_");
         Check("未知占位符原样保留", DownloadTemplater.Render("x {Unknown} y", values).Contains("{Unknown}"));
         Check("空 TrackNo 时去掉 - 段", DownloadTemplater.Render(
             "{AlbumArtist}/{Album}/{TrackNo} - {Title}",
@@ -2611,6 +2662,20 @@ public static class Program
             var sample = (short)(Math.Sin(2 * Math.PI * 440 * frame / sampleRate) * short.MaxValue * 0.3);
             writer.Write(sample);
             writer.Write(sample);
+        }
+    }
+
+    private sealed class SequenceRandom(params int[] values) : Random
+    {
+        private int _index;
+
+        public override int Next(int maxValue)
+        {
+            if (maxValue <= 0) throw new ArgumentOutOfRangeException(nameof(maxValue));
+            var value = values.Length == 0
+                ? 0
+                : values[Math.Min(_index++, values.Length - 1)];
+            return (int)((uint)value % (uint)maxValue);
         }
     }
 }

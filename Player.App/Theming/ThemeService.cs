@@ -126,13 +126,16 @@ public static class ThemeService
         res["UiFontSizeBody"] = 12 * scale;
         res["UiFontSizeSmall"] = 11 * scale;
 
-        // 右键菜单风格：经典（keyed 样式）或 null（回退 WPF-UI 现代隐式样式）
+        // ContextMenu lives in a separate popup tree. In this resource stack the
+        // unkeyed fallback is the native-looking menu; the keyed override is the
+        // regular styled menu. Keep the user-facing toggle aligned with what is
+        // actually rendered.
         res["MenuStyleOverride"] = ui.ClassicMenus
-            ? (Style?)app.Resources["ClassicContextMenuStyle"]
-            : null;
+            ? null
+            : (Style?)app.Resources["ClassicContextMenuStyle"];
         res["SeparatorStyleOverride"] = ui.ClassicMenus
-            ? (Style?)app.Resources["ClassicSeparatorStyle"]
-            : null;
+            ? null
+            : (Style?)app.Resources["ClassicSeparatorStyle"];
     }
 
     /// <summary>按当前配置重新应用主题（L3.1 自定义强调色/透明度变化后调用）。</summary>

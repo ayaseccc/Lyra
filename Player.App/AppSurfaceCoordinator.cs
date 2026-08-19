@@ -160,6 +160,7 @@ internal sealed class AppSurfaceCoordinator : IDisposable
         if (_miniWindow is not null)
         {
             _miniWindow.RestoreRequested -= ShowMain;
+            _miniWindow.ExitRequested -= RequestExit;
             _miniWindow.CloseForExit();
             _miniWindow = null;
         }
@@ -195,6 +196,7 @@ internal sealed class AppSurfaceCoordinator : IDisposable
 
         _miniWindow = new MiniPlayerWindow(_player) { Owner = null };
         _miniWindow.RestoreRequested += ShowMain;
+        _miniWindow.ExitRequested += RequestExit;
         return _miniWindow;
     }
 

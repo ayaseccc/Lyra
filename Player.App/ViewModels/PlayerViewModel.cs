@@ -29,6 +29,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     private readonly DispatcherTimer _timer;
     private readonly LyricsService _lyrics;
     private readonly ChkszClient _client;
+    private readonly PlaybackContextWriter _playbackContextWriter = new();
 
     private bool _isSeeking;
     private int _activeSeekRevision;
@@ -142,6 +143,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(PositionText))]
     [NotifyPropertyChangedFor(nameof(DurationText))]
     [NotifyPropertyChangedFor(nameof(ProgressPercent))]
+    [NotifyPropertyChangedFor(nameof(CanGoPrevious))]
     private bool _hasTrack;
 
     [ObservableProperty]
@@ -176,13 +178,17 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(IsRepeatAllMode))]
     [NotifyPropertyChangedFor(nameof(IsRepeatOneMode))]
     [NotifyPropertyChangedFor(nameof(IsShuffleMode))]
+    [NotifyPropertyChangedFor(nameof(CanGoPrevious))]
     private PlayMode _playMode = PlayMode.RepeatAll;
 
     public string PositionText => FormatTime(HasTrack ? PositionSeconds : 0);
 
     public string DurationText => FormatTime(HasTrack ? DurationSeconds : 0);
 
-    public string VolumePercentText => ((int)Math.Round(Volume * 100)) + "%";
+    public bool CanGoPrevious => HasTrack && PlayMode != PlayMode.Shuffle;
+
+    public string VolumePercentText =>
+        ((int)Math.Round(VolumeScale.LinearToPointer(Volume) * 100)) + "%";
 
     /// <summary>播放进度百分比（迷你窗进度线用）。</summary>
     public double ProgressPercent
@@ -202,15 +208,14 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     public bool TryCopySpectrum(Span<float> destination) => _engine.TryCopySpectrum(destination);
 
     /// <summary>音量方块的亮起个数（0..10，UI-R1.5 反馈）。</summary>
-    public int VolumeLevel => (int)Math.Round(Volume * 10);
+    public int VolumeLevel => (int)Math.Round(VolumeScale.LinearToPointer(Volume) * 10);
 
     /// <summary>拖动音量时短暂显示的 dB 值：0dB=100%，-100dB=静音。</summary>
     public string VolumeDbText
     {
         get
         {
-            if (Volume <= 0.0001) return "-100 dB";
-            return Math.Max(-100, 20 * Math.Log10(Volume)).ToString("0") + " dB";
+            return VolumeScale.LinearToDecibels(Volume).ToString("0") + " dB";
         }
     }
 
@@ -223,7 +228,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     /// <summary>拖动音量方块（点击/滑动）：连续设音量并显示 dB 文字。</summary>
     public void SetVolumeFromDrag(double fraction)
     {
-        Volume = Math.Clamp(fraction, 0, 1);
+        Volume = VolumeScale.PointerToLinear(fraction);
         IsVolumeFeedbackVisible = true;
     }
 
@@ -604,7 +609,8 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
         var previousList = _list.CaptureSnapshot();
         _list.Replace(tracks, sourceName, startIndex);
-        PlayCurrentOrSkip(previousList);
+        if (PlayCurrentOrSkip(previousList))
+            PersistPlaybackContext();
     }
 
     public void PlayTrack(TrackRecord track, IReadOnlyList<TrackRecord> context, string sourceName)
@@ -622,10 +628,12 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         if (_list.Count == 0)
         {
             _list.Replace(tracks, sourceName, 0);
-            PlayCurrentOrSkip();
+            if (PlayCurrentOrSkip())
+                PersistPlaybackContext();
             return;
         }
         _list.InsertAfterCurrent(tracks);
+        PersistPlaybackContext();
 
         // 当前曲最后 5 秒内可能已经预载了旧的下一曲。插队后必须撤销，
         // 让下一次进度 tick 按更新后的队列重新预载，否则自然续播会跳过插队曲。
@@ -686,6 +694,10 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [RelayCommand]
     private void Previous()
     {
+        // Foobar-style random mode deliberately has no history traversal: every
+        // advance is a fresh random choice, so Previous is unavailable.
+        if (PlayMode == PlayMode.Shuffle) return;
+
         // 播放超过 3 秒时先回到本曲开头，这是常见播放器的习惯
         if (HasTrack && PositionSeconds > 3)
         {
@@ -851,11 +863,20 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
         // 记住上次播放的曲目（退出时随配置落盘，下次启动恢复，UI-R1.5 反馈）
         ConfigService.Current.Ui.LastTrackPath = track.Path;
+        ConfigService.Current.Ui.LastPlaybackIndex = _list.CurrentIndex;
 
         // P3：切歌即异步加载歌词（.lrc > 缓存 > 在线匹配），失败不影响播放
         _ = LoadTrackVisualsAsync(track);
         _ = Lyrics.LoadForTrackAsync(track);
     }
+
+    /// <summary>
+    /// 队列内容变化时才写独立侧车文件。LastTrackPath 仍随普通配置在退出时保存，
+    /// 因此切歌、音量和外观变化不会重复序列化整份播放上下文。
+    /// </summary>
+    private void PersistPlaybackContext()
+        => _playbackContextWriter.Queue(
+            PlaybackContextStore.Capture(_list.SourceName, _list.Items));
 
     private async Task LoadTrackVisualsAsync(TrackRecord track)
     {
@@ -908,14 +929,38 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         try { cts.Cancel(); } catch (ObjectDisposedException) { }
     }
 
-    /// <summary>启动时静默恢复上次播放的曲目：只加载信息与歌词，不发声（UI-R1.5 反馈）。</summary>
-    public void RestoreTrack(TrackRecord track)
+    /// <summary>
+    /// 启动时静默恢复上次播放的曲目：只加载信息与歌词，不发声（UI-R1.5 反馈）。
+    /// 当启动页是歌单/文件夹时一并恢复该页的播放上下文，否则下一首会因为
+    /// 旧实现把播放列表替换成单曲而无可播放。
+    /// </summary>
+    public void RestoreTrack(
+        TrackRecord track,
+        IEnumerable<TrackRecord>? playbackContext = null,
+        string sourceName = "上次播放",
+        int preferredIndex = -1)
     {
         try
         {
             if (!_engine.Open(track.Path)) return;
 
-            _list.Replace(new[] { track }, "上次播放", 0);
+            var context = playbackContext?.ToList();
+            var startIndex = context is not null
+                && preferredIndex >= 0
+                && preferredIndex < context.Count
+                && string.Equals(context[preferredIndex].Path, track.Path, StringComparison.OrdinalIgnoreCase)
+                    ? preferredIndex
+                    : context?.FindIndex(candidate =>
+                        (candidate.Id != 0 && candidate.Id == track.Id)
+                        || string.Equals(candidate.Path, track.Path, StringComparison.OrdinalIgnoreCase)) ?? -1;
+            if (context is null || context.Count == 0 || startIndex < 0)
+            {
+                context = new List<TrackRecord> { track };
+                startIndex = 0;
+                sourceName = "上次播放";
+            }
+
+            _list.Replace(context, string.IsNullOrWhiteSpace(sourceName) ? "上次播放" : sourceName, startIndex);
             ApplyTrackDisplay(track);
             OnPropertyChanged(nameof(CurrentTrack));
             StatusText = "已恢复上次播放的曲目";
@@ -1144,6 +1189,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         _engine.ErrorOccurred -= OnErrorOccurred;
 
         Lyrics.Dispose();
+        _playbackContextWriter.Dispose();
         ConfigService.Save();
     }
 }

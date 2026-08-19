@@ -471,7 +471,7 @@ public sealed class DownloadService : IDisposable
         // ③ 目标路径（模板）并写标签/封面/lrc
         try
         {
-            var relative = DownloadTemplater.Render(ConfigService.Current.Online.NamingTemplate,
+            var rendered = DownloadTemplater.Render(ConfigService.Current.Online.NamingTemplate,
                 new Dictionary<string, string>
                 {
                     ["AlbumArtist"] = item.Track.Artists.FirstOrDefault() ?? string.Empty,
@@ -479,6 +479,7 @@ public sealed class DownloadService : IDisposable
                     ["TrackNo"] = string.Empty,
                     ["Title"] = item.Track.Name
                 });
+            var relative = DownloadTemplater.FlattenRelativePath(rendered);
             var desiredTarget = DownloadTemplater.ResolveTargetPath(
                 dir,
                 relative.Trim(Path.DirectorySeparatorChar, Path.AltDirectorySeparatorChar, ' '),

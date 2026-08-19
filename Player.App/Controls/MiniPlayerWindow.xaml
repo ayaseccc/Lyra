@@ -4,26 +4,18 @@
         xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
         xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
         xmlns:controls="clr-namespace:Player.App.Controls"
-        xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework"
         Title="Lyra 迷你播放器" Icon="pack://application:,,,/Assets/lyra.ico"
         Width="340" Height="104" MinWidth="272" MaxWidth="680" MinHeight="83.2" MaxHeight="208"
         WindowStyle="None" ResizeMode="CanResize" Topmost="True" ShowInTaskbar="False"
-        WindowStartupLocation="Manual" AllowsTransparency="False"
-        Background="{DynamicResource MiniPlayerSurfaceBrush}"
+        WindowStartupLocation="Manual" AllowsTransparency="True"
+        Background="Transparent"
         FontFamily="Segoe UI, Microsoft YaHei UI" UseLayoutRounding="True" SnapsToDevicePixels="True"
         PreviewMouseLeftButtonDown="OnSurfacePointerDown"
         PreviewMouseMove="OnSurfacePointerMove"
         PreviewMouseLeftButtonUp="OnSurfacePointerUp"
+        PreviewMouseRightButtonDown="OnSurfaceRightButtonDown"
         LostMouseCapture="OnSurfaceLostMouseCapture"
         KeyDown="OnWindowKeyDown">
-    <shell:WindowChrome.WindowChrome>
-        <shell:WindowChrome CaptionHeight="0"
-                            ResizeBorderThickness="5"
-                            GlassFrameThickness="0"
-                            CornerRadius="12"
-                            UseAeroCaptionButtons="False" />
-    </shell:WindowChrome.WindowChrome>
-
     <Window.Resources>
         <Style x:Key="MiniActionButtonStyle" TargetType="Button">
             <Setter Property="Width" Value="30" />
@@ -161,13 +153,49 @@
     </Window.Resources>
 
     <Viewbox Stretch="Uniform" StretchDirection="Both">
-        <Border x:Name="BorderRoot"
-                Width="340" Height="104"
-                CornerRadius="12"
-                Background="{DynamicResource MiniPlayerSurfaceBrush}"
-                BorderBrush="{DynamicResource MiniPlayerBorderBrush}"
-                BorderThickness="1"
-                ClipToBounds="True">
+        <Grid x:Name="BorderRoot"
+              Width="340" Height="104"
+              Background="Transparent">
+            <Grid.Clip>
+                <RectangleGeometry Rect="0,0,340,104" RadiusX="12" RadiusY="12" />
+            </Grid.Clip>
+            <Grid.ContextMenu>
+                <ContextMenu x:Name="MiniContextMenu"
+                             Style="{DynamicResource MenuStyleOverride}"
+                             DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
+                             Opened="OnMiniContextMenuOpened">
+                    <MenuItem x:Name="PlayPauseMenuItem"
+                              Header="播放"
+                              Command="{Binding PlayPauseCommand}" />
+                    <MenuItem Header="上一首"
+                              IsEnabled="{Binding CanGoPrevious}"
+                              Command="{Binding PreviousCommand}" />
+                    <MenuItem Header="下一首"
+                              Command="{Binding NextCommand}" />
+                    <Separator />
+                    <MenuItem x:Name="ContentModeMenuItem"
+                              Header="切换到频谱"
+                              Click="OnContentModeMenuClick" />
+                    <MenuItem x:Name="TransparentBackgroundMenuItem"
+                              Header="透明背景"
+                              IsCheckable="True"
+                              Click="OnTransparentBackgroundMenuClick" />
+                    <MenuItem Header="恢复默认大小"
+                              Click="OnResetSizeMenuClick" />
+                    <Separator />
+                    <MenuItem Header="返回主界面"
+                              Click="OnRestoreMenuClick" />
+                    <MenuItem Header="退出 Lyra"
+                              Click="OnExitMenuClick" />
+                </ContextMenu>
+            </Grid.ContextMenu>
+
+            <Border x:Name="MiniBackdrop"
+                    CornerRadius="12"
+                    Background="{DynamicResource MiniPlayerSurfaceBrush}"
+                    BorderBrush="{DynamicResource MiniPlayerBorderBrush}"
+                    BorderThickness="1" />
+
             <Grid>
                 <Grid Margin="10,10,10,12">
                     <Grid.ColumnDefinitions>
@@ -249,20 +277,54 @@
                                   VerticalAlignment="Bottom"
                                   Visibility="Collapsed"
                                   ClipToBounds="True">
-                                <StackPanel VerticalAlignment="Bottom">
-                                    <TextBlock x:Name="MiniLyricPrimaryText"
-                                               Height="14"
-                                               FontSize="11.5"
-                                               FontWeight="SemiBold"
-                                               Foreground="{DynamicResource MiniPlayerTextBrush}"
-                                               TextWrapping="NoWrap" />
-                                    <TextBlock x:Name="MiniLyricSecondaryText"
-                                               Height="12"
-                                               Margin="0,1,0,0"
-                                               FontSize="9.5"
-                                               Foreground="{DynamicResource MiniPlayerSecondaryBrush}"
-                                               TextWrapping="NoWrap" />
-                                </StackPanel>
+                                <Grid x:Name="MiniLyricCompactView" VerticalAlignment="Bottom">
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="14" />
+                                        <RowDefinition Height="1" />
+                                        <RowDefinition Height="12" />
+                                    </Grid.RowDefinitions>
+                                    <Canvas x:Name="PrimaryLyricViewport" Height="14" ClipToBounds="True">
+                                        <TextBlock x:Name="MiniLyricPrimaryText"
+                                                   Canvas.Left="0" Canvas.Top="0"
+                                                   FontSize="11.5"
+                                                   FontWeight="SemiBold"
+                                                   LineHeight="14"
+                                                   LineStackingStrategy="BlockLineHeight"
+                                                   Foreground="{DynamicResource MiniPlayerTextBrush}"
+                                                   TextWrapping="NoWrap"
+                                                   TextTrimming="None">
+                                            <TextBlock.RenderTransform>
+                                                <TranslateTransform x:Name="PrimaryLyricTranslate" />
+                                            </TextBlock.RenderTransform>
+                                        </TextBlock>
+                                    </Canvas>
+                                    <Canvas x:Name="SecondaryLyricViewport"
+                                            Grid.Row="2" Height="12" ClipToBounds="True">
+                                        <TextBlock x:Name="MiniLyricSecondaryText"
+                                                   Canvas.Left="0" Canvas.Top="0"
+                                                   FontSize="9.5"
+                                                   LineHeight="12"
+                                                   LineStackingStrategy="BlockLineHeight"
+                                                   Foreground="{DynamicResource MiniPlayerSecondaryBrush}"
+                                                   TextWrapping="NoWrap"
+                                                   TextTrimming="None">
+                                            <TextBlock.RenderTransform>
+                                                <TranslateTransform x:Name="SecondaryLyricTranslate" />
+                                            </TextBlock.RenderTransform>
+                                        </TextBlock>
+                                    </Canvas>
+                                </Grid>
+                                <TextBlock x:Name="MiniLyricExpandedText"
+                                           Height="27"
+                                           VerticalAlignment="Bottom"
+                                           FontSize="11.5"
+                                           FontWeight="SemiBold"
+                                           LineHeight="13.5"
+                                           LineStackingStrategy="BlockLineHeight"
+                                           Foreground="{DynamicResource MiniPlayerTextBrush}"
+                                           TextWrapping="Wrap"
+                                           TextTrimming="None"
+                                           Visibility="Collapsed" />
                             </Grid>
                         </Grid>
 
@@ -278,6 +340,7 @@
                             <Button Style="{StaticResource MiniActionButtonStyle}"
                                     ToolTip="上一首"
                                     AutomationProperties.Name="上一首"
+                                    IsEnabled="{Binding CanGoPrevious}"
                                     Command="{Binding PreviousCommand}">
                                 <ui:SymbolIcon Symbol="Previous16" FontSize="16" />
                             </Button>
@@ -331,6 +394,6 @@
                         LargeChange="5" SmallChange="1"
                         AutomationProperties.Name="播放进度" />
             </Grid>
-        </Border>
+        </Grid>
     </Viewbox>
 </Window>

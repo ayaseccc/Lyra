@@ -7,6 +7,7 @@
                  xmlns:p="clr-namespace:Player.Core.Audio;assembly=Player.Core"
                  xmlns:ctrl="clr-namespace:Player.App.Controls"
                  Title="Lyra" Icon="pack://application:,,,/Assets/lyra.ico" Height="900" Width="1400" MinHeight="540" MinWidth="920"
+                 WindowStartupLocation="CenterScreen"
                  ExtendsContentIntoTitleBar="True"
                  WindowBackdropType="Mica"
                  WindowCornerPreference="Round"
@@ -20,7 +21,7 @@
     <ui:FluentWindow.TaskbarItemInfo>
         <TaskbarItemInfo x:Name="TaskbarInfo">
             <TaskbarItemInfo.ThumbButtonInfos>
-                <ThumbButtonInfo x:Name="TbPrev" Description="上一首" Command="{Binding Player.PreviousCommand}" IsEnabled="True" DismissWhenClicked="False">
+                <ThumbButtonInfo x:Name="TbPrev" Description="上一首" Command="{Binding Player.PreviousCommand}" IsEnabled="{Binding Player.CanGoPrevious}" DismissWhenClicked="False">
                     <ThumbButtonInfo.ImageSource>
                         <DrawingImage>
                             <DrawingImage.Drawing>
@@ -1706,7 +1707,7 @@
                             <ui:SymbolIcon Symbol="ArrowLeft24" FontSize="18" />
                         </Button>
                         <Button Style="{StaticResource TransportButtonStyle}" Margin="8,0,0,0"
-                                Command="{Binding PreviousCommand}" ToolTip="上一首">
+                                Command="{Binding PreviousCommand}" IsEnabled="{Binding CanGoPrevious}" ToolTip="上一首">
                             <ui:SymbolIcon Symbol="Previous24" FontSize="18" />
                         </Button>
                         <Button Style="{StaticResource PrimaryPlayButtonStyle}" Margin="8,0"

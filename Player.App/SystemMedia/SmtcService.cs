@@ -45,7 +45,7 @@ public sealed class SmtcService : IDisposable
         _smtc.IsPlayEnabled = true;
         _smtc.IsPauseEnabled = true;
         _smtc.IsNextEnabled = true;
-        _smtc.IsPreviousEnabled = true;
+        _smtc.IsPreviousEnabled = player.CanGoPrevious;
         _smtc.ButtonPressed += OnButtonPressed;
 
         _metadataDebounceTimer = new DispatcherTimer(
@@ -74,6 +74,9 @@ public sealed class SmtcService : IDisposable
             case nameof(PlayerViewModel.IsPlaying):
                 PushState();
                 break;
+            case nameof(PlayerViewModel.CanGoPrevious):
+                PushCapabilities();
+                break;
             case nameof(PlayerViewModel.HasTrack):
                 if (_player.HasTrack) PushAll();
                 else PushStopped();
@@ -95,8 +98,22 @@ public sealed class SmtcService : IDisposable
         }
 
         RequestMetadataPush();
+        PushCapabilities();
         PushState();
         PushPosition();
+    }
+
+    private void PushCapabilities()
+    {
+        if (_smtc is null || _disposed) return;
+        try
+        {
+            _smtc.IsPreviousEnabled = _player.CanGoPrevious;
+        }
+        catch (Exception ex)
+        {
+            Serilog.Log.Debug(ex, "SMTC 控制能力推送失败");
+        }
     }
 
     private void RequestMetadataPush()

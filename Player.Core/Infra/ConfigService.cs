@@ -94,7 +94,8 @@ public sealed class OnlineConfig
     /// <summary>上次下载使用的目录（下载时弹窗选择并记住）。</summary>
     public string DownloadDir { get; set; } = string.Empty;
 
-    public string NamingTemplate { get; set; } = "{AlbumArtist}/{Album}/{TrackNo} - {Title}";
+    /// <summary>下载文件名模板；下载始终直接落在所选目录，不创建歌手/专辑子目录。</summary>
+    public string NamingTemplate { get; set; } = "{Title}";
 
     /// <summary>通用 API 端点列表（实机反馈：可自行增删，每条可选 Key）。
     /// 运行规则：第 1 条（http 地址）供 GD 源搜索/试听/下载；第一条带 Key 的条目供网易云（ChKSz）源。
@@ -137,6 +138,9 @@ public sealed class UiConfig
 
     /// <summary>上次播放的曲目路径，启动时静默恢复信息与歌词。</summary>
     public string LastTrackPath { get; set; } = string.Empty;
+
+    /// <summary>上次曲目在真实播放上下文中的位置；用于含重复曲目的歌单。</summary>
+    public int LastPlaybackIndex { get; set; } = -1;
 
     /// <summary>窗口尺寸记忆（UI-R1.5 反馈）。0 表示未记录。</summary>
     public double WindowWidth { get; set; }
@@ -229,6 +233,9 @@ public sealed class UiConfig
 
     /// <summary>L3.2 迷你窗内容模式：Spectrum / Lyrics。空值默认歌词。</summary>
     public string MiniContentMode { get; set; } = string.Empty;
+
+    /// <summary>迷你悬浮窗仅隐藏背景卡片；文字、封面和控件保持不透明。</summary>
+    public bool MiniTransparentBackground { get; set; }
 
     /// <summary>旧版频谱开关，仅保留序列化兼容；新代码同时维护该值。</summary>
     public bool MiniSpectrum { get; set; }
@@ -354,6 +361,14 @@ public static class ConfigService
     internal static void MigrateLegacyOnlineFields(AppConfig config)
     {
         var online = config.Online;
+
+        // v1.0 默认模板曾隐式创建歌手/专辑目录。升级时把这个旧默认值
+        // 收敛到单文件名，避免老用户继续得到嵌套目录；自定义模板保持原样。
+        const string legacyDownloadTemplate = "{AlbumArtist}/{Album}/{TrackNo} - {Title}";
+        if (string.Equals(online.NamingTemplate?.Trim(), legacyDownloadTemplate,
+                StringComparison.Ordinal))
+            online.NamingTemplate = "{Title}";
+
         online.ApiEndpoints ??= new List<ApiEndpointConfig>();
         var legacyApiKey = config.ApiKey?.Trim() ?? string.Empty;
 
