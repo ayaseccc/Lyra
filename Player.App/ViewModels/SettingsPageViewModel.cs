@@ -170,6 +170,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
             string.Equals(a.Color, ui.CustomAccent, StringComparison.OrdinalIgnoreCase)) ?? AccentColors[0];
         _selectedOpacity = ui.SelectedOpacity;
         _hoverOpacity = ui.HoverOpacity;
+        _miniOpacity = ui.MiniOpacity;
         _classicMenus = ui.ClassicMenus;
         _selectedLyricSource = LyricSourceOptions.FirstOrDefault(o =>
             string.Equals(o.Value, ui.LyricDefaultPreference, StringComparison.OrdinalIgnoreCase))
@@ -222,9 +223,11 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
     public IReadOnlyList<SettingsSection> Sections { get; } = new[]
     {
         new SettingsSection("appearance", "外观"),
+        new SettingsSection("lyrics", "歌词"),
         new SettingsSection("playback", "播放"),
-        new SettingsSection("library", "资料库"),
+        new SettingsSection("library", "媒体库"),
         new SettingsSection("online", "在线"),
+        new SettingsSection("shortcuts", "快捷键"),
         new SettingsSection("system", "系统"),
     };
 
@@ -233,20 +236,26 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
 
     public bool IsAppearanceSec => SelectedSection?.Key == "appearance";
 
+    public bool IsLyricsSec => SelectedSection?.Key == "lyrics";
+
     public bool IsPlaybackSec => SelectedSection?.Key == "playback";
 
     public bool IsLibrarySec => SelectedSection?.Key == "library";
 
     public bool IsOnlineSec => SelectedSection?.Key == "online";
 
+    public bool IsShortcutsSec => SelectedSection?.Key == "shortcuts";
+
     public bool IsSystemSec => SelectedSection?.Key == "system";
 
     partial void OnSelectedSectionChanged(SettingsSection value)
     {
         OnPropertyChanged(nameof(IsAppearanceSec));
+        OnPropertyChanged(nameof(IsLyricsSec));
         OnPropertyChanged(nameof(IsPlaybackSec));
         OnPropertyChanged(nameof(IsLibrarySec));
         OnPropertyChanged(nameof(IsOnlineSec));
+        OnPropertyChanged(nameof(IsShortcutsSec));
         OnPropertyChanged(nameof(IsSystemSec));
     }
 
@@ -1091,6 +1100,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
         ui.CustomAccent = string.Empty;
         ui.SelectedOpacity = 0.12;
         ui.HoverOpacity = 0.07;
+        ui.MiniOpacity = 1.0;
         ui.Columns = TrackListPageViewModel.TrackColumns.Select(c => c.Key).ToList();
         ui.ColumnWidths.Clear();
         SaveConfigImmediately();
@@ -1116,6 +1126,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
                 string.Equals(a.Color, ui.CustomAccent, StringComparison.OrdinalIgnoreCase)) ?? AccentColors[0];
             SelectedOpacity = ui.SelectedOpacity;
             HoverOpacity = ui.HoverOpacity;
+            MiniOpacity = ui.MiniOpacity;
             ClassicMenus = ui.ClassicMenus;
             SelectedLyricSource = LyricSourceOptions.FirstOrDefault(o =>
                 string.Equals(o.Value, ui.LyricDefaultPreference, StringComparison.OrdinalIgnoreCase))
@@ -1232,6 +1243,17 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
         ConfigService.Current.Ui.HoverOpacity = value;
         ScheduleConfigSave();
         Theming.ThemeService.ApplyModeFromConfig();
+    }
+
+    /// <summary>迷你悬浮窗整体不透明度。不进主题管线，由悬浮窗自己应用。</summary>
+    [ObservableProperty]
+    private double _miniOpacity;
+
+    partial void OnMiniOpacityChanged(double value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.MiniOpacity = Math.Clamp(value, 0.35, 1.0);
+        ScheduleConfigSave();
     }
 
     private void ScheduleConfigSave()

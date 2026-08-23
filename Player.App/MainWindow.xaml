@@ -1,4 +1,4 @@
-<ui:FluentWindow x:Class="Player.App.MainWindow"
+﻿<ui:FluentWindow x:Class="Player.App.MainWindow"
                  xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
                  xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
                  xmlns:ui="http://schemas.lepo.co/wpfui/2022/xaml"
@@ -563,7 +563,8 @@
                     <TextBlock Text="{Binding Subtitle}" Style="{StaticResource SubTextStyle}" Margin="0,2,0,0" />
                 </StackPanel>
 
-                <!-- L3.0-3 左侧竖排窄导航（外观/播放/资料库/在线/系统五大区） -->
+                <!-- 左侧竖排窄导航。七大区：外观 / 歌词 / 播放 / 媒体库 / 在线 / 快捷键 / 系统。
+                     卡片在下方按同一顺序声明，源码位置与分页顺序一致。 -->
                 <Grid Grid.Row="2">
                     <Grid.ColumnDefinitions>
                         <ColumnDefinition Width="150" />
@@ -573,6 +574,7 @@
                              SelectedItem="{Binding SelectedSection}"
                              ItemContainerStyle="{StaticResource SimpleRowStyle}"
                              Background="Transparent" BorderThickness="0"
+                             VerticalAlignment="Top"
                              ScrollViewer.HorizontalScrollBarVisibility="Disabled">
                         <ListBox.ItemTemplate>
                             <DataTemplate>
@@ -582,7 +584,7 @@
                     </ListBox>
 
                 <ScrollViewer Grid.Column="1" VerticalScrollBarVisibility="Auto">
-                    <StackPanel MaxWidth="560" HorizontalAlignment="Left" Margin="14,0,0,0">
+                    <StackPanel MaxWidth="720" HorizontalAlignment="Left" Margin="14,0,0,0">
 
                         <!-- ===== 主题页（UI-R3） ===== -->
                         <Border Visibility="{Binding IsAppearanceSec, Converter={StaticResource BoolToVis}}"
@@ -742,8 +744,99 @@
                                     <TextBlock Text="悬停高亮" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <Slider Grid.Column="1" Minimum="0" Maximum="0.5" Value="{Binding HoverOpacity}" />
                                 </Grid>
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="48" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="悬浮窗不透明度" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}"
+                                               ToolTip="迷你悬浮窗的整体不透明度。若只想去掉背景卡片而保留文字清晰，请用悬浮窗右键菜单的「透明背景」。" />
+                                    <Slider Grid.Column="1" Minimum="0.35" Maximum="1" Value="{Binding MiniOpacity}" />
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding MiniOpacity, StringFormat={}{0:P0}}"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               TextAlignment="Right"
+                                               Style="{StaticResource SubTextStyle}" />
+                                </Grid>
                                 <ui:Button Content="恢复默认外观" Margin="0,14,0,0" Appearance="Secondary"
                                            Icon="{ui:SymbolIcon ArrowSync24}" Command="{Binding ResetAppearanceCommand}" />
+                            </StackPanel>
+                        </Border>
+
+                        <!-- ===== 歌词页（L1 第三步 + L1.1 打磨）=====
+                             独立分类：歌词字体/桌面歌词/来源偏好。原先挂在外观页且
+                             XAML 位置夹在在线页之后，改为自成一页并置于本段。 -->
+                        <Border Visibility="{Binding IsLyricsSec, Converter={StaticResource BoolToVis}}"
+                                CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
+                                BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
+                            <StackPanel>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="歌词字体" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding LyricFonts}"
+                                              SelectedItem="{Binding SelectedLyricFontFamily}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="字重" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding Weights}"
+                                              SelectedItem="{Binding SelectedLyricFontWeight}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="桌面歌词字号" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding LyricFontSizes}"
+                                              SelectedItem="{Binding SelectedLyricFontSize}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="歌词来源" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding LyricSourceOptions}"
+                                              SelectedItem="{Binding SelectedLyricSource}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="桌面歌词" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <StackPanel Grid.Column="1">
+                                        <ui:ToggleSwitch IsChecked="{Binding DesktopLyricsTwoLines}" Content="显示翻译（双行）" />
+                                        <ui:ToggleSwitch IsChecked="{Binding DesktopLyricsShowBackground}" Content="显示背景卡片" Margin="0,8,0,0" />
+                                    </StackPanel>
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="背景透明度" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding BgOpacities}"
+                                              SelectedItem="{Binding SelectedDesktopLyricsBgOpacity}" />
+                                </Grid>
+                                <Grid Margin="0,0,0,12">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="文字颜色" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
+                                    <ComboBox Grid.Column="1" ItemsSource="{Binding TextColors}"
+                                              SelectedItem="{Binding SelectedDesktopLyricsTextColor}" />
+                                </Grid>
                             </StackPanel>
                         </Border>
 
@@ -843,20 +936,29 @@
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
-                                <WrapPanel Margin="0,0,0,10">
-                                    <ui:Button Content="添加文件夹" Appearance="Primary"
+                                <!-- 等宽三列两行网格：原先用 WrapPanel，可用宽放不下六个按钮时
+                                     折成 4+2 且两行左对齐参差。UniformGrid 保证换行位置固定、
+                                     按钮等宽对齐，且宽度随卡片自适应。 -->
+                                <UniformGrid Rows="2" Columns="3" Margin="0,0,0,10">
+                                    <ui:Button Content="添加文件夹" Appearance="Primary" Margin="0,0,8,8"
+                                               HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                                Icon="{ui:SymbolIcon FolderOpen24}" Command="{Binding AddFolderCommand}" />
-                                    <ui:Button Content="导入 m3u8" Margin="8,0,0,0"
+                                    <ui:Button Content="导入 m3u8" Margin="0,0,8,8"
+                                               HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                                Icon="{ui:SymbolIcon ArrowImport24}" Command="{Binding ImportM3uCommand}" />
-                                    <ui:Button Content="移除所选" Margin="8,0,0,0"
+                                    <ui:Button Content="移除所选" Margin="0,0,0,8"
+                                               HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                                Icon="{ui:SymbolIcon Delete24}" Command="{Binding RemoveFolderCommand}" />
-                                    <ui:Button Content="重新扫描（全量）" Margin="8,0,0,0"
+                                    <ui:Button Content="重新扫描（全量）" Margin="0,0,8,0"
+                                               HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                                Icon="{ui:SymbolIcon ArrowSync24}" Command="{Binding RescanCommand}" />
-                                    <ui:Button Content="检查更新" Margin="8,0,0,0"
-                                               Command="{Binding IncrementalScanCommand}" />
-                                    <ui:Button Content="停止扫描" Margin="8,0,0,0"
+                                    <ui:Button Content="检查更新" Margin="0,0,8,0"
+                                               HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
+                                               Icon="{ui:SymbolIcon ArrowClockwise24}" Command="{Binding IncrementalScanCommand}" />
+                                    <ui:Button Content="停止扫描"
+                                               HorizontalAlignment="Stretch" HorizontalContentAlignment="Center"
                                                Icon="{ui:SymbolIcon Dismiss24}" Command="{Binding CancelScanCommand}" />
-                                </WrapPanel>
+                                </UniformGrid>
 
                                 <Border CornerRadius="6" Padding="4" MinHeight="80" MaxHeight="260"
                                         Background="{DynamicResource HoverBrush}">
@@ -904,8 +1006,11 @@
                                             <Grid Margin="0,5">
                                                 <Grid.ColumnDefinitions>
                                                     <ColumnDefinition Width="120" />
-                                                    <ColumnDefinition Width="*" />
-                                                    <ColumnDefinition Width="230" />
+                                                    <!-- 地址与 Key 按 2:1 弹性分配，不再用 230 硬占位：
+                                                         原先 120+230+34 固定占去约 408px，URL 框被压到约
+                                                         120px。改成比例列后地址框随卡片变宽而变宽。 -->
+                                                    <ColumnDefinition Width="2*" MinWidth="180" />
+                                                    <ColumnDefinition Width="1*" MinWidth="150" />
                                                     <ColumnDefinition Width="Auto" />
                                                 </Grid.ColumnDefinitions>
                                                 <ComboBox ItemsSource="{Binding DataContext.ApiKinds, RelativeSource={RelativeSource AncestorType=ItemsControl}}"
@@ -960,81 +1065,10 @@
                             </StackPanel>
                         </Border>
 
-                        <!-- ===== 歌词页（L1 第三步 + L1.1 打磨） ===== -->
-                        <Border Visibility="{Binding IsAppearanceSec, Converter={StaticResource BoolToVis}}" Margin="0,12,0,0"
-                                CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
-                                BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
-                            <StackPanel>
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="歌词字体" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ComboBox Grid.Column="1" ItemsSource="{Binding LyricFonts}"
-                                              SelectedItem="{Binding SelectedLyricFontFamily}" />
-                                </Grid>
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="字重" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ComboBox Grid.Column="1" ItemsSource="{Binding Weights}"
-                                              SelectedItem="{Binding SelectedLyricFontWeight}" />
-                                </Grid>
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="桌面歌词字号" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ComboBox Grid.Column="1" ItemsSource="{Binding LyricFontSizes}"
-                                              SelectedItem="{Binding SelectedLyricFontSize}" />
-                                </Grid>
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="歌词来源" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ComboBox Grid.Column="1" ItemsSource="{Binding LyricSourceOptions}"
-                                              SelectedItem="{Binding SelectedLyricSource}" />
-                                </Grid>
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="桌面歌词" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <StackPanel Grid.Column="1">
-                                        <ui:ToggleSwitch IsChecked="{Binding DesktopLyricsTwoLines}" Content="显示翻译（双行）" />
-                                        <ui:ToggleSwitch IsChecked="{Binding DesktopLyricsShowBackground}" Content="显示背景卡片" Margin="0,8,0,0" />
-                                    </StackPanel>
-                                </Grid>
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="背景透明度" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ComboBox Grid.Column="1" ItemsSource="{Binding BgOpacities}"
-                                              SelectedItem="{Binding SelectedDesktopLyricsBgOpacity}" />
-                                </Grid>
-                                <Grid Margin="0,0,0,12">
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="110" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <TextBlock Text="文字颜色" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
-                                    <ComboBox Grid.Column="1" ItemsSource="{Binding TextColors}"
-                                              SelectedItem="{Binding SelectedDesktopLyricsTextColor}" />
-                                </Grid>
-                            </StackPanel>
-                        </Border>
-
-                        <!-- ===== 快捷键页（L2：可改绑清单 + 全局热键） ===== -->
-                        <Border Visibility="{Binding IsSystemSec, Converter={StaticResource BoolToVis}}"
+                        <!-- ===== 快捷键页（L2：可改绑清单 + 全局热键）=====
+                             独立分类：原先与行为/关于同挤在系统页，16 行密集清单是该页
+                             过长的主因。 -->
+                        <Border Visibility="{Binding IsShortcutsSec, Converter={StaticResource BoolToVis}}"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>
@@ -1066,7 +1100,8 @@
                                     <TextBlock Text="全局热键" VerticalAlignment="Top" Style="{StaticResource TitleTextStyle}" />
                                     <StackPanel Grid.Column="1">
                                         <ui:ToggleSwitch IsChecked="{Binding GlobalHotkeysEnabled}" Content="启用（默认关闭）" />
-                                        <ItemsControl ItemsSource="{Binding GlobalHotkeyItems}" Focusable="False" Margin="0,6,0,0">
+                                        <ItemsControl ItemsSource="{Binding GlobalHotkeyItems}" Focusable="False" Margin="0,6,0,0"
+                                                      Visibility="{Binding GlobalHotkeysEnabled, Converter={StaticResource BoolToVis}}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate>
                                                     <Grid Margin="0,3">
@@ -1093,7 +1128,7 @@
                         </Border>
 
                         <!-- ===== 行为页（L2：关闭行为） ===== -->
-                        <Border Visibility="{Binding IsSystemSec, Converter={StaticResource BoolToVis}}" Margin="0,12,0,0"
+                        <Border Visibility="{Binding IsSystemSec, Converter={StaticResource BoolToVis}}"
                                 CornerRadius="8" Padding="16" Background="{DynamicResource SurfaceBrush}"
                                 BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="1">
                             <StackPanel>

@@ -1466,6 +1466,15 @@ public static class Program
 
     // ================= L3.1 个性化配置往返（JSON 序列化→反序列化） =================
 
+    /// <summary>跑一遍 ConfigService 的 UI 区间钳制，返回收敛后的悬浮窗不透明度。</summary>
+    private static double NormalizedMiniOpacity(double raw)
+    {
+        var probe = new Player.Core.Infra.AppConfig();
+        probe.Ui.MiniOpacity = raw;
+        ConfigService.NormalizeUiRanges(probe);
+        return probe.Ui.MiniOpacity;
+    }
+
     private static void RunL31ConfigRoundtrip()
     {
         Console.WriteLine();
@@ -1482,6 +1491,7 @@ public static class Program
             CustomAccent = ui.CustomAccent,
             SelectedOpacity = ui.SelectedOpacity,
             HoverOpacity = ui.HoverOpacity,
+            MiniOpacity = ui.MiniOpacity,
             MiniPos = ui.MiniPos,
             MiniWidth = ui.MiniWidth,
             MiniHeight = ui.MiniHeight,
@@ -1496,6 +1506,13 @@ public static class Program
         {
             Check("迷你窗透明背景默认关闭",
                 !new Player.Core.Infra.UiConfig().MiniTransparentBackground);
+            Check("迷你窗整体不透明度默认不透明",
+                Math.Abs(new Player.Core.Infra.UiConfig().MiniOpacity - 1.0) < 0.001);
+            Check("迷你窗整体不透明度下越界钳到 0.35", NormalizedMiniOpacity(0.05) == 0.35);
+            Check("迷你窗整体不透明度上越界钳到 1", NormalizedMiniOpacity(2.5) == 1.0);
+            Check("迷你窗整体不透明度 NaN 退回 1", NormalizedMiniOpacity(double.NaN) == 1.0);
+            Check("迷你窗整体不透明度合法值不被改动",
+                Math.Abs(NormalizedMiniOpacity(0.6) - 0.6) < 0.001);
             Check("迷你窗旧关闭值迁移为歌词",
                 MiniPlayerContentModePolicy.Resolve(new Player.Core.Infra.UiConfig()) == MiniPlayerContentMode.Lyrics);
             Check("迷你窗无显式模式时默认歌词",
@@ -1524,6 +1541,7 @@ public static class Program
             ui.CustomAccent = "#E91E63";
             ui.SelectedOpacity = 0.22;
             ui.HoverOpacity = 0.05;
+            ui.MiniOpacity = 0.6;
             ui.MiniPos = "v2|VEVTVA==|24.5|18";
             ui.MiniWidth = 510;
             ui.MiniHeight = 156;
@@ -1553,7 +1571,14 @@ public static class Program
             Check("迷你窗等比宽度往返", reloaded is not null && Math.Abs(reloaded.Ui.MiniWidth - 510) < 0.001);
             Check("迷你窗等比高度往返", reloaded is not null && Math.Abs(reloaded.Ui.MiniHeight - 156) < 0.001);
             Check("迷你窗透明背景往返", reloaded?.Ui.MiniTransparentBackground == true);
-            Check("迷你窗旧整体透明度字段已移除", !json.Contains("\"miniOpacity\"", StringComparison.OrdinalIgnoreCase));
+            // 整体不透明度曾被移除并加过“不得复现”断言，现按用户决定重新启用：
+            // 与透明背景正交共存，改为验证正常往返与读入钳制。
+            Check("迷你窗整体不透明度往返",
+                reloaded is not null && Math.Abs(reloaded.Ui.MiniOpacity - 0.6) < 0.001);
+            Check("迷你窗整体不透明度与透明背景可共存",
+                reloaded is not null
+                && reloaded.Ui.MiniTransparentBackground
+                && reloaded.Ui.MiniOpacity < 1.0);
             Check("迷你窗歌词模式往返", reloaded is not null
                 && MiniPlayerContentModePolicy.Resolve(reloaded.Ui) == MiniPlayerContentMode.Lyrics
                 && reloaded.Ui.MiniContentMode == MiniPlayerContentModePolicy.LyricsValue
@@ -1572,6 +1597,7 @@ public static class Program
             ui.CustomAccent = backup.CustomAccent;
             ui.SelectedOpacity = backup.SelectedOpacity;
             ui.HoverOpacity = backup.HoverOpacity;
+            ui.MiniOpacity = backup.MiniOpacity;
             ui.MiniPos = backup.MiniPos;
             ui.MiniWidth = backup.MiniWidth;
             ui.MiniHeight = backup.MiniHeight;

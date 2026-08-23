@@ -108,6 +108,8 @@ internal sealed class AppSurfaceCoordinator : IDisposable
         var mini = EnsureMiniWindow();
         try
         {
+            // 可能是在设置页改过不透明度之后才第一次显示，显示前补一次。
+            mini.ApplySettings();
             if (!mini.IsVisible)
                 mini.Show();
             mini.ActivateSurface();
@@ -149,6 +151,9 @@ internal sealed class AppSurfaceCoordinator : IDisposable
     }
 
     public void ApplyDesktopLyricsSettings() => _desktopLyricsWindow?.ApplySettings();
+
+    /// <summary>设置页改动悬浮窗不透明度后热更新；窗口尚未创建时无需处理。</summary>
+    public void ApplyMiniSettings() => _miniWindow?.ApplySettings();
 
     public void PrepareForExit()
     {

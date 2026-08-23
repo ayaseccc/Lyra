@@ -129,6 +129,7 @@ public partial class MiniPlayerWindow : Window
         _contentMode = MiniPlayerContentModePolicy.Resolve(ConfigService.Current.Ui);
         DataContext = player;
         ApplyBackgroundMode();
+        ApplySettings();
 
         _marqueeTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -563,6 +564,16 @@ public partial class MiniPlayerWindow : Window
         ApplyBackgroundMode();
     }
 
+    /// <summary>
+    /// 应用设置页里的悬浮窗整体不透明度。只改 Opacity，不触发布局、位置或尺寸变更，
+    /// 因此窗口已显示时也能热更新。与「透明背景」正交：后者只隐藏背景卡片。
+    /// </summary>
+    public void ApplySettings()
+    {
+        var opacity = ConfigService.Current.Ui.MiniOpacity;
+        Opacity = double.IsFinite(opacity) ? Math.Clamp(opacity, 0.35, 1.0) : 1.0;
+    }
+
     private void ApplyBackgroundMode()
     {
         var transparent = ConfigService.Current.Ui.MiniTransparentBackground;
@@ -745,7 +756,12 @@ public partial class MiniPlayerWindow : Window
         var hasSecondary = !string.IsNullOrWhiteSpace(MiniLyricSecondaryText.Text);
         var primaryFitsOneLine = MeasureLyricWidth(MiniLyricPrimaryText, PrimaryLyricFontSize)
                                  <= availableWidth;
-        var useExpandedPrimary = !primaryFitsOneLine
+
+        // Expanded 视图只有主行，没有副行元素。27px 的高度预算由 Viewbox 的固定设计
+        // 尺寸决定：主行折两行就要 13.5*2 = 27px，翻译再无处安放。所以有翻译时必须
+        // 留在 Compact —— 那里主行有水平跑马灯，长歌词照样能读全，翻译也不会丢。
+        var useExpandedPrimary = !hasSecondary
+                                 && !primaryFitsOneLine
                                  && FitsExpandedLyric(MiniLyricExpandedText, availableWidth);
 
         MiniLyricExpandedText.Visibility = useExpandedPrimary
@@ -762,9 +778,8 @@ public partial class MiniPlayerWindow : Window
             ? Visibility.Visible
             : Visibility.Collapsed;
 
-        // One line: original + translation/preview. Medium line: readable two-row
-        // primary. Extremely long line: fixed-size horizontal marquee, so the full
-        // text remains reachable instead of becoming tiny or being silently cut.
+        // 有翻译：主行 + 翻译两行，主行超宽时横向跑马灯。
+        // 无翻译且中等长度：折成两行完整显示。无翻译且极长：单行跑马灯。
         ResetLyricMarquee();
     }
 
