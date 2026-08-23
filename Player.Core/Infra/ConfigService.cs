@@ -217,6 +217,11 @@ public sealed class UiConfig
     /// <summary>悬停高亮透明度（0–1，默认 0.07）。</summary>
     public double HoverOpacity { get; set; } = 0.07;
 
+    /// <summary>迷你悬浮窗整体不透明度（0.35–1；默认 1 = 不透明）。
+    /// 与 <see cref="MiniTransparentBackground"/> 正交、可叠加：后者只隐藏背景卡片，
+    /// 本项对整窗（含文字、封面、控件）统一生效。</summary>
+    public double MiniOpacity { get; set; } = 1.0;
+
     /// <summary>曲目列表可见列顺序（Key 列表：Title/Artist/Album/Duration/Format/SampleRate/BitDepth/Bitrate）。</summary>
     public List<string> Columns { get; set; } = new() { "Title", "Artist", "Album", "Duration", "Format", "SampleRate", "BitDepth", "Bitrate" };
 
@@ -318,6 +323,7 @@ public static class ConfigService
             }
 
             MigrateLegacyOnlineFields(config);
+            NormalizeUiRanges(config);
 
             Log.Information("配置已加载：媒体库根目录 {Count} 个", config.Library.Folders.Count);
             return config;
@@ -358,6 +364,18 @@ public static class ConfigService
     }
 
     /// <summary>把旧的 gdApiUrl / chkszApiUrl / apiKey 配置迁移进通用 API 列表（2026-08-15 实机反馈）。</summary>
+    /// <summary>
+    /// 把有取值范围的 UI 字段收敛回合法区间。手改配置或旧版本遗留的越界 / NaN 值
+    /// 会造成不可用界面（例如悬浮窗整窗透明到看不见），读入时统一钳制。
+    /// </summary>
+    internal static void NormalizeUiRanges(AppConfig config)
+    {
+        var ui = config.Ui;
+        ui.MiniOpacity = double.IsFinite(ui.MiniOpacity)
+            ? Math.Clamp(ui.MiniOpacity, 0.35, 1.0)
+            : 1.0;
+    }
+
     internal static void MigrateLegacyOnlineFields(AppConfig config)
     {
         var online = config.Online;

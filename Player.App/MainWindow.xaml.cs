@@ -942,6 +942,11 @@ public partial class MainWindow : FluentWindow
                         _ = Player?.Lyrics.ReloadCurrentTrackAsync();
                         break;
 
+                    // 迷你悬浮窗整体不透明度：热更新，无需重开窗口
+                    case nameof(SettingsPageViewModel.MiniOpacity):
+                        _surfaces?.ApplyMiniSettings();
+                        break;
+
                     // 桌面歌词个性化（背景/透明度/文字颜色/字号/单双行）
                     case nameof(SettingsPageViewModel.SelectedLyricFontSize):
                     case nameof(SettingsPageViewModel.DesktopLyricsTwoLines):

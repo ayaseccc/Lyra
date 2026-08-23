@@ -744,6 +744,22 @@
                                     <TextBlock Text="悬停高亮" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}" />
                                     <Slider Grid.Column="1" Minimum="0" Maximum="0.5" Value="{Binding HoverOpacity}" />
                                 </Grid>
+                                <Grid Margin="0,12,0,0">
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="110" />
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="48" />
+                                    </Grid.ColumnDefinitions>
+                                    <TextBlock Text="悬浮窗不透明度" VerticalAlignment="Center" Style="{StaticResource TitleTextStyle}"
+                                               ToolTip="迷你悬浮窗的整体不透明度。若只想去掉背景卡片而保留文字清晰，请用悬浮窗右键菜单的「透明背景」。" />
+                                    <Slider Grid.Column="1" Minimum="0.35" Maximum="1" Value="{Binding MiniOpacity}" />
+                                    <TextBlock Grid.Column="2"
+                                               Text="{Binding MiniOpacity, StringFormat={}{0:P0}}"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center"
+                                               TextAlignment="Right"
+                                               Style="{StaticResource SubTextStyle}" />
+                                </Grid>
                                 <ui:Button Content="恢复默认外观" Margin="0,14,0,0" Appearance="Secondary"
                                            Icon="{ui:SymbolIcon ArrowSync24}" Command="{Binding ResetAppearanceCommand}" />
                             </StackPanel>

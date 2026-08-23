@@ -129,6 +129,7 @@ public partial class MiniPlayerWindow : Window
         _contentMode = MiniPlayerContentModePolicy.Resolve(ConfigService.Current.Ui);
         DataContext = player;
         ApplyBackgroundMode();
+        ApplySettings();
 
         _marqueeTimer = new DispatcherTimer(DispatcherPriority.Background)
         {
@@ -561,6 +562,16 @@ public partial class MiniPlayerWindow : Window
         ui.MiniTransparentBackground = !ui.MiniTransparentBackground;
         ConfigService.Save();
         ApplyBackgroundMode();
+    }
+
+    /// <summary>
+    /// 应用设置页里的悬浮窗整体不透明度。只改 Opacity，不触发布局、位置或尺寸变更，
+    /// 因此窗口已显示时也能热更新。与「透明背景」正交：后者只隐藏背景卡片。
+    /// </summary>
+    public void ApplySettings()
+    {
+        var opacity = ConfigService.Current.Ui.MiniOpacity;
+        Opacity = double.IsFinite(opacity) ? Math.Clamp(opacity, 0.35, 1.0) : 1.0;
     }
 
     private void ApplyBackgroundMode()

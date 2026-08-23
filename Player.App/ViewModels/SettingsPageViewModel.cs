@@ -170,6 +170,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
             string.Equals(a.Color, ui.CustomAccent, StringComparison.OrdinalIgnoreCase)) ?? AccentColors[0];
         _selectedOpacity = ui.SelectedOpacity;
         _hoverOpacity = ui.HoverOpacity;
+        _miniOpacity = ui.MiniOpacity;
         _classicMenus = ui.ClassicMenus;
         _selectedLyricSource = LyricSourceOptions.FirstOrDefault(o =>
             string.Equals(o.Value, ui.LyricDefaultPreference, StringComparison.OrdinalIgnoreCase))
@@ -1099,6 +1100,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
         ui.CustomAccent = string.Empty;
         ui.SelectedOpacity = 0.12;
         ui.HoverOpacity = 0.07;
+        ui.MiniOpacity = 1.0;
         ui.Columns = TrackListPageViewModel.TrackColumns.Select(c => c.Key).ToList();
         ui.ColumnWidths.Clear();
         SaveConfigImmediately();
@@ -1124,6 +1126,7 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
                 string.Equals(a.Color, ui.CustomAccent, StringComparison.OrdinalIgnoreCase)) ?? AccentColors[0];
             SelectedOpacity = ui.SelectedOpacity;
             HoverOpacity = ui.HoverOpacity;
+            MiniOpacity = ui.MiniOpacity;
             ClassicMenus = ui.ClassicMenus;
             SelectedLyricSource = LyricSourceOptions.FirstOrDefault(o =>
                 string.Equals(o.Value, ui.LyricDefaultPreference, StringComparison.OrdinalIgnoreCase))
@@ -1240,6 +1243,17 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
         ConfigService.Current.Ui.HoverOpacity = value;
         ScheduleConfigSave();
         Theming.ThemeService.ApplyModeFromConfig();
+    }
+
+    /// <summary>迷你悬浮窗整体不透明度。不进主题管线，由悬浮窗自己应用。</summary>
+    [ObservableProperty]
+    private double _miniOpacity;
+
+    partial void OnMiniOpacityChanged(double value)
+    {
+        if (_loading) return;
+        ConfigService.Current.Ui.MiniOpacity = Math.Clamp(value, 0.35, 1.0);
+        ScheduleConfigSave();
     }
 
     private void ScheduleConfigSave()
