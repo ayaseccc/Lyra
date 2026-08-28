@@ -992,6 +992,20 @@
                                         </ListBox.ItemTemplate>
                                     </ListBox>
                                 </Border>
+
+                                <!-- 侧边栏显隐（实机反馈：媒体库项太多可自定义）。
+                                     全部歌曲不提供开关：空曲库引导/扫描刷新依赖它。 -->
+                                <TextBlock Text="侧边栏显示项" Margin="0,16,0,0" Style="{StaticResource TitleTextStyle}" />
+                                <TextBlock Text="关闭不需要的入口，侧边栏更精简；全部歌曲始终显示"
+                                           Margin="0,4,0,8" Style="{StaticResource SubTextStyle}" />
+                                <UniformGrid Columns="2">
+                                    <ui:ToggleSwitch IsChecked="{Binding SidebarAlbums}" Content="专辑" Margin="0,0,12,6" />
+                                    <ui:ToggleSwitch IsChecked="{Binding SidebarArtists}" Content="艺术家" Margin="0,0,0,6" />
+                                    <ui:ToggleSwitch IsChecked="{Binding SidebarMostPlayed}" Content="最常听" Margin="0,0,12,0" />
+                                    <ui:ToggleSwitch IsChecked="{Binding SidebarRecentlyPlayed}" Content="最近播放" Margin="0,0,0,0" />
+                                    <ui:ToggleSwitch IsChecked="{Binding SidebarOnlineSearch}" Content="在线搜索" Margin="0,8,12,0" />
+                                    <ui:ToggleSwitch IsChecked="{Binding SidebarDownloads}" Content="下载管理" Margin="0,8,0,0" />
+                                </UniformGrid>
                             </StackPanel>
                         </Border>
 

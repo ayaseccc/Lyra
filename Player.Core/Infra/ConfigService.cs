@@ -243,6 +243,11 @@ public sealed class UiConfig
     /// <summary>曲目列表可见列顺序（Key 列表：Title/Artist/Album/Duration/Format/SampleRate/BitDepth/Bitrate）。</summary>
     public List<string> Columns { get; set; } = new() { "Title", "Artist", "Album", "Duration", "Format", "SampleRate", "BitDepth", "Bitrate" };
 
+    /// <summary>侧边栏隐藏项（黑名单式，默认全显示，老配置无此字段时自然全显）。
+    /// 合法 key：AllTracks/Albums/Artists/MostPlayed/RecentlyPlayed/OnlineSearch/Downloads。
+    /// 全部歌曲不可隐藏（库空引导依赖它）；其余项隐藏后仍可通过设置页找回。</summary>
+    public List<string> SidebarHiddenItems { get; set; } = new();
+
     /// <summary>P6：首次引导最后选择的曲库目录（引导/浏览框默认值）。</summary>
     public string LastSelectedLibraryFolder { get; set; } = string.Empty;
 

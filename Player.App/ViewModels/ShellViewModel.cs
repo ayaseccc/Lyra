@@ -30,6 +30,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
 
     private bool _suppressNavigation;
 
+    /// <summary>导航重建节流：狂点侧边栏时合并成最后一次（实机反馈：快速多次切换
+    /// 最常听/最近播放/艺术家会卡死）。每次导航都在 UI 线程同步做整套重建（查库→
+    /// ObservableCollection→CollectionView→分组→整页视觉树），连续点击会叠爆。
+    /// 350ms 内的重复导航只执行最后一次；停止狂点后自然恢复。0 = 无待处理任务。</summary>
+    private DispatcherTimer? _navThrottle;
+    private NavItemViewModel? _pendingNav;
+    private NavItemViewModel? _lastNavigatedNav;
+
     /// <summary>P4 在线源注册表（在线搜索页/试听用）。</summary>
     private readonly Player.Core.Online.OnlineSources? _onlineSources;
 
@@ -254,6 +262,8 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     private void RebuildNavigation(bool libraryChanged = false)
     {
         var previousKey = NavKey(SelectedNav);
+        var hidden = ConfigService.Current.Ui.SidebarHiddenItems;
+        bool IsHidden(string key) => hidden.Contains(key);
 
         _suppressNavigation = true;
         NavItems.Clear();
@@ -266,37 +276,56 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             AddToolTip = "添加音乐文件夹",
             Command = new AsyncRelayCommand(AddLibraryFolderAsync)
         });
+        // 全部歌曲不参与隐藏：空曲库引导/扫描刷新都依赖它存在
         NavItems.Add(new NavItemViewModel
         {
             Kind = NavKind.AllTracks, Title = "全部歌曲", Icon = SymbolRegular.MusicNote224,
             CountText = _library.Tracks.Count.ToString()
         });
-        NavItems.Add(new NavItemViewModel
+        if (!IsHidden("Albums"))
         {
-            Kind = NavKind.Albums, Title = "专辑", Icon = SymbolRegular.Album24,
-            CountText = _library.GetAlbums().Count.ToString()
-        });
-        NavItems.Add(new NavItemViewModel
+            NavItems.Add(new NavItemViewModel
+            {
+                Kind = NavKind.Albums, Title = "专辑", Icon = SymbolRegular.Album24,
+                CountText = _library.GetAlbums().Count.ToString()
+            });
+        }
+        if (!IsHidden("Artists"))
         {
-            Kind = NavKind.Artists, Title = "艺术家", Icon = SymbolRegular.Person24,
-            CountText = _library.GetArtists().Count.ToString()
-        });
-        NavItems.Add(new NavItemViewModel
+            NavItems.Add(new NavItemViewModel
+            {
+                Kind = NavKind.Artists, Title = "艺术家", Icon = SymbolRegular.Person24,
+                CountText = _library.GetArtists().Count.ToString()
+            });
+        }
+        if (!IsHidden("MostPlayed"))
         {
-            Kind = NavKind.MostPlayed, Title = "最常听", Icon = SymbolRegular.History24
-        });
-        NavItems.Add(new NavItemViewModel
+            NavItems.Add(new NavItemViewModel
+            {
+                Kind = NavKind.MostPlayed, Title = "最常听", Icon = SymbolRegular.History24
+            });
+        }
+        if (!IsHidden("RecentlyPlayed"))
         {
-            Kind = NavKind.RecentlyPlayed, Title = "最近播放", Icon = SymbolRegular.Clock24
-        });
-        NavItems.Add(new NavItemViewModel
+            NavItems.Add(new NavItemViewModel
+            {
+                Kind = NavKind.RecentlyPlayed, Title = "最近播放", Icon = SymbolRegular.Clock24
+            });
+        }
+        if (!IsHidden("OnlineSearch"))
         {
-            Kind = NavKind.OnlineSearch, Title = "在线搜索", Icon = SymbolRegular.Cloud24
-        });
-        NavItems.Add(new NavItemViewModel
+            NavItems.Add(new NavItemViewModel
+            {
+                Kind = NavKind.OnlineSearch, Title = "在线搜索", Icon = SymbolRegular.Cloud24
+            });
+        }
+        if (!IsHidden("Downloads"))
         {
-            Kind = NavKind.Downloads, Title = "下载管理", Icon = SymbolRegular.ArrowDownload24
-        });
+            NavItems.Add(new NavItemViewModel
+            {
+                Kind = NavKind.Downloads, Title = "下载管理", Icon = SymbolRegular.ArrowDownload24
+            });
+        }
 
         var manual = _playlists.Playlists;
         NavItems.Add(new NavItemViewModel
@@ -390,13 +419,45 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     partial void OnSelectedNavChanged(NavItemViewModel? value)
     {
         if (_suppressNavigation || value is null || value.IsHeader) return;
-        Navigate(value);
+        QueueNavigation(value);
+    }
+
+    /// <summary>节流后的导航入口：350ms 内的多次点击合并到最后一次。</summary>
+    private void QueueNavigation(NavItemViewModel nav)
+    {
+        // 同一项重复点击且已在该页：不重建（重建会丢滚动位置/多选/列排序，
+        // 而且统计数据也不会在几百毫秒内变化，重进无意义）
+        if (_lastNavigatedNav is not null
+            && ReferenceEquals(_lastNavigatedNav, nav)
+            && CurrentPage is not null)
+        {
+            return;
+        }
+
+        _pendingNav = nav;
+        if (_navThrottle is null)
+        {
+            _navThrottle = new DispatcherTimer(DispatcherPriority.Input)
+            {
+                Interval = TimeSpan.FromMilliseconds(350)
+            };
+            _navThrottle.Tick += (_, _) =>
+            {
+                _navThrottle!.Stop();
+                var target = _pendingNav;
+                _pendingNav = null;
+                if (target is not null && !_suppressNavigation) Navigate(target);
+            };
+        }
+        _navThrottle.Stop();
+        _navThrottle.Start();
     }
 
     private void Navigate(NavItemViewModel nav, bool isRefresh = false)
     {
         // 记下当前页面，退出时落盘、启动时恢复（UI-R1.5 反馈）
         ConfigService.Current.Ui.LastNav = NavKey(nav) ?? string.Empty;
+        _lastNavigatedNav = nav;
 
         // 只有"扫描完成后刷新当前页"才把过滤词带过去；用户主动切页时不该继承上一页的过滤
         var keepFilter = isRefresh
@@ -408,7 +469,6 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
             case NavKind.AllTracks:
                 CurrentPage = CreateTrackPage("全部歌曲", _library.Tracks, "全部歌曲", filter: keepFilter);
                 break;
-
             case NavKind.Albums:
                 CurrentPage = new AlbumPageViewModel(_library.GetAlbums(), OpenAlbum, PlayAlbum);
                 break;
@@ -650,8 +710,11 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         // 设置页不在左侧栏列表里，进入时清空选中项；记住来处，Esc 可以退回
         _navBeforeSettings = SelectedNav;
         SelectedNav = null;
-        CurrentPage = new SettingsPageViewModel(_library, _engine, ScanAsync, _client,
+        var settings = new SettingsPageViewModel(_library, _engine, ScanAsync, _client,
             () => ImportM3uCommand.Execute(null));
+        // 侧边栏显隐开关变化 → 立即重建导航（否则拨了开关要等下次导航才生效）
+        settings.SidebarItemsChanged += () => _dispatcher.BeginInvoke(() => RebuildNavigation());
+        CurrentPage = settings;
     }
 
     /// <summary>Esc 退出设置页（UI-R2 bug 修复）：回到进入设置前的页面。</summary>
@@ -1128,6 +1191,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         Player.PropertyChanged -= OnPlayerPropertyChanged;
         Player.LocateRequested -= OnPlayerLocateRequested;
         _statusTimer?.Stop();
+        _navThrottle?.Stop();
+        _navThrottle = null;
+        _pendingNav = null;
         if (CurrentPage is IDisposable disposable) disposable.Dispose();
     }
 }

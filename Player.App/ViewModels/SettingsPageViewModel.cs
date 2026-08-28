@@ -172,6 +172,13 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
         _hoverOpacity = ui.HoverOpacity;
         _miniOpacity = ui.MiniOpacity;
         _classicMenus = ui.ClassicMenus;
+        // 侧边栏显隐（黑名单式，默认全显）
+        _sidebarAlbums = !ui.SidebarHiddenItems.Contains("Albums");
+        _sidebarArtists = !ui.SidebarHiddenItems.Contains("Artists");
+        _sidebarMostPlayed = !ui.SidebarHiddenItems.Contains("MostPlayed");
+        _sidebarRecentlyPlayed = !ui.SidebarHiddenItems.Contains("RecentlyPlayed");
+        _sidebarOnlineSearch = !ui.SidebarHiddenItems.Contains("OnlineSearch");
+        _sidebarDownloads = !ui.SidebarHiddenItems.Contains("Downloads");
         _selectedLyricSource = LyricSourceOptions.FirstOrDefault(o =>
             string.Equals(o.Value, ui.LyricDefaultPreference, StringComparison.OrdinalIgnoreCase))
             ?? LyricSourceOptions[3];
@@ -906,6 +913,71 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
         ConfigService.Current.Ui.ClassicMenus = value;
         ConfigService.Save();
         Theming.ThemeService.ApplyUiPersonalization();
+    }
+
+    // ---- 侧边栏显隐（实机反馈：媒体库选项太多，可自定义隐藏） ----
+
+    /// <summary>开关变化 → 重写黑名单并通知 Shell 重建侧边栏。</summary>
+    public event Action? SidebarItemsChanged;
+
+    private void SetSidebarItem(string key, bool visible)
+    {
+        var hidden = ConfigService.Current.Ui.SidebarHiddenItems;
+        var wasHidden = hidden.Contains(key);
+        if (visible == !wasHidden) return;   // 没变化不触发
+
+        if (visible) hidden.Remove(key);
+        else if (!hidden.Contains(key)) hidden.Add(key);
+        ConfigService.Save();
+        SidebarItemsChanged?.Invoke();
+    }
+
+    [ObservableProperty]
+    private bool _sidebarAlbums;
+    partial void OnSidebarAlbumsChanged(bool value)
+    {
+        if (_loading) return;
+        SetSidebarItem("Albums", value);
+    }
+
+    [ObservableProperty]
+    private bool _sidebarArtists;
+    partial void OnSidebarArtistsChanged(bool value)
+    {
+        if (_loading) return;
+        SetSidebarItem("Artists", value);
+    }
+
+    [ObservableProperty]
+    private bool _sidebarMostPlayed;
+    partial void OnSidebarMostPlayedChanged(bool value)
+    {
+        if (_loading) return;
+        SetSidebarItem("MostPlayed", value);
+    }
+
+    [ObservableProperty]
+    private bool _sidebarRecentlyPlayed;
+    partial void OnSidebarRecentlyPlayedChanged(bool value)
+    {
+        if (_loading) return;
+        SetSidebarItem("RecentlyPlayed", value);
+    }
+
+    [ObservableProperty]
+    private bool _sidebarOnlineSearch;
+    partial void OnSidebarOnlineSearchChanged(bool value)
+    {
+        if (_loading) return;
+        SetSidebarItem("OnlineSearch", value);
+    }
+
+    [ObservableProperty]
+    private bool _sidebarDownloads;
+    partial void OnSidebarDownloadsChanged(bool value)
+    {
+        if (_loading) return;
+        SetSidebarItem("Downloads", value);
     }
 
     /// <summary>下一个 UTC+8 零点（额度重置时刻）。</summary>
