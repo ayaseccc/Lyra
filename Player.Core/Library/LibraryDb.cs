@@ -61,6 +61,48 @@ public static class LibraryDb
         return map;
     }
 
+    /// <summary>最常听 Top N（play_count 降序，次数为零不入选；小曲库取 50 已足够一屏）。</summary>
+    public static List<TrackRecord> GetMostPlayed(int limit = 50)
+    {
+        if (limit <= 0) limit = 50;
+        var list = new List<TrackRecord>(capacity: limit);
+
+        using var connection = Db.Open();
+        using var command = connection.CreateCommand();
+        // play_count=0 一律不入选：没听过的歌出现在「最常听」里语义不对；
+        // 同次数按最近播放在前，避免榜单长期僵住。
+        command.CommandText =
+            $"SELECT {TrackColumns} FROM tracks WHERE play_count > 0 " +
+            "ORDER BY play_count DESC, last_played DESC LIMIT @limit;";
+        command.Parameters.AddWithValue("@limit", limit);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            list.Add(ReadTrack(reader));
+
+        return list;
+    }
+
+    /// <summary>最近播放 N 首（last_played 降序；只包含真听过的，不含从未播放的）。</summary>
+    public static List<TrackRecord> GetRecentlyPlayed(int limit = 50)
+    {
+        if (limit <= 0) limit = 50;
+        var list = new List<TrackRecord>(capacity: limit);
+
+        using var connection = Db.Open();
+        using var command = connection.CreateCommand();
+        command.CommandText =
+            $"SELECT {TrackColumns} FROM tracks WHERE last_played IS NOT NULL " +
+            "ORDER BY last_played DESC LIMIT @limit;";
+        command.Parameters.AddWithValue("@limit", limit);
+
+        using var reader = command.ExecuteReader();
+        while (reader.Read())
+            list.Add(ReadTrack(reader));
+
+        return list;
+    }
+
     /// <summary>批量写入（新增或更新）。一次事务 + 预编译语句，万级也是秒级。</summary>
     public static void UpsertTracks(IReadOnlyCollection<TrackRecord> tracks)
     {

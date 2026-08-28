@@ -283,6 +283,14 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         });
         NavItems.Add(new NavItemViewModel
         {
+            Kind = NavKind.MostPlayed, Title = "最常听", Icon = SymbolRegular.History24
+        });
+        NavItems.Add(new NavItemViewModel
+        {
+            Kind = NavKind.RecentlyPlayed, Title = "最近播放", Icon = SymbolRegular.Clock24
+        });
+        NavItems.Add(new NavItemViewModel
+        {
             Kind = NavKind.OnlineSearch, Title = "在线搜索", Icon = SymbolRegular.Cloud24
         });
         NavItems.Add(new NavItemViewModel
@@ -409,6 +417,21 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
                 CurrentPage = new ArtistPageViewModel(_library.GetArtists(), OpenArtist, PlayArtist);
                 break;
 
+            case NavKind.MostPlayed:
+            {
+                // 进页现查：正在听的歌下次进页自然上榜，不做实时监听（300 首小库也够快）
+                var mostPlayed = LibraryDb.GetMostPlayed(50);
+                CurrentPage = CreateTrackPage("最常听", mostPlayed, "最常听", filter: keepFilter, isStatsPage: true);
+                break;
+            }
+
+            case NavKind.RecentlyPlayed:
+            {
+                var recent = LibraryDb.GetRecentlyPlayed(50);
+                CurrentPage = CreateTrackPage("最近播放", recent, "最近播放", filter: keepFilter, isStatsPage: true);
+                break;
+            }
+
             case NavKind.Playlist:
             {
                 var playlistId = nav.PlaylistId;
@@ -460,10 +483,12 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         long? playlistId = null,
         string? backTitle = null,
         IRelayCommand? backCommand = null,
-        string filter = "")
+        string filter = "",
+        bool isStatsPage = false)
     {
         var page = new TrackListPageViewModel(title, tracks, sourceName, RequestPlay)
         {
+            IsStatsPage = isStatsPage,
             PlaylistId = playlistId,
             BackTitle = backTitle,
             BackCommand = backCommand,

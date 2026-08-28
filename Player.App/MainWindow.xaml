@@ -415,6 +415,17 @@
                                    Command="{Binding AddLibraryFolderCommand}" />
                     </StackPanel>
 
+                    <!-- 统计页（最常听/最近播放）空状态：还没听过任何歌 -->
+                    <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
+                                Visibility="{Binding ShowStatsEmptyState, Converter={StaticResource BoolToVis}}">
+                        <ui:SymbolIcon IsHitTestVisible="False" Symbol="MusicNote224" FontSize="42" HorizontalAlignment="Center"
+                                       Foreground="{DynamicResource TrackEmptyBrush}" />
+                        <TextBlock IsHitTestVisible="False" Text="还没有可统计的播放" Margin="0,14,0,0" HorizontalAlignment="Center"
+                                   Style="{StaticResource TitleTextStyle}" />
+                        <TextBlock IsHitTestVisible="False" Text="多听几首，这里就会出现你的最常听和最近播放" Margin="0,6,0,0"
+                                   HorizontalAlignment="Center" Style="{StaticResource SubTextStyle}" />
+                    </StackPanel>
+
                     <!-- 歌单页空状态 -->
                     <StackPanel HorizontalAlignment="Center" VerticalAlignment="Center"
                                 Visibility="{Binding ShowPlaylistEmptyState, Converter={StaticResource BoolToVis}}">

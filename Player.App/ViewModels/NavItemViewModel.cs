@@ -10,6 +10,8 @@ public enum NavKind
     AllTracks,
     Albums,
     Artists,
+    MostPlayed,
+    RecentlyPlayed,
     Playlist,
     FolderPlaylist,
     OnlineSearch,

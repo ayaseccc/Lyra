@@ -97,8 +97,12 @@ public static class Program
                 RunAudioConcurrencyChecks();
                 break;
 
+            case "stats":
+                RunStatsChecks();
+                break;
+
             default:
-                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme / shortcuts / gdprobe / concurrency）");
+                Console.WriteLine($"未知模式：{mode}（可用：seamless / library / lyrics / grouping / theme / shortcuts / gdprobe / concurrency / stats）");
                 return 2;
         }
 
@@ -937,6 +941,12 @@ public static class Program
     {
         if (ok) _passed++; else _failed++;
         Console.WriteLine($"  {(ok ? "✓" : "✗ 失败")}  {what}");
+    }
+
+    private static void Check(string what, bool ok, string detail)
+    {
+        if (ok) _passed++; else _failed++;
+        Console.WriteLine($"  {(ok ? "✓" : "✗ 失败")}  {what}（{detail}）");
     }
 
     private static void RunAtomicLrcWriteChecks()
@@ -1845,6 +1855,98 @@ public static class Program
     }
 
     /// <summary>模拟断网：网络层失败必须降级为 OnlineResult.Fail，绝不能抛异常（P4 验收：断网本地零影响）。</summary>
+    // ================= 播放统计页（最常听/最近播放） =================
+
+    /// <summary>
+    /// GetMostPlayed / GetRecentlyPlayed 的排序、过滤与上限逻辑。
+    /// Db.Initialize 可注入临时库路径，不碰真实 data/。
+    /// </summary>
+    private static void RunStatsChecks()
+    {
+        Console.WriteLine("=== 播放统计页：查询排序与过滤 ===");
+
+        var tempDir = Path.Combine(Path.GetTempPath(), "lyra-stats-" + Guid.NewGuid().ToString("N")[..8]);
+        Directory.CreateDirectory(tempDir);
+        try
+        {
+            var dbPath = Path.Combine(tempDir, "library.db");
+            Db.Initialize(dbPath);
+
+            // 5 首曲：播放次数/最近播放各不相同；a 零次、e 零次，用于验证过滤
+            var t0 = DateTime.UtcNow.Ticks;
+            var seed = new List<Player.Core.Library.TrackRecord>
+            {
+                NewTrack("a"),
+                NewTrack("b"),
+                NewTrack("c"),
+                NewTrack("d"),
+                NewTrack("e"),
+            };
+            Player.Core.Library.LibraryDb.UpsertTracks(seed);
+
+            // UpsertTracks 是 INSERT OR REPLACE，自增 id 要重读；用 path 找回真实 id。
+            var reloaded = Player.Core.Library.LibraryDb.GetAllTracks();
+            var byTitle = reloaded.ToDictionary(t => t.Title, t => t.Id);
+            Check("统计模式：种子入库（5 首）", byTitle.Count == 5);
+
+            // IncrementPlayCount 模拟真实播放（b=3 次、c=7 次、d=3 次、e=1 次；a 不播）。
+            // 同次数 b/d 用不同节奏：d 最后播 → last_played 更近。
+            for (var i = 0; i < 3; i++) Player.Core.Library.LibraryDb.IncrementPlayCount(byTitle["b"]);
+            for (var i = 0; i < 7; i++) Player.Core.Library.LibraryDb.IncrementPlayCount(byTitle["c"]);
+            for (var i = 0; i < 3; i++) Player.Core.Library.LibraryDb.IncrementPlayCount(byTitle["d"]);
+            Player.Core.Library.LibraryDb.IncrementPlayCount(byTitle["e"]);
+            Thread.Sleep(1100);   // last_played 是秒级时间戳，保证 b/c/d/e 可区分
+            Player.Core.Library.LibraryDb.IncrementPlayCount(byTitle["c"]);   // c 最近也在播： 8 次
+            Thread.Sleep(1100);
+            Player.Core.Library.LibraryDb.IncrementPlayCount(byTitle["d"]);   // d 第二近：仍 3+1=4 次
+            Thread.Sleep(1100);
+            Player.Core.Library.LibraryDb.IncrementPlayCount(byTitle["b"]);   // b 第三近： 4 次
+
+            var most = Player.Core.Library.LibraryDb.GetMostPlayed(50);
+            Check("最常听：零播放不入榜", most.All(t => t.Title != "a"));
+            // c=8 次第一；b/d 同为 4 次，b 更近在前；e=1 次
+            Check("最常听：按次数降序，同次数按最近播放在前",
+                most.Count == 4
+                && most[0].Title == "c" && most[1].Title == "b" && most[2].Title == "d" && most[3].Title == "e",
+                string.Join(",", most.Select(t => $"{t.Title}x{t.PlayCount}")));
+
+            var recent = Player.Core.Library.LibraryDb.GetRecentlyPlayed(50);
+            Check("最近播放：未播放不入榜", recent.All(t => t.Title != "a"));
+            Check("最近播放：按时间降序",
+                recent.Count == 4
+                && recent[0].Title == "b" && recent[1].Title == "d" && recent[2].Title == "c" && recent[3].Title == "e",
+                string.Join(",", recent.Select(t => t.Title)));
+
+            // 上限：limit=2 只取前两首
+            var capped = Player.Core.Library.LibraryDb.GetMostPlayed(2);
+            Check("最常听 limit 生效", capped.Count == 2 && capped[0].Title == "c");
+
+            var cappedRecent = Player.Core.Library.LibraryDb.GetRecentlyPlayed(2);
+            Check("最近播放 limit 生效", cappedRecent.Count == 2 && cappedRecent[0].Title == "b");
+
+            // 空库（全部未播放）：两榜单都为空 → UI 显示空态
+            // 注意：SQLite 连接池按连接串缓存——换库前先清池，否则读到旧库。
+            Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+            Db.Initialize(Path.Combine(tempDir, "empty.db"));
+            var emptySeed = new List<Player.Core.Library.TrackRecord> { NewTrack("x") };
+            Player.Core.Library.LibraryDb.UpsertTracks(emptySeed);
+            Check("空统计库：最常听为空（空态条件）", Player.Core.Library.LibraryDb.GetMostPlayed(50).Count == 0);
+            Check("空统计库：最近播放为空（空态条件）", Player.Core.Library.LibraryDb.GetRecentlyPlayed(50).Count == 0);
+        }
+        finally
+        {
+            try { if (Directory.Exists(tempDir)) Directory.Delete(tempDir, true); } catch { }
+        }
+
+        static Player.Core.Library.TrackRecord NewTrack(string title) => new()
+        {
+            Path = $@"C:\nonexistent\{title}.flac",
+            Title = title,
+            Artist = "测试艺术家",
+            DurationMs = 180_000,
+        };
+    }
+
     private static void RunNetFailChecks()
     {
         Console.WriteLine();

@@ -449,6 +449,12 @@ public sealed partial class TrackListPageViewModel : ObservableObject, IDisposab
 
     public bool IsLibraryPage => PlaylistId is null;
 
+    /// <summary>统计页（最常听/最近播放）：空态提示「多听几首」而非「添加音乐文件夹」。</summary>
+    public bool IsStatsPage { get; init; }
+
+    /// <summary>统计页空态：曲库里有歌但还没听过（play_count 全为 0 / last_played 全空）。</summary>
+    public bool ShowStatsEmptyState => IsEmpty && IsStatsPage;
+
     /// <summary>右键「添加到歌单」的候选歌单，由 Shell 在建页时传进来。</summary>
     public IReadOnlyList<PlaylistRecord> PlaylistTargets { get; init; } = Array.Empty<PlaylistRecord>();
 
@@ -654,7 +660,7 @@ public sealed partial class TrackListPageViewModel : ObservableObject, IDisposab
 
     public bool IsEmpty => Items.Count == 0;
 
-    public bool ShowLibraryEmptyState => IsEmpty && IsLibraryPage;
+    public bool ShowLibraryEmptyState => IsEmpty && IsLibraryPage && !IsStatsPage;
 
     public bool ShowPlaylistEmptyState => IsEmpty && IsPlaylistPage;
 
