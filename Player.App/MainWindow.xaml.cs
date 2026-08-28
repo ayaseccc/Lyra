@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.InteropServices;
 using System.Windows;
 using System.Windows.Media.Animation;
 using System.Windows.Threading;
@@ -49,6 +50,12 @@ public partial class MainWindow : FluentWindow
 
     private bool _closingCleanupDone;
 
+    /// <summary>右栏列宽的 VM 订阅只挂一次（DataContextChanged 可能触发多次）。</summary>
+    private bool _sidePaneWidthHooked;
+
+    /// <summary>窗口几何防抖落盘计时器（拖边框期间避免每帧写盘）。</summary>
+    private System.Windows.Threading.DispatcherTimer? _geometrySaveTimer;
+
     /// <summary>SMTC 初始化失败后的有界重试（审查修复：仅靠 Loaded 重试不可靠）。</summary>
     private int _smtcRetryCount;
     private System.Windows.Threading.DispatcherTimer? _smtcRetryTimer;
@@ -92,6 +99,7 @@ public partial class MainWindow : FluentWindow
                 Shell.DownloadDirPicker = PickDownloadDirectory;   // P4 实机反馈：下载时弹窗选目标
                 HookDesktopLyricsUpdates();
                 HookSettingsLyricsUpdates();
+                HookSidePaneWidth();
                 _surfaces ??= new AppSurfaceCoordinator(this, Player!, CreateDesktopLyricsWindow, UpdateDesktopLyrics);
                 _surfaces.StateChanged -= OnSurfaceStateChanged;
                 _surfaces.StateChanged += OnSurfaceStateChanged;
@@ -131,13 +139,22 @@ public partial class MainWindow : FluentWindow
             _surfaces?.PrepareForExit();
         };
 
-        // 恢复上次的窗口尺寸（UI-R1.5 反馈）
+        // 恢复上次的窗口尺寸与最大化状态（UI-R1.5 反馈 / v1.0.3 实机修复）
         var ui = ConfigService.Current.Ui;
-        if (ui.WindowWidth >= MinWidth && ui.WindowHeight >= MinHeight)
+        if (ui.WindowWidth >= MinWidth && ui.WindowHeight >= MinHeight
+            && ui.WindowWidth <= SystemParameters.VirtualScreenWidth
+            && ui.WindowHeight <= SystemParameters.VirtualScreenHeight)
         {
             Width = ui.WindowWidth;
             Height = ui.WindowHeight;
         }
+
+        // 几何一变就防抖落盘，不再只在关闭那一刻才算：崩溃、强杀、异常退出都不丢尺寸。
+        SizeChanged += (_, _) => QueueWindowGeometrySave();
+        StateChanged += (_, _) => QueueWindowGeometrySave();
+
+        // 最大化放在最后设：Show 之前就位，首帧即最大化，没有「先小窗再弹大」的闪跳。
+        if (ui.WindowMaximized) WindowState = WindowState.Maximized;
     }
 
     private void OnVolumeMouseDown(object sender, MouseButtonEventArgs e)
@@ -449,9 +466,103 @@ public partial class MainWindow : FluentWindow
             .ToList();
     }
 
+    /// <summary>
+    /// 把窗口几何记进配置对象。
+    /// 刻意**不用** RestoreBounds：它按设计返回「最大化/贴边之前」的矩形（WPF 由
+    /// GetWindowPlacement().rcNormalPosition 实现），而 Win11 贴边时 WindowState 仍是
+    /// Normal，代码无从察觉。用户最大化或贴边后退出会把陈旧尺寸写回配置，重启就
+    /// 「回到预设」——这正是 v1.0.3 实机反馈的成因。
+    /// </summary>
+    private void CaptureWindowGeometry()
+    {
+        // 最小化时布局值不代表用户意图，保留上一次记录。
+        if (WindowState == WindowState.Minimized) return;
+
+        var ui = ConfigService.Current.Ui;
+        ui.WindowMaximized = WindowState == WindowState.Maximized;
+
+        // 最大化时 ActualWidth/Height 是全屏尺寸，不能当还原尺寸；
+        // 还原尺寸保留最大化之前那次 Normal 状态记下的值。
+        if (WindowState != WindowState.Normal) return;
+
+        // Win11 贴边（Win+左/右、拖到屏幕边缘占半屏/四分之一屏）时 WindowState
+        // 仍是 Normal，若不识别，贴边后的半屏尺寸会顶掉用户的常用尺寸（v1.0.3
+        // 实机反馈 #6 的贴边分支）。识别方式见 IsWindowSnappedToZone。
+        if (IsWindowSnappedToZone()) return;
+
+        var width = ActualWidth;
+        var height = ActualHeight;
+        if (!double.IsFinite(width) || !double.IsFinite(height)
+            || width < MinWidth || height < MinHeight) return;
+
+        ui.WindowWidth = width;
+        ui.WindowHeight = height;
+    }
+
+    /// <summary>
+    /// 窗口当前是否处于 Win11 贴边（Snap）布局：占半屏 / 四分之一屏，但不是最大化。
+    /// 判据：贴边不改变 WindowState（仍为 Normal），可是系统会为贴边窗口保留
+    /// 「贴边之前的矩形」——GetWindowPlacement().rcNormalPosition 与 GetWindowRect
+    /// 的实际矩形不一致；非贴边的 Normal 窗口两者恒等。用户贴着边把窗口手动拖大、
+    /// 或拖动标题栏解除贴边后，两者会重新一致，届时恢复记录。
+    /// </summary>
+    private bool IsWindowSnappedToZone()
+    {
+        var hwnd = new WindowInteropHelper(this).Handle;
+        if (hwnd == IntPtr.Zero) return false;
+
+        if (!NativeMethods.GetWindowRect(hwnd, out var rect)) return false;
+        var placement = default(NativeMethods.WINDOWPLACEMENT);
+        placement.length = (uint)Marshal.SizeOf<NativeMethods.WINDOWPLACEMENT>();
+        if (!NativeMethods.GetWindowPlacement(hwnd, ref placement)) return false;
+
+        // 只比宽高不比位置：rcNormalPosition 用工作区坐标、GetWindowRect 用屏幕坐标，
+        // 多显示器下原点不同，但尺寸是同一物理像素基准。16px 容差吸收边框与取整误差；
+        // 贴边造成的差异是屏幕尺寸量级，不会误伤。
+        var rectWidth = rect.Right - rect.Left;
+        var rectHeight = rect.Bottom - rect.Top;
+        var normalWidth = placement.rcNormalPosition.Right - placement.rcNormalPosition.Left;
+        var normalHeight = placement.rcNormalPosition.Bottom - placement.rcNormalPosition.Top;
+        return Math.Abs(rectWidth - normalWidth) > 16
+            || Math.Abs(rectHeight - normalHeight) > 16;
+    }
+
+    /// <summary>几何变化后防抖落盘（沿用迷你窗 QueuePlacementSave 的成熟套路）。
+    /// 不再只在关闭时才算，任务管理器结束、崩溃、断电也不丢尺寸。</summary>
+    private void QueueWindowGeometrySave()
+    {
+        if (_closingCleanupDone) return;
+
+        _geometrySaveTimer ??= CreateGeometrySaveTimer();
+        _geometrySaveTimer.Stop();   // 拖动期间不断重置，停手后才写一次
+        _geometrySaveTimer.Start();
+    }
+
+    private System.Windows.Threading.DispatcherTimer CreateGeometrySaveTimer()
+    {
+        var timer = new System.Windows.Threading.DispatcherTimer(
+            System.Windows.Threading.DispatcherPriority.Background, _dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(600)
+        };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            if (_closingCleanupDone) return;
+            CaptureWindowGeometry();
+            ConfigService.Save();
+        };
+        return timer;
+    }
+
     /// <summary>关窗前记下窗口尺寸，退出时随配置落盘。</summary>
     protected override void OnClosing(System.ComponentModel.CancelEventArgs e)
     {
+        // 必须在「关闭到托盘」早退之前：那条分支 e.Cancel 后直接 return，
+        // 放在它下面就永远不执行。就地落盘，不再依赖 App.OnExit 那串清理全部走完。
+        CaptureWindowGeometry();
+        ConfigService.Save();
+
         // 只有托盘图标确实创建成功才允许把最后一个主界面藏到后台。
         // 托盘失败时关闭必须真正退出，不能留下无法找回的隐形进程。
         if (ConfigService.Current.Ui.CloseToTray
@@ -473,24 +584,16 @@ public partial class MainWindow : FluentWindow
         _closingCleanupDone = true;
 
         ReleaseSmtcRetryTimer();
+        _geometrySaveTimer?.Stop();
+        _geometrySaveTimer = null;
         _tray?.Dispose();
         _tray = null;
         _globalHotkeys?.Dispose();
         _globalHotkeys = null;
         _smtcService?.Dispose();
         _smtcService = null;
-        var bounds = RestoreBounds;
-        var ui = ConfigService.Current.Ui;
-        if (bounds.Width > 0 && bounds.Height > 0)
-        {
-            ui.WindowWidth = bounds.Width;
-            ui.WindowHeight = bounds.Height;
-        }
-        else
-        {
-            ui.WindowWidth = ActualWidth;
-            ui.WindowHeight = ActualHeight;
-        }
+        // 几何已在本方法开头 CaptureWindowGeometry() 记过并落盘，这里不再重算。
+        // 旧实现用 RestoreBounds，在最大化/贴边后会写回陈旧尺寸，已移除。
 
         if (_surfaces is not null)
         {
@@ -545,6 +648,27 @@ public partial class MainWindow : FluentWindow
 
     /// <summary>P6：外部打开文件后把主窗从任意表面（迷你/后台）恢复到前台。</summary>
     public void ShowFromExternalOpen() => _surfaces?.ShowMain();
+
+    /// <summary>窗口默认尺寸（与 MainWindow.xaml 上的 Width/Height 字面量保持同步）。</summary>
+    private const double DefaultWindowWidth = 1400;
+    private const double DefaultWindowHeight = 900;
+
+    /// <summary>
+    /// 恢复默认窗口几何：取消最大化并回到 1400×900。设置页「恢复默认外观」调用
+    /// （实机反馈：改过尺寸后没有回到默认尺寸的入口）。几何防抖落盘会随后把新尺寸
+    /// 持久化，这里不同步写盘——调用方 ResetAppearance 末尾的 SaveConfigImmediately
+    /// 会带着新值一起落。
+    /// </summary>
+    public void ResetWindowGeometryToDefault()
+    {
+        if (WindowState == WindowState.Maximized) WindowState = WindowState.Normal;
+        Width = DefaultWindowWidth;
+        Height = DefaultWindowHeight;
+        var ui = ConfigService.Current.Ui;
+        ui.WindowWidth = DefaultWindowWidth;
+        ui.WindowHeight = DefaultWindowHeight;
+        ui.WindowMaximized = false;
+    }
 
     /// <summary>P6 首次运行引导（无曲库配置时，主窗就绪后弹出）。</summary>
     private void ShowSetupWizardIfNeeded()
@@ -903,6 +1027,39 @@ public partial class MainWindow : FluentWindow
     }
 
     /// <summary>设置页「歌词」组：字体/字重/字号/单双行/个性化改动即时作用（桌面歌词窗 + 两个 LyricCanvas）。</summary>
+    /// <summary>
+    /// 右栏列宽走「VM 通知 → 显式写列宽」的单向流，不用绑定：GridSplitter 拖动时
+    /// 会给 ColumnDefinition.Width 赋本地值，绑定再回推源值会打乱 splitter 的增量
+    /// 计算（表现为稍微一拖就弹回）。拖完由 DragCompleted 回写 VM。
+    /// </summary>
+    private void HookSidePaneWidth()
+    {
+        if (Player is null || _sidePaneWidthHooked) return;
+
+        _sidePaneWidthHooked = true;
+        Player.PropertyChanged += (_, e) =>
+        {
+            if (e.PropertyName is nameof(PlayerViewModel.SidePaneWidth)
+                or nameof(PlayerViewModel.IsSidePaneVisible))
+                ApplySidePaneWidthFromViewModel();
+        };
+        ApplySidePaneWidthFromViewModel();
+    }
+
+    private void ApplySidePaneWidthFromViewModel()
+    {
+        if (Player is null) return;
+        SidePaneColumn.Width = Player.SidePaneWidth;
+    }
+
+    private void OnSidePaneSplitterDragCompleted(
+        object sender, System.Windows.Controls.Primitives.DragCompletedEventArgs e)
+    {
+        // 用 ActualWidth 而不是 Width.Value：splitter 可能写成非绝对单位，
+        // 且 MinWidth/MaxWidth 的钳制只体现在 ActualWidth 上。
+        Player?.CommitDraggedSidePaneWidth(SidePaneColumn.ActualWidth);
+    }
+
     private void HookSettingsLyricsUpdates()
     {
         if (Shell is null) return;
@@ -1417,6 +1574,39 @@ public partial class MainWindow : FluentWindow
             TrackRowItem row => row.Track,
             _ => null
         };
+    }
+
+    /// <summary>窗口几何捕获用的最小 Win32 声明（仅贴边检测使用）。</summary>
+    private static class NativeMethods
+    {
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct RECT
+        {
+            public int Left, Top, Right, Bottom;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct POINT
+        {
+            public int X, Y;
+        }
+
+        [StructLayout(LayoutKind.Sequential)]
+        internal struct WINDOWPLACEMENT
+        {
+            public uint length;
+            public uint flags;
+            public uint showCmd;
+            public POINT ptMinPosition;
+            public POINT ptMaxPosition;
+            public RECT rcNormalPosition;
+        }
+
+        [DllImport("user32.dll")]
+        internal static extern bool GetWindowRect(IntPtr hwnd, out RECT rect);
+
+        [DllImport("user32.dll")]
+        internal static extern bool GetWindowPlacement(IntPtr hwnd, ref WINDOWPLACEMENT placement);
     }
 }
 

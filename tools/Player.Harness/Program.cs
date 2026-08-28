@@ -1475,6 +1475,15 @@ public static class Program
         return probe.Ui.MiniOpacity;
     }
 
+    /// <summary>同上，返回收敛后的右栏宽度。</summary>
+    private static double NormalizedSidePaneWidth(double raw)
+    {
+        var probe = new Player.Core.Infra.AppConfig();
+        probe.Ui.SidePaneWidth = raw;
+        ConfigService.NormalizeUiRanges(probe);
+        return probe.Ui.SidePaneWidth;
+    }
+
     private static void RunL31ConfigRoundtrip()
     {
         Console.WriteLine();
@@ -1492,6 +1501,11 @@ public static class Program
             SelectedOpacity = ui.SelectedOpacity,
             HoverOpacity = ui.HoverOpacity,
             MiniOpacity = ui.MiniOpacity,
+            WindowWidth = ui.WindowWidth,
+            WindowHeight = ui.WindowHeight,
+            WindowMaximized = ui.WindowMaximized,
+            SidePaneOpen = ui.SidePaneOpen,
+            SidePaneWidth = ui.SidePaneWidth,
             MiniPos = ui.MiniPos,
             MiniWidth = ui.MiniWidth,
             MiniHeight = ui.MiniHeight,
@@ -1542,6 +1556,11 @@ public static class Program
             ui.SelectedOpacity = 0.22;
             ui.HoverOpacity = 0.05;
             ui.MiniOpacity = 0.6;
+            ui.WindowWidth = 1445;
+            ui.WindowHeight = 812;
+            ui.WindowMaximized = true;
+            ui.SidePaneOpen = true;
+            ui.SidePaneWidth = 360;
             ui.MiniPos = "v2|VEVTVA==|24.5|18";
             ui.MiniWidth = 510;
             ui.MiniHeight = 156;
@@ -1579,6 +1598,27 @@ public static class Program
                 reloaded is not null
                 && reloaded.Ui.MiniTransparentBackground
                 && reloaded.Ui.MiniOpacity < 1.0);
+            // v1.0.3 实机反馈：旧实现用 RestoreBounds，最大化/贴边后写回陈旧尺寸。
+            // 还原尺寸与最大化状态必须分开持久化，这里验证两者独立往返。
+            Check("主窗还原宽度往返",
+                reloaded is not null && Math.Abs(reloaded.Ui.WindowWidth - 1445) < 0.001);
+            Check("主窗还原高度往返",
+                reloaded is not null && Math.Abs(reloaded.Ui.WindowHeight - 812) < 0.001);
+            Check("主窗最大化状态往返", reloaded?.Ui.WindowMaximized == true);
+            Check("最大化状态与还原尺寸各自独立（最大化时仍保留还原尺寸）",
+                reloaded is not null
+                && reloaded.Ui.WindowMaximized
+                && reloaded.Ui.WindowWidth > 0
+                && reloaded.Ui.WindowHeight > 0);
+            Check("右栏宽度往返",
+                reloaded is not null && Math.Abs(reloaded.Ui.SidePaneWidth - 360) < 0.001);
+            Check("右栏展开状态往返", reloaded?.Ui.SidePaneOpen == true);
+            Check("右栏宽度下越界钳到折叠阈值", NormalizedSidePaneWidth(40) == UiConfig.SidePaneCollapseThreshold);
+            Check("右栏宽度上越界钳到上限", NormalizedSidePaneWidth(9999) == UiConfig.MaxSidePaneWidth);
+            Check("右栏宽度 NaN 退回默认", NormalizedSidePaneWidth(double.NaN) == UiConfig.DefaultSidePaneWidth);
+            Check("右栏合法宽度不被改动", Math.Abs(NormalizedSidePaneWidth(360) - 360) < 0.001);
+            Check("右栏折叠态存的仍是折叠前宽度（0 不会被写进配置）",
+                NormalizedSidePaneWidth(0) >= UiConfig.SidePaneCollapseThreshold);
             Check("迷你窗歌词模式往返", reloaded is not null
                 && MiniPlayerContentModePolicy.Resolve(reloaded.Ui) == MiniPlayerContentMode.Lyrics
                 && reloaded.Ui.MiniContentMode == MiniPlayerContentModePolicy.LyricsValue
@@ -1598,6 +1638,11 @@ public static class Program
             ui.SelectedOpacity = backup.SelectedOpacity;
             ui.HoverOpacity = backup.HoverOpacity;
             ui.MiniOpacity = backup.MiniOpacity;
+            ui.WindowWidth = backup.WindowWidth;
+            ui.WindowHeight = backup.WindowHeight;
+            ui.WindowMaximized = backup.WindowMaximized;
+            ui.SidePaneOpen = backup.SidePaneOpen;
+            ui.SidePaneWidth = backup.SidePaneWidth;
             ui.MiniPos = backup.MiniPos;
             ui.MiniWidth = backup.MiniWidth;
             ui.MiniHeight = backup.MiniHeight;

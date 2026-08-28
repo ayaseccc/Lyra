@@ -142,10 +142,15 @@ public sealed class UiConfig
     /// <summary>上次曲目在真实播放上下文中的位置；用于含重复曲目的歌单。</summary>
     public int LastPlaybackIndex { get; set; } = -1;
 
-    /// <summary>窗口尺寸记忆（UI-R1.5 反馈）。0 表示未记录。</summary>
+    /// <summary>窗口尺寸记忆（UI-R1.5 反馈）。0 表示未记录。
+    /// 语义是「还原尺寸」：最大化或贴边期间不写入，否则全屏尺寸会顶掉用户的常用尺寸。</summary>
     public double WindowWidth { get; set; }
 
     public double WindowHeight { get; set; }
+
+    /// <summary>窗口最大化记忆：true = 上次退出时是最大化的。
+    /// 必须与 WindowWidth/Height 分开存——后者是还原尺寸，不能被全屏尺寸覆盖。</summary>
+    public bool WindowMaximized { get; set; }
 
     /// <summary>曲目列表显示模式（UI-R2）：true = 专辑分组，false = 平铺。</summary>
     public bool ListGrouped { get; set; }
@@ -161,6 +166,19 @@ public sealed class UiConfig
 
     /// <summary>右侧信息栏折叠状态（UI-R4）：true = 展开（默认）。</summary>
     public bool SidePaneOpen { get; set; } = true;
+
+    /// <summary>右侧信息栏展开时的宽度（DIP）。低于 SidePaneCollapseThreshold 视为折叠，
+    /// 但这里始终保存「折叠前的宽度」，以便点展开按钮时恢复到用户习惯的尺寸而非硬编码默认值。</summary>
+    public double SidePaneWidth { get; set; } = DefaultSidePaneWidth;
+
+    /// <summary>右侧信息栏默认宽度。</summary>
+    public const double DefaultSidePaneWidth = 280;
+
+    /// <summary>右侧信息栏可拖动的最小展开宽度；再窄就自动折叠（等同隐藏）。</summary>
+    public const double SidePaneCollapseThreshold = 200;
+
+    /// <summary>右侧信息栏允许的最大宽度，避免把内容区挤没。</summary>
+    public const double MaxSidePaneWidth = 620;
 
     /// <summary>桌面歌词（L1 第三步 + L1.1 个性化）：开关 / 锁定 / 单双行 / 字号 / 宽度 / 背景 / 文字颜色；歌词字体见下。</summary>
     public bool DesktopLyricsEnabled { get; set; }
@@ -363,7 +381,6 @@ public static class ConfigService
         }
     }
 
-    /// <summary>把旧的 gdApiUrl / chkszApiUrl / apiKey 配置迁移进通用 API 列表（2026-08-15 实机反馈）。</summary>
     /// <summary>
     /// 把有取值范围的 UI 字段收敛回合法区间。手改配置或旧版本遗留的越界 / NaN 值
     /// 会造成不可用界面（例如悬浮窗整窗透明到看不见），读入时统一钳制。
@@ -374,8 +391,16 @@ public static class ConfigService
         ui.MiniOpacity = double.IsFinite(ui.MiniOpacity)
             ? Math.Clamp(ui.MiniOpacity, 0.35, 1.0)
             : 1.0;
+
+        // 侧栏宽度存的是「折叠前的宽度」，因此下限用折叠阈值而不是 0：
+        // 存到 0 会让展开按钮恢复出一个不可见的栏。
+        ui.SidePaneWidth = double.IsFinite(ui.SidePaneWidth)
+            ? Math.Clamp(ui.SidePaneWidth,
+                UiConfig.SidePaneCollapseThreshold, UiConfig.MaxSidePaneWidth)
+            : UiConfig.DefaultSidePaneWidth;
     }
 
+    /// <summary>把旧的 gdApiUrl / chkszApiUrl / apiKey 配置迁移进通用 API 列表（2026-08-15 实机反馈）。</summary>
     internal static void MigrateLegacyOnlineFields(AppConfig config)
     {
         var online = config.Online;

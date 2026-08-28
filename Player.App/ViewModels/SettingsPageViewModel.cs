@@ -1086,7 +1086,8 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
     // ---- 恢复默认外观（L3.1；预设已按用户意见删除，留待以后版本做主题） ----
 
     /// <summary>恢复全部外观设置到 P4 收官时的默认样子（行高 72/分组展开/无组头封面/
-    /// 字体默认/字号 100%/强调色跟随封面/默认透明度/8 列默认顺序与默认列宽）。</summary>
+    /// 字体默认/字号 100%/强调色跟随封面/默认透明度/8 列默认顺序与默认列宽）。
+    /// 2026-08 实机反馈：窗口尺寸也一并回默认 1400×900（此前没有恢复入口）。</summary>
     [RelayCommand]
     private void ResetAppearance()
     {
@@ -1103,6 +1104,12 @@ public sealed partial class SettingsPageViewModel : ObservableObject, IDisposabl
         ui.MiniOpacity = 1.0;
         ui.Columns = TrackListPageViewModel.TrackColumns.Select(c => c.Key).ToList();
         ui.ColumnWidths.Clear();
+
+        // 窗口几何回默认：解除最大化并回 1400×900。位置不动，只重置尺寸与状态；
+        // MainWindow 内部已把新值写进 ui.WindowWidth/Height/Maximized，随后统一落盘。
+        if (System.Windows.Application.Current?.MainWindow is MainWindow mw)
+            mw.ResetWindowGeometryToDefault();
+
         SaveConfigImmediately();
         Theming.ThemeService.ApplyUiPersonalization();
         Theming.ThemeService.ApplyModeFromConfig();

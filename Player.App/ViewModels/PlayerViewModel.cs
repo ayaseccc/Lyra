@@ -59,6 +59,7 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
 
         // UI-R4：侧栏折叠状态持久化
         IsSidePaneVisible = ConfigService.Current.Ui.SidePaneOpen;
+        _sidePaneExpandedWidth = ConfigService.Current.Ui.SidePaneWidth;
 
         PlayMode = Enum.TryParse<PlayMode>(ConfigService.Current.Ui.PlayMode, out var mode)
             ? mode
@@ -96,6 +97,9 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     [NotifyPropertyChangedFor(nameof(SidePaneWidth))]
     private bool _isSidePaneVisible = true;
 
+    /// <summary>展开时的栏宽（DIP）。记的是「折叠前的宽度」，折叠再展开要回到这个值。</summary>
+    private double _sidePaneExpandedWidth = UiConfig.DefaultSidePaneWidth;
+
     [RelayCommand]
     private void ToggleSidePane()
     {
@@ -105,9 +109,59 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
         ConfigService.Save();
     }
 
-    /// <summary>右侧栏列宽：折叠时归零（UI-R1）。</summary>
-    public System.Windows.GridLength SidePaneWidth =>
-        IsSidePaneVisible ? new System.Windows.GridLength(280) : new System.Windows.GridLength(0);
+    /// <summary>
+    /// 右侧栏列宽：折叠时归零（UI-R1）。
+    /// 只读——列宽**不走 TwoWay 绑定**。GridSplitter 拖动时会给 ColumnDefinition.Width
+    /// 赋本地值，若再由绑定把源值推回去，splitter 的增量计算会失同步，表现为「稍微拖
+    /// 一动就弹回」。改由 MainWindow 在收到本属性变更时显式写列宽，拖动结束再调
+    /// <see cref="CommitDraggedSidePaneWidth"/> 回写，单向数据流、无回路。
+    /// </summary>
+    public System.Windows.GridLength SidePaneWidth => IsSidePaneVisible
+        ? new System.Windows.GridLength(_sidePaneExpandedWidth)
+        : new System.Windows.GridLength(0);
+
+    /// <summary>
+    /// GridSplitter 拖动结束后回写实际列宽。低于折叠阈值等同隐藏——0 宽时 splitter
+    /// 已无可命中区域，继续启用会让往左拖误抓窗口边框；此处保留折叠前的宽度，
+    /// 交给隐藏按钮恢复。
+    /// </summary>
+    public void CommitDraggedSidePaneWidth(double actualWidth)
+    {
+        if (!double.IsFinite(actualWidth)) return;
+
+        if (actualWidth < UiConfig.SidePaneCollapseThreshold)
+        {
+            if (!IsSidePaneVisible) return;
+            IsSidePaneVisible = false;                       // 通知 → 窗口把列宽写成 0
+            ConfigService.Current.Ui.SidePaneOpen = false;
+            ConfigService.Save();
+            return;
+        }
+
+        var width = Math.Min(actualWidth, UiConfig.MaxSidePaneWidth);
+        var widthChanged = Math.Abs(width - _sidePaneExpandedWidth) >= 0.5;
+        _sidePaneExpandedWidth = width;
+
+        if (!IsSidePaneVisible)
+        {
+            IsSidePaneVisible = true;                        // 通知里已带上 SidePaneWidth
+            ConfigService.Current.Ui.SidePaneOpen = true;
+        }
+        else if (widthChanged)
+        {
+            // 已展开时 IsSidePaneVisible 不变，得自己发通知，否则被 MaxWidth 钳过的
+            // 值不会回写到列上。
+            OnPropertyChanged(nameof(SidePaneWidth));
+        }
+
+        if (widthChanged)
+        {
+            // 值即时写进配置对象，落盘才防抖：拖完 400ms 内就关窗的话，
+            // OnClosing 的 ConfigService.Save() 也能带上最新宽度，不会丢最后一次拖动。
+            ConfigService.Current.Ui.SidePaneWidth = width;
+            QueueSidePaneWidthSave();
+        }
+    }
 
     /// <summary>当前播放的曲目，供列表页高亮用。</summary>
     public TrackRecord? CurrentTrack => _list.Current;
@@ -224,6 +278,31 @@ public sealed partial class PlayerViewModel : ObservableObject, IDisposable
     private bool _isVolumeFeedbackVisible;
 
     private DispatcherTimer? _volumeFeedbackTimer;
+
+    private DispatcherTimer? _sidePaneWidthSaveTimer;
+
+    /// <summary>栏宽防抖落盘：拖动期间每帧都会赋值，停手后才写一次配置。</summary>
+    private void QueueSidePaneWidthSave()
+    {
+        _sidePaneWidthSaveTimer ??= CreateSidePaneWidthSaveTimer();
+        _sidePaneWidthSaveTimer.Stop();
+        _sidePaneWidthSaveTimer.Start();
+    }
+
+    private DispatcherTimer CreateSidePaneWidthSaveTimer()
+    {
+        var timer = new DispatcherTimer(DispatcherPriority.Background, _dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(400)
+        };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            // 宽度已在 CommitDraggedSidePaneWidth 里即时写入 Current，这里只负责合并落盘。
+            ConfigService.Save();
+        };
+        return timer;
+    }
 
     /// <summary>拖动音量方块（点击/滑动）：连续设音量并显示 dB 文字。</summary>
     public void SetVolumeFromDrag(double fraction)

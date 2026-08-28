@@ -3,6 +3,7 @@ using System.Globalization;
 using System.Windows;
 using System.Windows.Input;
 using System.Windows.Media;
+using System.Windows.Threading;
 using Player.Core.Lyrics;
 
 namespace Player.App.Controls;
@@ -80,6 +81,10 @@ public sealed class LyricCanvas : FrameworkElement
 
     /// <summary>缓存失效标志：Lines 或宽度变化时置 true，下一帧重建。</summary>
     private bool _cacheDirty = true;
+
+    /// <summary>true = 正在拖动改栏宽，整表重排延后到停手；期间沿用旧排版。</summary>
+    private bool _resizeReflowPending;
+    private DispatcherTimer? _resizeReflowTimer;
 
     // 预生成画刷：当前单元原文/翻译、非当前单元原文/翻译
     private SolidColorBrush? _currentBrush;
@@ -525,9 +530,47 @@ public sealed class LyricCanvas : FrameworkElement
     protected override void OnRenderSizeChanged(SizeChangedInfo sizeInfo)
     {
         base.OnRenderSizeChanged(sizeInfo);
-        _cacheDirty = true;   // 栏宽变化即时重排（R5 ⑥）
-        ClearGeometryCache();
-        StartAnimation();
+
+        // 整表重排要对每一行重跑 WrapText + 构建 FormattedText（主行与翻译行都算），
+        // 一首 60 行带翻译的歌就是上百个对象。SizeChanged 在拖栏宽时每帧都触发，
+        // 逐帧重排会明显卡顿（v1.0.3 实机反馈）。首次布局仍即时重排，之后改为
+        // 停手 150ms 再重排一次；拖动期间沿用旧排版，只是折行位置暂时不跟随。
+        if (_unitCache.Count == 0 || double.IsNaN(_layoutWidth))
+        {
+            _cacheDirty = true;
+            ClearGeometryCache();
+            StartAnimation();
+            return;
+        }
+
+        _resizeReflowPending = true;
+        QueueResizeReflow();
+    }
+
+    /// <summary>拖动停手后才做一次整表重排。</summary>
+    private void QueueResizeReflow()
+    {
+        _resizeReflowTimer ??= CreateResizeReflowTimer();
+        _resizeReflowTimer.Stop();
+        _resizeReflowTimer.Start();
+    }
+
+    private DispatcherTimer CreateResizeReflowTimer()
+    {
+        var timer = new DispatcherTimer(DispatcherPriority.Background, Dispatcher)
+        {
+            Interval = TimeSpan.FromMilliseconds(150)
+        };
+        timer.Tick += (_, _) =>
+        {
+            timer.Stop();
+            _resizeReflowPending = false;
+            _cacheDirty = true;
+            ClearGeometryCache();
+            InvalidateVisual();
+            StartAnimation();
+        };
+        return timer;
     }
 
     // ---------------- 布局与绘制 ----------------
@@ -570,8 +613,13 @@ public sealed class LyricCanvas : FrameworkElement
             _cacheDirty = true;
         }
 
-        // 数据、宽度、字号缩放或字体变化 → 整表重排（R5 ⑥：栏宽变化即时重排）
-        if (_cacheDirty || Math.Abs(_layoutWidth - ActualWidth) > 0.5 || Math.Abs(_layoutScale - scale) > 0.001)
+        // 数据、宽度、字号缩放或字体变化 → 整表重排（R5 ⑥：栏宽变化即时重排）。
+        // 拖动栏宽期间（_resizeReflowPending）跳过纯宽度触发的重排，避免逐帧重建
+        // FormattedText；_cacheDirty（换歌/换字体）仍要立刻响应，否则会画错内容。
+        var widthChanged = Math.Abs(_layoutWidth - ActualWidth) > 0.5;
+        if (_cacheDirty
+            || Math.Abs(_layoutScale - scale) > 0.001
+            || (widthChanged && !_resizeReflowPending))
         {
             _unitCache.Clear();
             _currentCache.Clear();

@@ -1467,7 +1467,9 @@
                 <ColumnDefinition Width="1" />
                 <ColumnDefinition Width="*" />
                 <ColumnDefinition Width="1" />
-                <ColumnDefinition Width="{Binding Player.SidePaneWidth}" MinWidth="0" />
+                <!-- 列宽不绑定：由 MainWindow 依 Player.SidePaneWidth 显式写入。
+                     绑定 + GridSplitter 会互相打架（见 PlayerViewModel.SidePaneWidth）。 -->
+                <ColumnDefinition x:Name="SidePaneColumn" Width="280" MinWidth="0" MaxWidth="620" />
             </Grid.ColumnDefinitions>
 
             <Border Background="{DynamicResource SurfaceBrush}">
@@ -1564,8 +1566,12 @@
                 <ContentControl Content="{Binding CurrentPage}" />
             </Border>
             <Border Grid.Column="3" Width="1" Background="{DynamicResource BorderSoftBrush}" />
+            <!-- 折叠时禁用：0 宽下这条 splitter 已无可命中区域，继续启用会让往左拖误抓
+                 窗口边框变成缩放窗口。折叠后由播放条的隐藏按钮负责恢复。 -->
             <GridSplitter Grid.Column="3" Width="9" HorizontalAlignment="Center"
                           Panel.ZIndex="2" ResizeDirection="Columns" ResizeBehavior="PreviousAndNext"
+                          IsEnabled="{Binding Player.IsSidePaneVisible}"
+                          DragCompleted="OnSidePaneSplitterDragCompleted"
                           Background="Transparent" />
 
             <!-- ============ 右侧歌词栏（UI-R0 位置一：信息栏内嵌雏形） ============ -->
