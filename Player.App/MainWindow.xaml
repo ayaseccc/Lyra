@@ -115,7 +115,10 @@
                         <RowDefinition Height="*" />
                     </Grid.RowDefinitions>
 
-                    <Border BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="0,0,0,1">
+                    <!-- 列头裁剪：列头 Grid 在滚动容器之外，默认不裁剪——任何瞬态（换页、
+                         视口未同步）下列宽超出时都会直接画到右栏上。裁剪后最多截断，
+                         结构上不可能再溢出（行内容本来就由滚动容器裁住）。 -->
+                    <Border BorderBrush="{DynamicResource BorderSoftBrush}" BorderThickness="0,0,0,1" ClipToBounds="True">
                         <Grid Margin="6,0,0,0">
                             <!-- L3.1 列自定义：宽度/顺序全绑 VM（隐藏列宽 0，顺序按索引） -->
                             <Grid.ColumnDefinitions>

@@ -1067,10 +1067,17 @@ public partial class MainWindow : FluentWindow
         {
             if (e.PropertyName != nameof(ShellViewModel.CurrentPage)) return;
             if (Shell.CurrentPage is TrackListPageViewModel trackPage)
-                trackPage.SetViewportWidth(_lastTrackViewportWidth > 0
-                    ? _lastTrackViewportWidth
-                    : Math.Max(0, MainContentHost.ActualWidth
-                        - SystemParameters.VerticalScrollBarWidth - 12));
+            {
+                // 新页首帧就要用列宽正确的值：优先现算（面板在设置页期间可能已增减），
+                // 真实 SizeChanged 还没来得及上报；陈旧的 _lastTrackViewportWidth 只在
+                // ActualWidth 尚为 0 的极早期兜底。否则切页瞬间可能按旧宽度排一帧，
+                // 列头短暂画进右栏（v1.0.3 反馈的「列宽溢出到右栏」瞬时场景）。
+                var live = MainContentHost.ActualWidth
+                    - SystemParameters.VerticalScrollBarWidth - 12;
+                trackPage.SetViewportWidth(live > 0
+                    ? Math.Max(0, live)
+                    : _lastTrackViewportWidth);
+            }
             if (Shell.CurrentPage is not SettingsPageViewModel settings)
             {
                 // 离开设置页：取消进行中的改绑捕获
