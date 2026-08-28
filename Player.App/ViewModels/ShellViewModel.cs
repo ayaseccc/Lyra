@@ -142,9 +142,18 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         if (!string.Equals(FilterText, pageFilter, StringComparison.Ordinal))
             FilterText = pageFilter;
         OnPropertyChanged(nameof(IsTrackFilterPage));
+        OnPropertyChanged(nameof(FilterPlaceholder));
+        OnPropertyChanged(nameof(IsFilterEnabled));
     }
 
     public bool IsTrackFilterPage => CurrentPage is TrackListPageViewModel;
+
+    /// <summary>侧栏搜索框占位符：列表页=可过滤；其他页=禁用提示（实机反馈：搜索框
+    /// 隐藏会让导航栏跳动，改为常驻+禁用，占位符说明状态）。</summary>
+    public string FilterPlaceholder => IsTrackFilterPage ? "搜索当前列表" : "仅在曲目列表页可用";
+
+    /// <summary>侧栏搜索框可用性（非列表页禁用但保留占位）。</summary>
+    public bool IsFilterEnabled => IsTrackFilterPage;
 
     /// <summary>
     /// 左侧栏顶部搜索框（UI-R0：搜索从主区移到侧栏）。中转给当前曲目列表页；

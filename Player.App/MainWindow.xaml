@@ -1503,9 +1503,12 @@
             <Border Background="{DynamicResource SurfaceBrush}">
                 <DockPanel>
                         <StackPanel DockPanel.Dock="Top" Margin="10,10,10,4">
-                            <ui:TextBox x:Name="FilterBox" PlaceholderText="搜索当前列表" Height="30"
+                            <!-- 常驻不隐藏（实机反馈：列表页→在线/下载页搜索框消失导致导航栏跳动）。
+                                 非列表页禁用：保留占位布局稳定；占位符提示当前不可用。 -->
+                            <ui:TextBox x:Name="FilterBox" Height="30"
                                        Icon="{ui:SymbolIcon Search24}"
-                                       Visibility="{Binding IsTrackFilterPage, Converter={StaticResource BoolToVis}}"
+                                       IsEnabled="{Binding IsFilterEnabled}"
+                                       PlaceholderText="{Binding FilterPlaceholder}"
                                        Text="{Binding FilterText, UpdateSourceTrigger=PropertyChanged}" />
                         </StackPanel>
                     <!-- 底部：只剩扫描进度 + 状态提示（导入移入设置页、设置按钮移入播放条，UI-R1.5 反馈） -->
