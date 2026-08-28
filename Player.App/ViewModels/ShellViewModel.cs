@@ -33,7 +33,9 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
     /// <summary>导航重建节流：狂点侧边栏时合并成最后一次（实机反馈：快速多次切换
     /// 最常听/最近播放/艺术家会卡死）。每次导航都在 UI 线程同步做整套重建（查库→
     /// ObservableCollection→CollectionView→分组→整页视觉树），连续点击会叠爆。
-    /// 350ms 内的重复导航只执行最后一次；停止狂点后自然恢复。0 = 无待处理任务。</summary>
+    /// 120ms 内的重复导航只执行最后一次（用户实机反馈 350ms 体感延迟明显，且
+    /// 实际使用不会狂点——首次点击立即执行的场景由同项去重兜底，这里只拦
+    /// 高频重复）；0 = 无待处理任务。</summary>
     private DispatcherTimer? _navThrottle;
     private NavItemViewModel? _pendingNav;
     private NavItemViewModel? _lastNavigatedNav;
@@ -448,7 +450,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         {
             _navThrottle = new DispatcherTimer(DispatcherPriority.Input)
             {
-                Interval = TimeSpan.FromMilliseconds(350)
+                Interval = TimeSpan.FromMilliseconds(120)
             };
             _navThrottle.Tick += (_, _) =>
             {
