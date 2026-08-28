@@ -6,7 +6,7 @@ Lyra 是一款面向 Windows 10 / 11 x64 的本地优先音乐播放器：以媒
 
 ### 安装与首次运行
 
-1. 解压 `Lyra-v1.0.3-win-x64.zip` 到一个可长期使用且有写入权限的目录。
+1. 解压 `Lyra-v1.0.4-win-x64.zip` 到一个可长期使用且有写入权限的目录。
 2. 双击 `Lyra.exe`。首次运行按引导选择媒体库目录和输出设备；在线 API 可以跳过，之后再到“设置 → 在线”填写。
 3. 扫描完成后，从“全部歌曲 / 专辑 / 艺术家 / 文件夹”进入曲库，双击曲目播放。
 4. Lyra 会为当前用户注册 MP3、FLAC、M4A、APE、WV、OGG、OPUS、WAV、AIFF 打开方式。播放器已运行时再次双击音频，只会把文件交给现有窗口，不会启动第二个常驻实例。
@@ -46,10 +46,10 @@ Lyra 的运行数据全部位于 `Lyra.exe` 同级的 `data/`：
 ```powershell
 dotnet build Player.sln -c Release
 dotnet run --project Player.App
-pwsh tools/publish.ps1 -Version 1.0.3
+pwsh tools/publish.ps1 -Version 1.0.4
 ```
 
-最后一条命令生成审计过的 self-contained `Lyra-v1.0.3-win-x64.zip`。
+最后一条命令生成审计过的 self-contained `Lyra-v1.0.4-win-x64.zip`。
 
 ## 功能总览
 
@@ -58,6 +58,7 @@ pwsh tools/publish.ps1 -Version 1.0.3
 - 支持 MP3、FLAC、M4A、AAC、ALAC、APE、WV、OGG、OPUS、WAV、AIFF。
 - 多媒体库目录、全量/增量扫描、目录变化自动补扫、标签和内嵌封面读取。
 - 全部歌曲、专辑、艺术家、文件夹虚拟歌单，以及可新建、重命名、排序、导入导出的本地歌单。
+- 最常听 / 最近播放：播放统计自动积累，侧边栏直达 Top 50；设置页可自定义侧边栏显示项。
 - 平铺与专辑分组、即时过滤、列排序、定位当前曲目、下一首播放、顺序/列表循环/单曲循环/随机。
 - 精确进度拖动和点击跳转；同采样率曲目可通过 mixer 预载实现无缝衔接。
 
