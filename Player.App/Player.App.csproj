@@ -18,9 +18,10 @@
     <!-- 原生 bass 系列为 x64，进程必须是 64 位 -->
     <PlatformTarget>x64</PlatformTarget>
     <SatelliteResourceLanguages>en</SatelliteResourceLanguages>
-    <!-- P6：exe 版本/产品元数据（文件关联"打开方式"与资源管理器详情共用） -->
-    <Version>1.0.3</Version>
-    <FileVersion>1.0.3.0</FileVersion>
+    <!-- P6：exe 版本/产品元数据（文件关联"打开方式"与资源管理器详情共用）。
+         注意：发布时 publish.ps1 用 -p:Version 覆盖，此处默认值须随每次发版手动同步。 -->
+    <Version>1.0.4</Version>
+    <FileVersion>1.0.4.0</FileVersion>
     <Product>Lyra</Product>
     <Company>Lyra</Company>
     <Authors>Lyra</Authors>

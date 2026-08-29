@@ -433,7 +433,7 @@ public sealed partial class ShellViewModel : ObservableObject, IDisposable
         QueueNavigation(value);
     }
 
-    /// <summary>节流后的导航入口：350ms 内的多次点击合并到最后一次。</summary>
+    /// <summary>节流后的导航入口：120ms 内的多次点击合并到最后一次。</summary>
     private void QueueNavigation(NavItemViewModel nav)
     {
         // 同一项重复点击且已在该页：不重建（重建会丢滚动位置/多选/列排序，
